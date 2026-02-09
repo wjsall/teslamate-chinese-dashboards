@@ -1,0 +1,796 @@
+{
+  "__elements": [],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "8.5.15"
+    },
+    {
+      "type": "datasource",
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "表格",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "$$hashKey": "object:24",
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "标注与警报",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "iteration": 1681731808006,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "车辆信息",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "battery"
+      ],
+      "targetBlank": false,
+      "title": "电池",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "trip"
+      ],
+      "targetBlank": false,
+      "title": "行驶",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "中文文档",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://www.teslamate.com.cn"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "TeslaMate"
+      },
+      "description": "本仪表盘显示每次充电之间的所有行程。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "开始日期"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Start Date"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "查看行程详情",
+                    "url": "d/FkUpJpQZk?from=${__data.fields.start_date_ts.numeric}&to=${__data.fields.end_date_ts.numeric}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance_km"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              },
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 100
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "basic"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-BlPu"
+                }
+              },
+              {
+                "id": "max",
+                "value": 400
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance_mi"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              },
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "结束日期"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 180
+              },
+              {
+                "id": "displayName",
+                "value": "End Date"
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_min"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "持续时间"
+              },
+              {
+                "id": "unit",
+                "value": "clocks"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 120
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed_km"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Avg Speed"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 110
+              },
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed_mi"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Avg Speed"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 110
+              },
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*_ts/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/%/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 65
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power_max"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "max Power"
+              },
+              {
+                "id": "unit",
+                "value": "kwatt"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed_max_km"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "max Speed"
+              },
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed_max_mi"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "max Speed"
+              },
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_temp_c"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "displayName",
+                "value": "Temp"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp_f"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Temp"
+              },
+              {
+                "id": "unit",
+                "value": "fahrenheit"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consumption_kwh_mi"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Wh/mi"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 110
+              },
+              {
+                "id": "displayName",
+                "value": "总能耗"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consumption_kwh_km"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Wh/km"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              },
+              {
+                "id": "displayName",
+                "value": "总能耗"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consumption_kwh"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "能耗"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              },
+              {
+                "id": "unit",
+                "value": "kwatth"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "能效"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "super-light-red",
+                      "value": null
+                    },
+                    {
+                      "color": "super-light-yellow",
+                      "value": 0.65
+                    },
+                    {
+                      "color": "light-green",
+                      "value": 0.99
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 30,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "links": [],
+      "options": {
+        "footer": {
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "8.5.15",
+      "targets": [
+        {
+          "alias": "",
+          "datasource": {
+            "type": "postgres",
+            "uid": "TeslaMate"
+          },
+          "format": "table",
+          "group": [],
+          "hide": false,
+          "metricColumn": "none",
+          "rawQuery": true,
+          "rawSql": "WITH \r\ntrip AS (\r\n    SELECT start_date sd, end_date ed, distance, duration_min, start_usable_battery_level, end_usable_battery_level, \r\n        outside_temp_avg, power_max, speed_max, start_rated_range_km, end_rated_range_km\r\n    FROM drives INNER JOIN (\r\n      SELECT drive_id, MIN(usable_battery_level) AS end_usable_battery_level, MAX(usable_battery_level) AS start_usable_battery_level\r\n        FROM (\r\n            SELECT drive_id, usable_battery_level, ROW_NUMBER() OVER (PARTITION BY drive_id ORDER BY date) AS row_num\r\n            FROM positions \r\n            WHERE drive_id IS NOT NULL\r\n        ) AS pos\r\n      GROUP BY drive_id\r\n    ) AS filter_positions\r\n    ON filter_positions.drive_id = drives.id\r\n    WHERE $__timeFilter(start_date) \r\n      AND car_id = $car_id \r\n      AND duration_min > 0\r\n      AND start_rated_range_km > end_rated_range_km\r\n),\r\ncp AS (\r\n    SELECT car_id, start_date, end_date, COALESCE(LAG(start_date) OVER(ORDER BY start_date DESC), now()) next_date, start_battery_level, end_battery_level\r\n    FROM charging_processes WHERE $__timeFilter(start_date) AND car_id = $car_id\r\n),\r\ndriven AS (\r\nSELECT cp.car_id, cp.start_date, cp.end_date, cp.next_date, \r\n        MIN(trip.sd) trip_start_date, \r\n        MAX(trip.ed) trip_end_date,\r\n        SUM(convert_km(trip.distance::numeric, '$length_unit')) AS distance_$length_unit, \r\n        MAX(convert_km(trip.speed_max::numeric, '$length_unit')) AS speed_max_$length_unit,\r\n        SUM(trip.duration_min) duration_min,\r\n        MAX(trip.start_usable_battery_level) start_soc, \r\n        MIN(trip.end_usable_battery_level) end_soc, \r\n        AVG(convert_celsius(trip.outside_temp_avg, '$temp_unit')) AS avg_temp_$temp_unit, \r\n        MAX(trip.power_max) AS power_max, \r\n        convert_km((MAX(trip.start_rated_range_km) - MIN(trip.end_rated_range_km))::numeric, '$length_unit') AS range_diff_$length_unit \r\n\tFROM cp\tINNER JOIN trip ON trip.sd BETWEEN cp.start_date and cp.next_date\r\n  GROUP BY cp.car_id, cp.start_date, cp.end_date, cp.next_date\r\n)\r\nSELECT \r\n    ROUND(EXTRACT(epoch FROM start_date) - 10) * 1000 AS start_date_ts, ROUND(EXTRACT(epoch FROM next_date) + 10) * 1000 AS end_date_ts, start_date, next_date end_date,\r\n    distance_$length_unit, duration_min * 60 as duration_min, \r\n    (distance_$length_unit / duration_min * 60) as speed_$length_unit, \r\n    start_soc as \"% Start\", end_soc as \"% End\", avg_temp_$temp_unit, power_max, speed_max_$length_unit,\r\n    (range_diff_$length_unit * car.efficiency) consumption_kwh, \r\n    (range_diff_$length_unit * car.efficiency / distance_$length_unit * 1000.0) consumption_kWh_$length_unit,\r\n    (distance_$length_unit / range_diff_$length_unit) efficiency\r\nFROM driven\r\nINNER JOIN cars car ON car.id = driven.car_id\r\nWHERE distance_$length_unit >= $min_dist AND (distance_$length_unit / duration_min * 60) >= $min_avg_speed\r\nORDER BY start_date DESC\r\n",
+          "refId": "A",
+          "select": [
+            [
+              {
+                "params": [
+                  "value"
+                ],
+                "type": "column"
+              }
+            ]
+          ],
+          "timeColumn": "time",
+          "where": [
+            {
+              "name": "$__timeFilter",
+              "params": [],
+              "type": "macro"
+            }
+          ]
+        }
+      ],
+      "title": "长途行程",
+      "transformations": [],
+      "type": "table"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [
+    "trip"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT name AS __text, id AS __value FROM cars ORDER BY display_priority ASC, name ASC;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "车辆",
+        "multi": false,
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT name AS __text, id AS __value FROM cars ORDER BY display_priority ASC, name ASC;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "TeslaMate"
+        },
+        "definition": "select unit_of_length from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "label": "长度单位",
+        "multi": false,
+        "name": "length_unit",
+        "options": [],
+        "query": "select unit_of_length from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "TeslaMate"
+        },
+        "definition": "select base_url from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "label": "此部分需要配置名为\"家\"和\"公司\"的地理围栏并设置费用，以便准确计算充电成本。",
+        "multi": false,
+        "name": "base_url",
+        "options": [],
+        "query": "select base_url from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "TeslaMate"
+        },
+        "definition": "select unit_of_temperature from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "temp_unit",
+        "options": [],
+        "query": "select unit_of_temperature from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "0",
+          "value": "0"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "距离 >=",
+        "name": "min_dist",
+        "options": [
+          {
+            "selected": true,
+            "text": "0",
+            "value": "0"
+          }
+        ],
+        "query": "0",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "0",
+          "value": "0"
+        },
+        "hide": 0,
+        "label": "平均速度 >=",
+        "name": "min_avg_speed",
+        "options": [
+          {
+            "selected": true,
+            "text": "0",
+            "value": "0"
+          }
+        ],
+        "query": "0",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1M",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "",
+  "title": "行程统计（每次充电）",
+  "uid": "jchmY8upc6ZRk",
+  "version": 4,
+  "weekStart": ""
+}

@@ -1,0 +1,114 @@
+================================================================================
+详细审查报告
+================================================================================
+
+【需要修复的问题】
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[6].targets[1].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT battery_level - (SELECT battery_level as "Added" FROM charges where charg
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[6].targets[1].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT battery_level - (SELECT battery_level as "Added" FROM charges where charg
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[0].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_k
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[0].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_k
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[1].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_k
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[1].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_k
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[2].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(est_battery_range_km,
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[10].targets[2].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(est_battery_range_km,
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[0].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(outside_temp, '$
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[0].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(outside_temp, '$
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[1].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(inside_temp, '$t
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[1].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(inside_temp, '$t
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[2].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: SELECT 	$__timeGroupAlias(date,$__interval), 	avg(convert_celsius(driver_temp_se
+
+文件: grafana/dashboards/zh-cn/CurrentChargeView.json
+位置: panels[14].targets[2].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: SELECT 	$__timeGroupAlias(date,$__interval), 	avg(convert_celsius(driver_temp_se
+
+文件: grafana/dashboards/zh-cn/CurrentState.json
+位置: panels[0].targets[0].rawSql
+类型: ERROR
+问题: 技术字段 rawSql 不应包含中文
+内容: select $__time(start_date), CASE state
+        WHEN 'asleep' THEN '休眠中'
+        
+
+文件: grafana/dashboards/zh-cn/CurrentState.json
+位置: panels[0].targets[0].rawSql
+类型: CRITICAL
+问题: SQL查询包含中文，必须回滚
+内容: select $__time(start_date), CASE state
+        WHEN 'asleep' THEN '休眠中'
+        
+
+文件: grafana/dashboards/zh-cn/CurrentState.json
+位置: panels[6].options.layers[1].name
+类型: ERROR
+问题: 技术字段 name 不应包含中文
+内容: 当前位置
+
+
+总计: 17 处问题, 547 处安全翻译

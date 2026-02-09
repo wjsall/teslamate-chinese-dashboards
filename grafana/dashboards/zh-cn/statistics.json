@@ -1,0 +1,1222 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "标注与警报",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "车辆信息",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "battery"
+      ],
+      "targetBlank": false,
+      "title": "电池",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "trip"
+      ],
+      "targetBlank": false,
+      "title": "行驶",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "中文文档",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://www.teslamate.com.cn"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 4,
+      "panels": [],
+      "repeat": "car_id",
+      "title": "$car_id",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "description": "此部分需要配置名为\"家\"和\"公司\"的地理围栏并设置费用，以便准确计算充电成本。",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "--",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "驾驶时间"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 170
+              },
+              {
+                "id": "displayName",
+                "value": "已驾驶时间"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "周期"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "行程",
+                    "url": "/d/FkUpJpQZk/trip?from=${__data.fields.date_from}&to=${__data.fields.date_to}&var-car_id=$car_id"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 195
+              },
+              {
+                "id": "displayName",
+                "value": "时间段"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "驾驶效率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "super-light-orange"
+                    },
+                    {
+                      "color": "light-orange",
+                      "value": 0.65
+                    },
+                    {
+                      "color": "light-green",
+                      "value": 0.99
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "能效"
+              },
+              {
+                "id": "max",
+                "value": 1.15
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "lcd",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "decimals"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "用电量"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "充电统计",
+                    "url": "/d/-pkIkhmRz/charging-stats?from=${__data.fields.date_from}&to=${__data.fields.date_to}&var-car_id=$car_id"
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 120
+              },
+              {
+                "id": "displayName",
+                "value": "总充电量"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "平均每次充电"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 190
+              },
+              {
+                "id": "displayName",
+                "value": "平均每次充电"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "费用"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 75
+              },
+              {
+                "id": "displayName",
+                "value": "费用"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "充电次数"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "充电记录",
+                    "url": "/d/TSmNYvRRk/charges?from=${__data.fields.date_from}&to=${__data.fields.date_to}&var-car_id=$car_id"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 110
+              },
+              {
+                "id": "displayName",
+                "value": "充电次数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "行驶次数"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "行程列表",
+                    "url": "/d/Y8upc6ZRk/drives?from=${__data.fields.date_from}&to=${__data.fields.date_to}&var-car_id=$car_id"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 95
+              },
+              {
+                "id": "displayName",
+                "value": "行驶次数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/sum_distance_km/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "km"
+              },
+              {
+                "id": "displayName",
+                "value": "距离"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/avg_outside_temp_c/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "displayName",
+                "value": "平均温度"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "super-light-blue"
+                    },
+                    {
+                      "color": "super-light-green",
+                      "value": 10
+                    },
+                    {
+                      "color": "super-light-red",
+                      "value": 20
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/sum_distance_mi/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              },
+              {
+                "id": "unit",
+                "value": "mi"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/consumption_net_mi/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Wh/mi"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              },
+              {
+                "id": "displayName",
+                "value": "净能耗"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/consumption_gross_mi/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "综合能耗"
+              },
+              {
+                "id": "unit",
+                "value": "Wh/mi"
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/consumption_net_km/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "净能耗"
+              },
+              {
+                "id": "unit",
+                "value": "Wh/km"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/consumption_gross_km/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "综合能耗"
+              },
+              {
+                "id": "unit",
+                "value": "Wh/km"
+              },
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/avg_outside_temp_f/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "平均温度"
+              },
+              {
+                "id": "unit",
+                "value": "fahrenheit"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "super-light-blue"
+                    },
+                    {
+                      "color": "super-light-green",
+                      "value": 50
+                    },
+                    {
+                      "color": "super-light-red",
+                      "value": 68
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "date_from"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "date_to"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "平均电价"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "平均每度电费用"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "NaN": {
+                        "index": 0,
+                        "text": "--"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 115
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "平均百公里费用"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "displayName",
+                "value": "平均百公里费用"
+              },
+              {
+                "id": "custom.minWidth",
+                "value": 135
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "NaN": {
+                        "index": 0,
+                        "text": "--"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "额外能耗开销"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 140
+              },
+              {
+                "id": "displayName",
+                "value": "额外能耗开销"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "NaN": {
+                        "index": 0,
+                        "text": "--"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "maxPerRow": 2,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "frameIndex": 1,
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "开始于"
+          }
+        ]
+      },
+      "pluginVersion": "11.6.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH data AS (\nSELECT\n  duration_min > 1 AND\n  distance > 1 AND\n  ( \n    start_position.usable_battery_level IS NULL OR\n    (end_position.battery_level - end_position.usable_battery_level) = 0 \n  ) AS is_sufficiently_precise,\n  NULLIF(GREATEST(start_${preferred_range}_range_km - end_${preferred_range}_range_km, 0), 0) AS range_diff,\n  date_trunc('$period', timezone('UTC', start_date), '$__timezone') as date,\n  drives.*\nFROM drives\n  LEFT JOIN positions start_position ON start_position_id = start_position.id\n  LEFT JOIN positions end_position ON end_position_id = end_position.id)\nSELECT\n  EXTRACT(EPOCH FROM date)*1000 AS date_from,\n  EXTRACT(EPOCH FROM date + interval '1 $period')*1000 AS date_to,\n  CASE '$period'\n    WHEN 'month' THEN to_char(timezone('$__timezone', date), 'YYYY Month')\n    WHEN 'year' THEN to_char(timezone('$__timezone', date), 'YYYY')\n    WHEN 'week' THEN 'week ' || to_char(timezone('$__timezone', date), 'WW') || ' starting ' || to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n    ELSE to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n  END AS display,\n  date,\n  sum(duration_min)*60 AS sum_duration_h, \n  convert_km(max(end_km)::integer - min(start_km)::integer, '$length_unit') AS sum_distance_$length_unit,\n  convert_celsius(avg(outside_temp_avg), '$temp_unit') AS avg_outside_temp_$temp_unit,\n  count(*) AS cnt,\n  sum(distance)/sum(range_diff) AS efficiency\nFROM data WHERE\n  car_id = $car_id AND\n  $__timeFilter(start_date)\nGROUP BY date",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH data AS (\n  SELECT\n    charging_processes.*,\n  \tdate_trunc('$period', timezone('UTC', start_date), '$__timezone') as date\n    FROM charging_processes)\nSELECT\n  EXTRACT(EPOCH FROM date)*1000 AS date_from,\n  EXTRACT(EPOCH FROM date + interval '1 $period')*1000 AS date_to,\n  CASE '$period'\n    WHEN 'month' THEN to_char(timezone('$__timezone', date), 'YYYY Month')\n    WHEN 'year' THEN to_char(timezone('$__timezone', date), 'YYYY')\n    WHEN 'week' THEN 'week ' || to_char(timezone('$__timezone', date), 'WW') || ' starting ' || to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n    ELSE to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n  END AS display,\n  date,\n  sum(greatest(charge_energy_added,charge_energy_used)) AS sum_energy_used_kwh,\n  sum(greatest(charge_energy_added,charge_energy_used)) / count(*) AS avg_energy_charged_kwh,\n  sum(cost) AS cost_charges,\n  count(*) AS cnt_charges\nFROM data WHERE\n  car_id = $car_id AND\n  $__timeFilter(start_date) AND\n  (charge_energy_added IS NULL OR charge_energy_added > 0.1)\nGROUP BY date",
+          "refId": "B",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH data AS (\n  SELECT\n    drives.*,\n    date_trunc('$period', timezone('UTC', start_date), '$__timezone') as date\n  FROM drives)\nSELECT\n  EXTRACT(EPOCH FROM date)*1000 AS date_from,\n  EXTRACT(EPOCH FROM date + interval '1 $period')*1000 AS date_to,\n  CASE '$period'\n    WHEN 'month' THEN to_char(timezone('$__timezone', date), 'YYYY Month')\n    WHEN 'year' THEN to_char(timezone('$__timezone', date), 'YYYY')\n    WHEN 'week' THEN 'week ' || to_char(timezone('$__timezone', date), 'WW') || ' starting ' || to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n    ELSE to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n  END AS display,\n  date,\n  sum(GREATEST(start_${preferred_range}_range_km - end_${preferred_range}_range_km, 0) * car.efficiency * 1000) / \n  convert_km(sum(distance)::numeric, '$length_unit') as consumption_net_$length_unit\nFROM data\nJOIN cars car ON car.id = car_id\nWHERE\n  car_id = $car_id AND\n  $__timeFilter(start_date)\nGROUP BY date",
+          "refId": "C",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "with drives_start_event as (\n\n    select\n        'drive_start' as event, start_date as date, start_${preferred_range}_range_km as range, start_km as odometer, car_id\n    from drives\n    where car_id = $car_id and $__timeFilter(start_date) and 0 = $high_precision\n\n),\n\ndrives_end_event as (\n\n    select\n        'drive_end' as event, end_date as date, end_${preferred_range}_range_km as range, end_km as odometer, car_id\n    from drives\n    where car_id = $car_id and $__timeFilter(end_date) and 0 = $high_precision\n\n),\n\ncharging_processes_start_event as (\n\n    select\n        'charging_process_start' as event, start_date as date, start_${preferred_range}_range_km as range, p.odometer, cp.car_id\n    from charging_processes cp\n        inner join positions p on cp.position_id = p.id\n    where cp.car_id = $car_id and $__timeFilter(start_date) and 0 = $high_precision\n\n),\n\ncharging_processes_end_event as (\n\n    select\n        'charging_process_end' as event, end_date as date, end_${preferred_range}_range_km as range, p.odometer, cp.car_id\n    from charging_processes cp\n        inner join positions p on cp.position_id = p.id\n    where cp.car_id = $car_id and $__timeFilter(end_date) and 0 = $high_precision\n\n),\n\npositions as (\n\n    select\n        case\n            when drive_id is not null and lead(drive_id) over w is not null then 'drive_start'\n            else 'something'\n        end as event,\n        date, ${preferred_range}_battery_range_km as range, p.odometer, p.car_id\n    from positions p\n    where ideal_battery_range_km is not null and car_id = $car_id and $__timeFilter(date) and 1 = $high_precision\n    window w as (order by date)\n\n),\n\ncombined as (\n\n    select * from drives_start_event\n    union all\n    select * from drives_end_event\n    union all\n    select * from charging_processes_start_event\n    union all\n    select * from charging_processes_end_event\n    union all\n    select * from positions\n\n),\n\nfinal as (\n\n    select\n        car_id,\n        date_trunc('$period', timezone('UTC', date), '$__timezone') as date,\n        lead(odometer) over w - odometer as distance,\n        case when event != 'drive_start' then greatest(range - lead(range) over w, 0) else range - lead(range) over w end as range_loss\n    from combined\n    window w as (order by date asc)\n\n)\n\nselect\n    EXTRACT(EPOCH FROM date)*1000 AS date_from,\n    EXTRACT(EPOCH FROM date + interval '1 $period')*1000 AS date_to,\n    CASE '$period'\n        WHEN 'month' THEN to_char(timezone('$__timezone', date), 'YYYY Month')\n        WHEN 'year' THEN to_char(timezone('$__timezone', date), 'YYYY')\n        WHEN 'week' THEN 'week ' || to_char(timezone('$__timezone', date), 'WW') || ' starting ' || to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n        ELSE to_char(timezone('$__timezone', date), 'YYYY-MM-DD')\n    END AS display,\n    date,\n    (sum(range_loss) * c.efficiency * 1000) / nullif(convert_km(sum(distance)::numeric, '$length_unit'), 0) as consumption_gross_$length_unit\nfrom final\n    inner join cars c on car_id = c.id\ngroup by 1, 2, 3, 4, c.efficiency",
+          "refId": "D",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "每${period}",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "seriesToColumns",
+          "options": {
+            "byField": "date"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true,
+                "field": "date"
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "avg_cost_kwh",
+            "binary": {
+              "left": "cost_charges",
+              "operator": "/",
+              "reducer": "sum",
+              "right": "sum_energy_used_kwh"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "avg_cost_km_temp",
+            "binary": {
+              "left": "cost_charges",
+              "operator": "/",
+              "reducer": "sum",
+              "right": "sum_distance_km"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "avg_cost_mi_temp",
+            "binary": {
+              "left": "cost_charges",
+              "operator": "/",
+              "reducer": "sum",
+              "right": "sum_distance_mi"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "avg_cost_km",
+            "binary": {
+              "left": "avg_cost_km_temp",
+              "operator": "*",
+              "right": "100"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "avg_cost_mi",
+            "binary": {
+              "left": "avg_cost_mi_temp",
+              "operator": "*",
+              "right": "100"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "overhead_pct_km_temp",
+            "binary": {
+              "left": "consumption_net_km",
+              "operator": "/",
+              "right": "consumption_gross_km"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "overhead_pct_km",
+            "binary": {
+              "left": "1",
+              "operator": "-",
+              "right": "overhead_pct_km_temp"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "overhead_pct_mi_temp",
+            "binary": {
+              "left": "consumption_net_mi",
+              "operator": "/",
+              "right": "consumption_gross_mi"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "overhead_pct_mi",
+            "binary": {
+              "left": "1",
+              "operator": "-",
+              "right": "overhead_pct_mi_temp"
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "avg_cost_km_temp": true,
+              "avg_cost_mi_temp": true,
+              "date": true,
+              "overhead_pct_km_temp": true,
+              "overhead_pct_mi_temp": true
+            },
+            "includeByName": {},
+            "indexByName": {
+              "avg_cost_km": 12,
+              "avg_cost_kwh": 11,
+              "avg_cost_mi": 12,
+              "avg_energy_charged_kwh": 8,
+              "avg_outside_temp_c": 4,
+              "avg_outside_temp_f": 4,
+              "cnt": 5,
+              "cnt_charges": 10,
+              "consumption_gross_km": 14,
+              "consumption_gross_mi": 14,
+              "consumption_net_km": 13,
+              "consumption_net_mi": 13,
+              "cost_charges": 9,
+              "date": 1,
+              "date_from": 15,
+              "date_to": 16,
+              "display": 0,
+              "efficiency": 6,
+              "overhead_pct_km": 17,
+              "overhead_pct_mi": 17,
+              "sum_distance_km": 3,
+              "sum_distance_mi": 3,
+              "sum_duration_h": 2,
+              "sum_energy_used_kwh": 7
+            },
+            "renameByName": {
+              "avg_cost_km": "平均百公里费用",
+              "avg_cost_kwh": "平均电价",
+              "avg_cost_mi": "平均费用 / 100英里",
+              "avg_energy_charged_kwh": "平均每次充电",
+              "avg_outside_temp_c": "",
+              "avg_outside_temp_f": "",
+              "cnt": "行驶次数",
+              "cnt_charges": "充电次数",
+              "consumption_gross_km": "",
+              "consumption_gross_mi": "",
+              "consumption_net_km": "",
+              "consumption_net_mi": "",
+              "cost_charges": "费用",
+              "date": "",
+              "date_from": "",
+              "date_to": "",
+              "display": "周期",
+              "efficiency": "驾驶效率",
+              "overhead_pct_km": "额外能耗开销",
+              "overhead_pct_mi": "额外能耗开销",
+              "sum_distance_km": "",
+              "sum_distance_mi": "",
+              "sum_duration_h": "驾驶时间",
+              "sum_energy_used_kwh": "用电量"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": [
+    "trip"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "hide": 2,
+        "includeAll": true,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select unit_of_length from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "label": "长度单位",
+        "name": "length_unit",
+        "options": [],
+        "query": "select unit_of_length from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select unit_of_temperature from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "label": "温度单位",
+        "name": "temp_unit",
+        "options": [],
+        "query": "select unit_of_temperature from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": "月",
+          "value": "month"
+        },
+        "includeAll": false,
+        "label": "周期",
+        "name": "period",
+        "options": [
+          {
+            "selected": false,
+            "text": "日",
+            "value": "day"
+          },
+          {
+            "selected": false,
+            "text": "周",
+            "value": "week"
+          },
+          {
+            "selected": true,
+            "text": "月",
+            "value": "month"
+          },
+          {
+            "selected": false,
+            "text": "年",
+            "value": "year"
+          }
+        ],
+        "query": "day,week,month,year",
+        "type": "custom"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select preferred_range from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "name": "preferred_range",
+        "options": [],
+        "query": "select preferred_range from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select base_url from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "name": "base_url",
+        "options": [],
+        "query": "select base_url from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": "no",
+          "value": "0"
+        },
+        "description": "启用后，\"平均能耗（总值）\"将通过以下方式计算 位置数据而不是充电过程和行程.\n\n虽然这样更准确 (特别对于较短的时间段) 这在较慢的硬件上会很慢！",
+        "includeAll": false,
+        "label": "高精度",
+        "name": "high_precision",
+        "options": [
+          {
+            "selected": true,
+            "text": "no",
+            "value": "0"
+          },
+          {
+            "selected": false,
+            "text": "是",
+            "value": "1"
+          }
+        ],
+        "query": "no : 0, yes : 1",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-10y",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "行程统计（年月日）",
+  "uid": "1EZnXszMk",
+  "version": 1
+}
