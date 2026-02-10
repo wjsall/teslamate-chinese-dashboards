@@ -1670,6 +1670,18 @@
                 "value": 0
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "速度"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "速度"
+              }
+            ]
           }
         ]
       },
@@ -1716,7 +1728,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \r\n    speed_section_$length_unit AS \"速度\",\r\n    SUM(seconds_elapsed) * 100 / MAX(duration) as \"已用时间\",\r\n    TO_CHAR((SUM(seconds_elapsed) || ' second')::interval, 'HH24:MI:SS') AS \"时间\",\n    speed_section_$length_unit || ' $speed_unit - 持续 ' || ROUND(SUM(seconds_elapsed) / 3600.0, 1) || ' 小时' AS \"速度详情\"\r\nFROM (\r\n    SELECT\r\n        ROUND(convert_km(p.speed::numeric, '$length_unit') / 10,0) * 10 AS speed_section_$length_unit,\r\n        EXTRACT(EPOCH FROM (LEAD(p.\"date\") OVER (ORDER BY p.\"date\") - p.\"date\")) AS seconds_elapsed,\r\n        EXTRACT(EPOCH FROM (end_date - start_date)) AS duration\r\n    FROM drives d\r\n    INNER JOIN positions p ON p.drive_id = d.id\r\n    WHERE d.id = $drive_id\r\n) AS drivedata\r\nWHERE speed_section_$length_unit>0\r\nGROUP BY 1\r\nORDER BY 1",
+          "rawSql": "SELECT \r\n    speed_section_$length_unit || ' ' || '$speed_unit' AS \"速度\",\r\n    SUM(seconds_elapsed) * 100 / MAX(duration) as \"已用时间\",\r\n    TO_CHAR((SUM(seconds_elapsed) || ' second')::interval, 'HH24:MI:SS') AS \"时间\",\n    speed_section_$length_unit || ' $speed_unit - 持续 ' || ROUND(SUM(seconds_elapsed) / 3600.0, 1) || ' 小时' AS \"速度详情\"\r\nFROM (\r\n    SELECT\r\n        ROUND(convert_km(p.speed::numeric, '$length_unit') / 10,0) * 10 AS speed_section_$length_unit,\r\n        EXTRACT(EPOCH FROM (LEAD(p.\"date\") OVER (ORDER BY p.\"date\") - p.\"date\")) AS seconds_elapsed,\r\n        EXTRACT(EPOCH FROM (end_date - start_date)) AS duration\r\n    FROM drives d\r\n    INNER JOIN positions p ON p.drive_id = d.id\r\n    WHERE d.id = $drive_id\r\n) AS drivedata\r\nWHERE speed_section_$length_unit>0\r\nGROUP BY 1\r\nORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
