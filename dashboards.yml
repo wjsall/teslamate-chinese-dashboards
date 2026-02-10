@@ -1,0 +1,24 @@
+apiVersion: 1
+
+providers:
+  - name: 'teslamate-zh-cn'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/zh-cn
+      foldersFromFilesStructure: true
+
+  - name: 'teslamate-internal'
+    orgId: 1
+    folder: 'Internal'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/internal
+      foldersFromFilesStructure: true
