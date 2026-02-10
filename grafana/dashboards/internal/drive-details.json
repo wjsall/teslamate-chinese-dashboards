@@ -1407,7 +1407,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CONCAT_WS(' - ', round(convert_km(start_km::numeric, '$length_unit')), round(convert_km(end_km::numeric, '$length_unit'))) ||' $length_unit' as \"Odometer\"\r\nFROM drives d\r\nWHERE d.id = $drive_id",
+          "rawSql": "SELECT CONCAT_WS(' - ', round(convert_km(start_km::numeric, '$length_unit')), round(convert_km(end_km::numeric, '$length_unit'))) ||' $length_unit' as \"里程表\"\r\nFROM drives d\r\nWHERE d.id = $drive_id",
           "refId": "A",
           "sql": {
             "columns": [
