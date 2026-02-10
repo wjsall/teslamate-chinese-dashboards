@@ -50,7 +50,11 @@
       "panels": [],
       "repeat": "car_id",
       "title": "$car_id",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -80,7 +84,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 21,
@@ -222,7 +239,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 2,
@@ -344,6 +374,18 @@
                 "value": "percent"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
           }
         ]
       },
@@ -430,7 +472,32 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "费用"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 2,

@@ -91,7 +91,32 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -172,7 +197,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -281,7 +319,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -390,7 +441,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -567,7 +631,11 @@
       "id": 34,
       "panels": [],
       "title": "数据库信息",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -1102,7 +1170,11 @@
       "id": 44,
       "panels": [],
       "title": "SQL规划和执行统计",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {

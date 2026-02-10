@@ -88,7 +88,20 @@
           },
           "unit": "none"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 3,
@@ -432,7 +445,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -525,7 +551,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -672,6 +711,18 @@
               {
                 "id": "displayName",
                 "value": "详细地址"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -929,6 +980,18 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
           }
         ]
       },
@@ -1092,6 +1155,18 @@
               {
                 "id": "custom.hidden",
                 "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }

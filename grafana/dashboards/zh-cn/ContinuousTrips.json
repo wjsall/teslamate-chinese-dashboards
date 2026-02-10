@@ -561,6 +561,90 @@
                 "value": 100
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "usable_battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "可用电池电量"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车外温度"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "drive_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "行程ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
           }
         ]
       },

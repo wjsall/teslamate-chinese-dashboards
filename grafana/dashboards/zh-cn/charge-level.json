@@ -82,7 +82,11 @@
       "panels": [],
       "repeat": "car_id",
       "title": "$car_id",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -142,7 +146,44 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "usable_battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "可用电池电量"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 21,

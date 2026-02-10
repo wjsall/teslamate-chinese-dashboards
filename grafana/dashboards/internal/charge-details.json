@@ -324,6 +324,42 @@
                 "value": "hidden"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车外温度"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
           }
         ]
       },
@@ -419,7 +455,20 @@
           },
           "unit": "none"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "费用"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -902,7 +951,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -1055,7 +1117,20 @@
           },
           "unit": "%"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -1195,7 +1270,44 @@
           },
           "unit": "kwatt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_voltage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器电压"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器功率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -1300,6 +1412,18 @@
               {
                 "id": "unit",
                 "value": "fahrenheit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车外温度"
               }
             ]
           }
@@ -1639,6 +1763,54 @@
                   "fixedColor": "blue",
                   "mode": "fixed"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器功率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
               }
             ]
           }

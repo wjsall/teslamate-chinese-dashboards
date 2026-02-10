@@ -82,7 +82,11 @@
       "panels": [],
       "repeat": "car_id",
       "title": "$car_id",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -178,6 +182,30 @@
               {
                 "id": "displayName",
                 "value": "里程"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "odometer"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "里程表"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }

@@ -86,7 +86,11 @@
       "panels": [],
       "repeat": "car_id",
       "title": "$car_id",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -112,7 +116,32 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -276,7 +305,32 @@
           },
           "unit": "volt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_voltage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器电压"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -358,7 +412,44 @@
           },
           "unit": "kwatt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器功率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -518,7 +609,32 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 7,
@@ -626,6 +742,42 @@
               {
                 "id": "unit",
                 "value": "Wh/mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "效率"
               }
             ]
           }
@@ -736,6 +888,66 @@
                 "value": "Wh/mi"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "range_loss"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "续航损失"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "效率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "odometer"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "里程表"
+              }
+            ]
           }
         ]
       },
@@ -844,6 +1056,30 @@
               {
                 "id": "unit",
                 "value": "mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -960,6 +1196,18 @@
                 "value": "lengthmi"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
           }
         ]
       },
@@ -1055,6 +1303,18 @@
               {
                 "id": "unit",
                 "value": "string"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -1172,6 +1432,30 @@
               {
                 "id": "unit",
                 "value": "mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "odometer"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "里程表"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -1402,6 +1686,42 @@
                 "value": "kwatth"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charger_voltage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电器电压"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "功率"
+              }
+            ]
           }
         ]
       },
@@ -1522,7 +1842,32 @@
           },
           "unit": "degree"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "inside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车内温度"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -1615,7 +1960,32 @@
           },
           "unit": "degree"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车外温度"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -1826,7 +2196,20 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 5,

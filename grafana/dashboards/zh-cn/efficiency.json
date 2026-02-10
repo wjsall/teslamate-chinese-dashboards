@@ -82,7 +82,11 @@
       "panels": [],
       "repeat": "car_id",
       "title": "$car_id",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -126,6 +130,42 @@
               {
                 "id": "unit",
                 "value": "Wh/mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "效率"
               }
             ]
           }
@@ -239,6 +279,66 @@
                 "value": "Wh/mi"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "range_loss"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "续航损失"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "效率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "odometer"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "里程表"
+              }
+            ]
           }
         ]
       },
@@ -348,6 +448,30 @@
               {
                 "id": "unit",
                 "value": "mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -658,6 +782,54 @@
                 "value": 200
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_min"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "时长(分钟)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outside_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车外温度"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "距离"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
           }
         ]
       },
@@ -761,6 +933,30 @@
               {
                 "id": "unit",
                 "value": "Wh/mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "efficiency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "效率"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
               }
             ]
           }
@@ -887,6 +1083,42 @@
                 "value": "Wh/mi"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_min"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "时长(分钟)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
+              }
+            ]
           }
         ]
       },
@@ -998,6 +1230,42 @@
               {
                 "id": "unit",
                 "value": "Wh/mi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_min"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "时长(分钟)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "battery_level"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电池电量"
               }
             ]
           }
