@@ -1218,7 +1218,7 @@
           "mode": "multi",
           "sort": "none"
         },
-        "xField": "Speed",
+        "xField": "速度",
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 0
       },
