@@ -1889,7 +1889,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  battery_level as \"电量[%]\",\n  charger_power AS \"功率 [kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nORDER BY\n  date ASC",
+          "rawSql": "SELECT\n  battery_level as \"电量[%]\",\n  charger_power AS \"功率[kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nORDER BY\n  date ASC",
           "refId": "A",
           "sql": {
             "columns": [
