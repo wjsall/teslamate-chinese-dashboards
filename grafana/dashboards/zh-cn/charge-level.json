@@ -248,7 +248,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  20 as lower,\r\n  CASE WHEN lfp_battery THEN 100 ELSE 80 END as upper\r\nfrom cars inner join car_settings on cars.settings_id = car_settings.id\r\nwhere cars.id = $car_id",
+          "rawSql": "SELECT\n  now() as time,\n  20 as lower,\n  CASE WHEN lfp_battery THEN 100 ELSE 80 END as upper\nfrom cars inner join car_settings on cars.settings_id = car_settings.id\nwhere cars.id = $car_id",
           "refId": "B",
           "sql": {
             "columns": [
