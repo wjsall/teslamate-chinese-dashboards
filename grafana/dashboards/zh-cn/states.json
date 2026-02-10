@@ -145,7 +145,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select $__time(start_date), state from states where car_id = $car_id order by start_date desc limit 1;",
+          "rawSql": "select $__time(start_date) AS \"开始日期\", state AS \"状态\" from states where car_id = $car_id order by start_date desc limit 1;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -230,7 +230,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select $__time(start_date), state from states where car_id = $car_id order by start_date desc limit 1;",
+          "rawSql": "select $__time(start_date) AS \"开始日期\", state AS \"状态\" from states where car_id = $car_id order by start_date desc limit 1;",
           "refId": "A",
           "sql": {
             "columns": [

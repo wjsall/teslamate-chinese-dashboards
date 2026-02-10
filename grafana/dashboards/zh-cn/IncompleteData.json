@@ -216,7 +216,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": false,
-          "rawSql": "SELECT\n  start_date AS \"时间\",\n  start_km\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
+          "rawSql": "SELECT\n  start_date AS \"时间\",\n  start_km AS \"起始里程\"\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
           "refId": "A",
           "select": [
             [
@@ -304,7 +304,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT id AS \"行程ID\", start_date, end_date, distance, duration_min \nFROM drives \nWHERE car_id = $car_id AND end_date is null\nORDER BY start_date DESC",
+          "rawSql": "SELECT id AS \"行程ID\", start_date AS \"开始日期\", end_date AS \"结束日期\", distance AS \"距离\", duration_min AS \"时长(分钟)\" \nFROM drives \nWHERE car_id = $car_id AND end_date is null\nORDER BY start_date DESC",
           "refId": "A",
           "select": [
             [
@@ -391,7 +391,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT id AS \"充电进程ID\", start_date, end_date, charge_energy_added, charge_energy_used, start_battery_level, end_battery_level, duration_min\nFROM charging_processes \nWHERE car_id = $car_id AND end_date is null\nORDER BY start_date DESC\n",
+          "rawSql": "SELECT id AS \"充电进程ID\", start_date AS \"开始日期\", end_date AS \"结束日期\", charge_energy_added AS \"充电量增加\", charge_energy_used AS \"充电使用能量\", start_battery_level AS \"起始电池电量\", end_battery_level AS \"结束电池电量\", duration_min AS \"时长(分钟)\"\nFROM charging_processes \nWHERE car_id = $car_id AND end_date is null\nORDER BY start_date DESC\n",
           "refId": "A",
           "select": [
             [

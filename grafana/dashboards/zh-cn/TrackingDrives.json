@@ -432,7 +432,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH journey AS (SELECT start_date, end_date FROM drives WHERE id = $journey)\nSELECT\n\t$__time(date),\n\tAVG(convert_km(speed::numeric, '$length_unit')) AS speed_[[length_unit]]h,\n\tAVG(power) AS Power,\n\tAVG(battery_level) AS SOC,\n\tAVG(battery_heater::integer * 100) AS battery_heater,\n\tAVG(ROUND(convert_m(elevation, '$alternative_length_unit'))) AS elevation_[[alternative_length_unit]]\nFROM\n\tpositions, journey\nWHERE\n  car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)\nGROUP BY 1  \nORDER BY\n\tdate ASC",
+          "rawSql": "WITH journey AS (SELECT start_date AS \"开始日期\", end_date AS \"结束日期\" FROM drives WHERE id = $journey)\nSELECT\n\t$__time(date),\n\tAVG(convert_km(speed::numeric, '$length_unit')) AS speed_[[length_unit]]h,\n\tAVG(power) AS Power,\n\tAVG(battery_level) AS SOC,\n\tAVG(battery_heater::integer * 100) AS battery_heater,\n\tAVG(ROUND(convert_m(elevation, '$alternative_length_unit'))) AS elevation_[[alternative_length_unit]]\nFROM\n\tpositions, journey\nWHERE\n  car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)\nGROUP BY 1  \nORDER BY\n\tdate ASC",
           "refId": "Power",
           "select": [
             [
@@ -597,7 +597,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH journey AS (SELECT start_date, end_date FROM drives WHERE id = $journey)\nSELECT\n  $__time(date), latitude, longitude\nFROM positions, journey\nWHERE\n    car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)\nORDER BY date ASC",
+          "rawSql": "WITH journey AS (SELECT start_date AS \"开始日期\", end_date AS \"结束日期\" FROM drives WHERE id = $journey)\nSELECT\n  $__time(date), latitude, longitude\nFROM positions, journey\nWHERE\n    car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)\nORDER BY date ASC",
           "refId": "A",
           "select": [
             [
@@ -1001,7 +1001,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH journey AS (SELECT start_date, end_date FROM drives WHERE id = $journey)\nSELECT\n\tAVG(convert_km(speed::numeric, '$length_unit')) AS speed_[[length_unit]]h\nFROM\n\tpositions, journey\nWHERE\n  car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)",
+          "rawSql": "WITH journey AS (SELECT start_date AS \"开始日期\", end_date AS \"结束日期\" FROM drives WHERE id = $journey)\nSELECT\n\tAVG(convert_km(speed::numeric, '$length_unit')) AS speed_[[length_unit]]h\nFROM\n\tpositions, journey\nWHERE\n  car_id = $car_id AND (date BETWEEN journey.start_date AND journey.end_date)",
           "refId": "B",
           "select": [
             [
