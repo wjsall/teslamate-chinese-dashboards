@@ -1888,7 +1888,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率"
+              "options": "Power"
             },
             "properties": [
               {
@@ -1941,7 +1941,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "功率"
+                "value": "Power"
               }
             ]
           },
@@ -1979,7 +1979,7 @@
             "color": {
               "matcher": {
                 "id": "byName",
-                "options": "功率"
+                "options": "Power"
               }
             },
             "frame": {
@@ -1997,7 +1997,7 @@
             "y": {
               "matcher": {
                 "id": "byName",
-                "options": "功率"
+                "options": "Power"
               }
             }
           },
@@ -2005,7 +2005,7 @@
             "color": {
               "matcher": {
                 "id": "byName",
-                "options": "功率"
+                "options": "Power"
               }
             },
             "frame": {
@@ -2023,7 +2023,7 @@
             "y": {
               "matcher": {
                 "id": "byName",
-                "options": "功率"
+                "options": "Power"
               }
             }
           }
@@ -2045,7 +2045,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  c.battery_level as \"电量\",\r\n  round(avg(c.charger_power), 0) AS \"功率\",\r\n  c.charging_process_id as \"充电进程ID\",\r\n  p.start_date as \"开始日期\",\r\n  p.end_date as \"结束日期\",\r\n  COALESCE(g.name, a.name) || ' ' || to_char(timezone('$__timezone', timezone('UTC', c.date)), 'YYYY-MM-dd') as \"充电\"\r\nFROM\r\n  charges c\r\nJOIN charging_processes p ON p.id = c.charging_process_id \r\nJOIN addresses a ON a.id = p.address_id\r\nLEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  $__timeFilter(date)\r\n AND p.car_id = $car_id\r\n AND charger_power > 0\r\n AND c.fast_charger_present\r\nGROUP BY c.battery_level, c.charging_process_id, a.name, g.name, p,start_date, p.end_date, to_char(timezone('$__timezone', timezone('UTC', c.date)), 'YYYY-MM-dd')",
+          "rawSql": "SELECT\r\n  c.battery_level as \"SoC\",\r\n  round(avg(c.charger_power), 0) AS \"Power\",\r\n  c.charging_process_id as \"充电进程ID\",\r\n  p.start_date as \"开始日期\",\r\n  p.end_date as \"结束日期\",\r\n  COALESCE(g.name, a.name) || ' ' || to_char(timezone('$__timezone', timezone('UTC', c.date)), 'YYYY-MM-dd') as \"充电\"\r\nFROM\r\n  charges c\r\nJOIN charging_processes p ON p.id = c.charging_process_id \r\nJOIN addresses a ON a.id = p.address_id\r\nLEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  $__timeFilter(date)\r\n AND p.car_id = $car_id\r\n AND charger_power > 0\r\n AND c.fast_charger_present\r\nGROUP BY c.battery_level, c.charging_process_id, a.name, g.name, p,start_date, p.end_date, to_char(timezone('$__timezone', timezone('UTC', c.date)), 'YYYY-MM-dd')",
           "refId": "A",
           "sql": {
             "columns": [
@@ -2073,7 +2073,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  c.battery_level as \"电量\",\n  PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY charger_power) AS \"功率\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\n AND c.fast_charger_present\nGROUP BY battery_level",
+          "rawSql": "SELECT\n  c.battery_level as \"SoC\",\n  PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY charger_power) AS \"Power\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\n AND c.fast_charger_present\nGROUP BY battery_level",
           "refId": "B",
           "sql": {
             "columns": [
