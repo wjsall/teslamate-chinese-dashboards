@@ -1199,7 +1199,7 @@
       "options": {
         "barRadius": 0.05,
         "barWidth": 0.97,
-        "colorByField": "Elapsed",
+        "colorByField": "已用时间",
         "fullHighlight": false,
         "groupWidth": 0.7,
         "legend": {
