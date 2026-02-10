@@ -127,7 +127,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND(convert_km(sum(distance)::numeric, '$length_unit'), 0) || ' $length_unit' as \"Logged\",\n  ROUND(convert_km(max(end_km)::numeric, '$length_unit'), 0) || ' $length_unit' as \"Odometer\"\nfrom drives where car_id = $car_id;",
+          "rawSql": "SELECT\n  ROUND(convert_km(sum(distance)::numeric, '$length_unit'), 0) || ' $length_unit' as \"Logged\",\n  ROUND(convert_km(max(end_km)::numeric, '$length_unit'), 0) || ' $length_unit' AS \"里程表\"\nfrom drives where car_id = $car_id;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -208,7 +208,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(id) AS \"Charges\" FROM charging_processes WHERE car_id=$car_id \n",
+          "rawSql": "SELECT COUNT(id) AS \"充电\" FROM charging_processes WHERE car_id=$car_id \n",
           "refId": "充电",
           "sql": {
             "columns": [
@@ -236,7 +236,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(id) AS \"Drives\" FROM drives WHERE car_id=$car_id ",
+          "rawSql": "SELECT COUNT(id) AS \"行驶\" FROM drives WHERE car_id=$car_id ",
           "refId": "行驶",
           "sql": {
             "columns": [
@@ -650,7 +650,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \r\n   relname AS \"Table\",\r\n   pg_relation_size(relid) as \"Data\",\r\n   pg_indexes_size(relid) as \"Indexes\",\r\n   pg_total_relation_size(relid) As \"Total\"\r\nFROM \r\n   pg_catalog.pg_statio_user_tables\r\nORDER BY \r\n   pg_total_relation_size(relid) DESC;",
+          "rawSql": "SELECT \r\n   relname AS \"Table\",\r\n   pg_relation_size(relid) as \"Data\",\r\n   pg_indexes_size(relid) as \"Indexes\",\r\n   pg_total_relation_size(relid) AS \"总计\"\r\nFROM \r\n   pg_catalog.pg_statio_user_tables\r\nORDER BY \r\n   pg_total_relation_size(relid) DESC;",
           "refId": "A",
           "sql": {
             "columns": [

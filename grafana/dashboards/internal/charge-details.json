@@ -562,7 +562,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (end_date - start_date)) AS \"Duration\" FROM \r\n  (SELECT min(date) as start_date FROM charges where charging_process_id=$charging_process_id) s\r\n  CROSS JOIN \r\n  (SELECT max(date) as end_date FROM charges where charging_process_id=$charging_process_id) e",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (end_date - start_date)) AS \"时长\" FROM \r\n  (SELECT min(date) as start_date FROM charges where charging_process_id=$charging_process_id) s\r\n  CROSS JOIN \r\n  (SELECT max(date) as end_date FROM charges where charging_process_id=$charging_process_id) e",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -790,7 +790,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  coalesce(cp_added, c_added) AS \"Added\"\r\nFROM (SELECT cp.charge_energy_added AS cp_added from charging_processes cp where id = $charging_process_id) cp\r\nCROSS JOIN (SELECT max(charge_energy_added) AS c_added FROM charges WHERE charging_process_id=$charging_process_id) c",
+          "rawSql": "SELECT  coalesce(cp_added, c_added) AS \"增加\"\r\nFROM (SELECT cp.charge_energy_added AS cp_added from charging_processes cp where id = $charging_process_id) cp\r\nCROSS JOIN (SELECT max(charge_energy_added) AS c_added FROM charges WHERE charging_process_id=$charging_process_id) c",
           "refId": "A",
           "sql": {
             "columns": [
@@ -818,7 +818,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  charge_energy_used AS \"Used\"\r\nFROM  charging_processes where id = $charging_process_id",
+          "rawSql": "SELECT  charge_energy_used AS \"使用\"\r\nFROM  charging_processes where id = $charging_process_id",
           "refId": "B",
           "sql": {
             "columns": [
@@ -846,7 +846,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  CASE WHEN charge_energy_used IS NULL THEN NULL ELSE LEAST(charge_energy_added / NULLIF(charge_energy_used, 0), 1.0) * 100 END AS \"Efficiency\"\r\nFROM  charging_processes where id = $charging_process_id",
+          "rawSql": "SELECT  CASE WHEN charge_energy_used IS NULL THEN NULL ELSE LEAST(charge_energy_added / NULLIF(charge_energy_used, 0), 1.0) * 100 END AS \"效率\"\r\nFROM  charging_processes where id = $charging_process_id",
           "refId": "C",
           "sql": {
             "columns": [
@@ -1092,7 +1092,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT start_battery_level AS \"Start\" FROM  charging_processes WHERE id=$charging_process_id",
+          "rawSql": "SELECT start_battery_level AS \"开始\" FROM  charging_processes WHERE id=$charging_process_id",
           "refId": "Start",
           "sql": {
             "columns": [
@@ -1120,7 +1120,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT end_battery_level - start_battery_level AS \"Added\" FROM  charging_processes WHERE id=$charging_process_id",
+          "rawSql": "SELECT end_battery_level - start_battery_level AS \"增加\" FROM  charging_processes WHERE id=$charging_process_id",
           "refId": "Added",
           "sql": {
             "columns": [
@@ -1148,7 +1148,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT end_battery_level AS \"End\" FROM  charging_processes WHERE id=$charging_process_id\r\n",
+          "rawSql": "SELECT end_battery_level AS \"结束\" FROM  charging_processes WHERE id=$charging_process_id\r\n",
           "refId": "End",
           "sql": {
             "columns": [
@@ -1232,7 +1232,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval),\r\navg(\r\n    case when charger_phases >= 1 then\r\n    cast(nullif(${determine_phases:sqlstring}, '') as numeric) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) as \"Power\" \r\nFROM charges WHERE charging_process_id = $charging_process_id\r\nGROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval),\r\navg(\r\n    case when charger_phases >= 1 then\r\n    cast(nullif(${determine_phases:sqlstring}, '') as numeric) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率\" \r\nFROM charges WHERE charging_process_id = $charging_process_id\r\nGROUP BY 1 ORDER BY 1",
           "refId": "Current",
           "sql": {
             "columns": [
@@ -1717,7 +1717,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  battery_level as \"SOC [%]\",\n  charger_power as \"Power [kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nORDER BY\n  date ASC",
+          "rawSql": "SELECT\n  battery_level as \"SOC [%]\",\n  charger_power AS \"功率 [kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nORDER BY\n  date ASC",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1745,7 +1745,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  battery_level as \"SOC [%]\",\n  avg(charger_power) as \"Power [kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nGROUP BY\n  battery_level, fast_charger_present\nORDER BY\n  battery_level ASC  ",
+          "rawSql": "SELECT\n  battery_level as \"SOC [%]\",\n  avg(charger_power) AS \"功率 [kW]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND charger_power > 0\nGROUP BY\n  battery_level, fast_charger_present\nORDER BY\n  battery_level ASC  ",
           "refId": "B",
           "sql": {
             "columns": [
@@ -1773,7 +1773,10 @@
   "preload": false,
   "refresh": "",
   "schemaVersion": 41,
-  "tags": ["内部", "充电"],
+  "tags": [
+    "内部",
+    "充电"
+  ],
   "templating": {
     "list": [
       {

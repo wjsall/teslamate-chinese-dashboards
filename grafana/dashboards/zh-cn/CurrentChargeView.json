@@ -352,7 +352,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT battery_level * $BatteryCapacity / 100 as \"kWh\", $BatteryCapacity AS Total FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
+          "rawSql": "SELECT battery_level * $BatteryCapacity / 100 AS \"千瓦时\", $BatteryCapacity AS Total FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -499,7 +499,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(charge_energy_added) as \"Added\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(charge_energy_added) AS \"增加\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ",
           "refId": "B",
           "select": [
             [
@@ -767,7 +767,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__time(date), battery_level as \"SOC [%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) as \"Power [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"Battery heater\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
+          "rawSql": "SELECT $__time(date), battery_level as \"SOC [%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率 [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"Battery heater\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
           "refId": "Power",
           "resultFormat": "time_series",
           "select": [
@@ -907,7 +907,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT battery_level - (SELECT battery_level as \"Added\" FROM charges where charging_process_id=$charging_processes\tORDER BY DATE ASC \tLIMIT 1) as \"energy_added\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
+          "rawSql": "SELECT battery_level - (SELECT battery_level AS \"增加\" FROM charges where charging_process_id=$charging_processes\tORDER BY DATE ASC \tLIMIT 1) as \"energy_added\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
           "refId": "A",
           "select": [
             [
@@ -1005,7 +1005,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "WITH start_process AS ( SELECT date FROM charges \twhere charging_process_id=$charging_processes \tORDER BY DATE ASC \tLIMIT 1 ) SELECT EXTRACT(EPOCH FROM (charges.date - start_process.date)) AS \"Elapsed\" FROM charges, start_process WHERE charging_process_id = $charging_processes AND $__timeFilter(charges.date) order by charges.date desc LIMIT 1",
+          "rawSql": "WITH start_process AS ( SELECT date FROM charges \twhere charging_process_id=$charging_processes \tORDER BY DATE ASC \tLIMIT 1 ) SELECT EXTRACT(EPOCH FROM (charges.date - start_process.date)) AS \"已用时间\" FROM charges, start_process WHERE charging_process_id = $charging_processes AND $__timeFilter(charges.date) order by charges.date desc LIMIT 1",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -1313,7 +1313,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "select $__time(date), convert_km(odometer::numeric, '$length_unit') as \"Odometer\" from positions where car_id = $car_id order by date desc limit 1;",
+          "rawSql": "select $__time(date), convert_km(odometer::numeric, '$length_unit') AS \"里程表\" from positions where car_id = $car_id order by date desc limit 1;",
           "refId": "odometer",
           "resultFormat": "time_series",
           "select": [
@@ -1626,7 +1626,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_voltage > 2 then charger_actual_current else ((2.85 + (usable_battery_level * 0.013)) * 96) * charger_power / 100 end) as \"Current\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_voltage > 2 then charger_actual_current else ((2.85 + (usable_battery_level * 0.013)) * 96) * charger_power / 100 end) AS \"当前\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Current",
           "select": [
             [
@@ -1792,7 +1792,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) as \"Power\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Current",
           "select": [
             [
