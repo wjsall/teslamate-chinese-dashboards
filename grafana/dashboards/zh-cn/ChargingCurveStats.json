@@ -872,7 +872,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH power_summary AS (\n    SELECT ROUND(MAX(charges.charger_power) / 5, 0) * 5 AS \"功率\"\n    FROM charging_processes\n    LEFT JOIN charges ON charging_processes.id = charges.charging_process_id\n    WHERE $__timeFilter(date) AND charging_processes.car_id = $car_id AND charging_processes.charge_energy_added > 0.01 AND charges.fast_charger_present\n    GROUP BY charging_processes.id\n)\nSELECT power_summary.power AS \"Power [kW]\", COUNT(power_summary.power) AS n\nFROM power_summary\nWHERE power_summary.power >= $filter_power_from AND power_summary.power <= $filter_power_to\nGROUP BY 1\nORDER BY 1 DESC\n",
+          "rawSql": "WITH power_summary AS (\n    SELECT ROUND(MAX(charges.charger_power) / 5, 0) * 5 AS power\n    FROM charging_processes\n    LEFT JOIN charges ON charging_processes.id = charges.charging_process_id\n    WHERE $__timeFilter(date) AND charging_processes.car_id = $car_id AND charging_processes.charge_energy_added > 0.01 AND charges.fast_charger_present\n    GROUP BY charging_processes.id\n)\nSELECT power_summary.power AS \"Power [kW]\", COUNT(power_summary.power) AS n\nFROM power_summary\nWHERE power_summary.power >= $filter_power_from AND power_summary.power <= $filter_power_to\nGROUP BY 1\nORDER BY 1 DESC\n",
           "refId": "A",
           "select": [
             [
