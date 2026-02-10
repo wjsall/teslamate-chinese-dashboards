@@ -174,7 +174,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  \n  CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END as \"Usable (new)\", \n  ('$aux'::json ->> 'CurrentCapacity')::float as \"Usable (now)\",\n  ('$aux'::json ->> 'CurrentCapacity')::float - CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END as \"Difference\"",
+          "rawSql": "SELECT  \n  CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END as \"可用容量 (新)\", \n  ('$aux'::json ->> 'CurrentCapacity')::float as \"可用容量 (现在)\",\n  ('$aux'::json ->> 'CurrentCapacity')::float - CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END as \"差值\"",
           "refId": "A",
           "sql": {
             "columns": [
