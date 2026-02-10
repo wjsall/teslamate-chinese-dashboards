@@ -380,7 +380,7 @@
             "uid": "TeslaMate"
           },
           "editorMode": "code",
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
           "rawSql": "select 1 - sum(duration_min) / (EXTRACT(EPOCH  FROM (max(end_date) - min(start_date))) / 60), 1 as time from drives where car_id = $car_id;",
           "refId": "A",
