@@ -127,7 +127,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND(convert_km(sum(distance)::numeric, '$length_unit'), 0) || ' $length_unit' as \"Logged\",\n  ROUND(convert_km(max(end_km)::numeric, '$length_unit'), 0) || ' $length_unit' AS \"里程表\"\nfrom drives where car_id = $car_id;",
+          "rawSql": "SELECT\n  ROUND(convert_km(sum(distance)::numeric, '$length_unit'), 0) || ' $length_unit' as \"已记录\",\n  ROUND(convert_km(max(end_km)::numeric, '$length_unit'), 0) || ' $length_unit' AS \"里程表\"\nfrom drives where car_id = $car_id;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -317,7 +317,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(id) as \"Nº Car Updates\"\nFROM Updates \nWHERE car_id = $car_id\n",
+          "rawSql": "SELECT COUNT(id) as \"车辆更新次数\"\nFROM Updates \nWHERE car_id = $car_id\n",
           "refId": "车辆更新",
           "sql": {
             "columns": [
@@ -345,7 +345,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select split_part(version, ' ', 1) as \"Current Car Firmware\" \r\nfrom updates \r\nwhere car_id = $car_id \r\norder by start_date desc \r\nlimit 1",
+          "rawSql": "select split_part(version, ' ', 1) as \"当前固件\" \r\nfrom updates \r\nwhere car_id = $car_id \r\norder by start_date desc \r\nlimit 1",
           "refId": "固件",
           "sql": {
             "columns": [
@@ -426,7 +426,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(id) as \"Charges not closed\"\nFROM charging_processes \nWHERE car_id = $car_id AND end_date is null\n",
+          "rawSql": "SELECT COUNT(id) as \"未关闭充电\"\nFROM charging_processes \nWHERE car_id = $car_id AND end_date is null\n",
           "refId": "充电",
           "sql": {
             "columns": [
@@ -454,7 +454,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(id) AS \"Drives not closed\"\r\nFROM drives \r\nWHERE car_id = $car_id AND end_date is null",
+          "rawSql": "SELECT COUNT(id) AS \"未关闭行驶\"\r\nFROM drives \r\nWHERE car_id = $car_id AND end_date is null",
           "refId": "行驶",
           "sql": {
             "columns": [
@@ -650,7 +650,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \r\n   relname AS \"Table\",\r\n   pg_relation_size(relid) as \"Data\",\r\n   pg_indexes_size(relid) as \"Indexes\",\r\n   pg_total_relation_size(relid) AS \"总计\"\r\nFROM \r\n   pg_catalog.pg_statio_user_tables\r\nORDER BY \r\n   pg_total_relation_size(relid) DESC;",
+          "rawSql": "SELECT \r\n   relname AS \"表\",\r\n   pg_relation_size(relid) as \"数据\",\r\n   pg_indexes_size(relid) as \"索引\",\r\n   pg_total_relation_size(relid) AS \"总计\"\r\nFROM \r\n   pg_catalog.pg_statio_user_tables\r\nORDER BY \r\n   pg_total_relation_size(relid) DESC;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -754,7 +754,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT table_name AS \"Table Name\", \r\n       (xpath('/row/cnt/text()', xml_count))[1]::text::int AS \"Row Count\"\r\nFROM (\r\n    SELECT table_name, \r\n           query_to_xml(format('SELECT count(*) as cnt FROM %I.%I', table_schema, table_name), false, true, '') AS xml_count\r\n    FROM information_schema.tables\r\n    WHERE table_schema NOT IN ('pg_catalog', 'information_schema') and table_type = 'BASE TABLE'\r\n) AS t\r\nORDER BY 2 DESC;",
+          "rawSql": "SELECT table_name AS \"表名\", \r\n       (xpath('/row/cnt/text()', xml_count))[1]::text::int AS \"行数\"\r\nFROM (\r\n    SELECT table_name, \r\n           query_to_xml(format('SELECT count(*) as cnt FROM %I.%I', table_schema, table_name), false, true, '') AS xml_count\r\n    FROM information_schema.tables\r\n    WHERE table_schema NOT IN ('pg_catalog', 'information_schema') and table_type = 'BASE TABLE'\r\n) AS t\r\nORDER BY 2 DESC;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -904,7 +904,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n    relname AS \"Table\",\r\n    indexrelname AS \"Index\",\r\n    idx_scan AS \"Index Scans\",\r\n    idx_tup_read AS \"Tuples Read\",\r\n    idx_tup_fetch AS \"Tuples Fetched\",\r\n    PG_RELATION_SIZE(indexrelid) as \"Index Size\"\r\nFROM\r\n    pg_stat_all_indexes\r\nWHERE\r\n    schemaname NOT LIKE 'pg_%' AND\r\n    indexrelname IS NOT NULL\r\nORDER BY 3 DESC;",
+          "rawSql": "SELECT\r\n    relname AS \"表\",\r\n    indexrelname AS \"索引\",\r\n    idx_scan AS \"索引扫描次数\",\r\n    idx_tup_read AS \"读取元组数\",\r\n    idx_tup_fetch AS \"获取元组数\",\r\n    PG_RELATION_SIZE(indexrelid) as \"索引大小\"\r\nFROM\r\n    pg_stat_all_indexes\r\nWHERE\r\n    schemaname NOT LIKE 'pg_%' AND\r\n    indexrelname IS NOT NULL\r\nORDER BY 3 DESC;",
           "refId": "A",
           "sql": {
             "columns": [

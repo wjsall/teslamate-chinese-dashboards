@@ -475,7 +475,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tcity,\n\tcount(*) as \"# of Addresses\"\nFROM\n\taddresses\nWHERE\n\tcity IS NOT NULL and\n  id in (\n\t\tselect start_address_id from drives where car_id in ($car_id) and $__timeFilter(start_date) \n\t\tunion\n\t\tselect end_address_id from drives where car_id in ($car_id) and $__timeFilter(end_date) \n\t\tunion\n\t\tselect address_id from charging_processes where car_id in ($car_id) and ($__timeFilter(start_date) or $__timeFilter(end_date))\n\t)\nGROUP BY\n\t1\nORDER BY\n\t2 DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tcity,\n\tcount(*) as \"地址数量\"\nFROM\n\taddresses\nWHERE\n\tcity IS NOT NULL and\n  id in (\n\t\tselect start_address_id from drives where car_id in ($car_id) and $__timeFilter(start_date) \n\t\tunion\n\t\tselect end_address_id from drives where car_id in ($car_id) and $__timeFilter(end_date) \n\t\tunion\n\t\tselect address_id from charging_processes where car_id in ($car_id) and ($__timeFilter(start_date) or $__timeFilter(end_date))\n\t)\nGROUP BY\n\t1\nORDER BY\n\t2 DESC\nLIMIT 10;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -568,7 +568,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tstate,\n\tcount(*) as \"# of Addresses\"\nFROM\n\taddresses\nWHERE\n\tstate IS NOT NULL and\n  id in (\n\t\tselect start_address_id from drives where car_id in ($car_id) and $__timeFilter(start_date)\n\t\tunion\n\t\tselect end_address_id from drives where car_id in ($car_id) and $__timeFilter(end_date)\n\t\tunion\n\t\tselect address_id from charging_processes where car_id in ($car_id) and ($__timeFilter(start_date) or $__timeFilter(end_date))\n\t)\nGROUP BY\n\t1\nORDER BY\n\t2 DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tstate,\n\tcount(*) as \"地址数量\"\nFROM\n\taddresses\nWHERE\n\tstate IS NOT NULL and\n  id in (\n\t\tselect start_address_id from drives where car_id in ($car_id) and $__timeFilter(start_date)\n\t\tunion\n\t\tselect end_address_id from drives where car_id in ($car_id) and $__timeFilter(end_date)\n\t\tunion\n\t\tselect address_id from charging_processes where car_id in ($car_id) and ($__timeFilter(start_date) or $__timeFilter(end_date))\n\t)\nGROUP BY\n\t1\nORDER BY\n\t2 DESC\nLIMIT 10;",
           "refId": "A",
           "sql": {
             "columns": [

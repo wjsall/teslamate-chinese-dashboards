@@ -240,7 +240,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  c.battery_level as \"SOC [%]\",\r\n  round(avg(c.charger_power), 0) AS \"功率 [kW]\",\r\n  c.charging_process_id as \"charging_process_id\",\r\n  COALESCE(g.name, a.name) || ' ' || to_char(c.date, 'YYYY-MM-dd') as \"Charge\",\r\n  p.start_date as \"start_date\",\r\n  p.end_date as \"end_date\"\r\nFROM\r\n  charges c\r\nJOIN charging_processes p ON p.id = c.charging_process_id \r\nJOIN addresses a ON a.id = p.address_id\r\nLEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  $__timeFilter(date)\r\n AND p.car_id = $car_id\r\n AND c.fast_charger_present\r\n AND COALESCE(g.name, a.name) ILIKE '%$carrier%' \r\nGROUP BY c.battery_level, c.charging_process_id, a.name, g.name, p.start_date, p.end_date, to_char(c.date, 'YYYY-MM-dd')",
+          "rawSql": "SELECT\r\n  c.battery_level as \"电量[%]\",\r\n  round(avg(c.charger_power), 0) AS \"功率 [kW]\",\r\n  c.charging_process_id as \"充电进程ID\",\r\n  COALESCE(g.name, a.name) || ' ' || to_char(c.date, 'YYYY-MM-dd') as \"充电\",\r\n  p.start_date as \"开始日期\",\r\n  p.end_date as \"结束日期\"\r\nFROM\r\n  charges c\r\nJOIN charging_processes p ON p.id = c.charging_process_id \r\nJOIN addresses a ON a.id = p.address_id\r\nLEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  $__timeFilter(date)\r\n AND p.car_id = $car_id\r\n AND c.fast_charger_present\r\n AND COALESCE(g.name, a.name) ILIKE '%$carrier%' \r\nGROUP BY c.battery_level, c.charging_process_id, a.name, g.name, p.start_date, p.end_date, to_char(c.date, 'YYYY-MM-dd')",
           "refId": "A",
           "select": [
             [
@@ -288,7 +288,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  c.battery_level as \"B - SOC [%]\",\n  PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY charger_power) as \"B - Avg Power [kW]\"\nFROM\n  charges c\nJOIN charging_processes p ON p.id = c.charging_process_id \nJOIN addresses a ON a.id = p.address_id\nLEFT JOIN geofences g ON g.id = p.geofence_id\nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND c.fast_charger_present\n AND COALESCE(g.name, a.name) ILIKE '%$carrier%'\nGROUP BY battery_level",
+          "rawSql": "SELECT\n  c.battery_level as \"B-电量[%]\",\n  PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY charger_power) as \"B-平均功率[kW]\"\nFROM\n  charges c\nJOIN charging_processes p ON p.id = c.charging_process_id \nJOIN addresses a ON a.id = p.address_id\nLEFT JOIN geofences g ON g.id = p.geofence_id\nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\n AND c.fast_charger_present\n AND COALESCE(g.name, a.name) ILIKE '%$carrier%'\nGROUP BY battery_level",
           "refId": "B",
           "select": [
             [
@@ -375,7 +375,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH data AS (\r\nSELECT\r\n  COALESCE(g.name, a.name) AS name\r\nFROM charging_processes p\r\n    LEFT JOIN charges c ON c.charging_process_id = p.id\r\n    LEFT JOIN addresses a ON a.id = p.address_id\r\n    LEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  p.car_id = $car_id \r\n  AND $__timeFilter(start_date)\r\n  AND c.fast_charger_present\r\n  AND COALESCE(g.name, a.name) ILIKE '%$carrier%' \r\nGROUP BY p.id, g.name, a.name\r\n)\r\nSELECT name AS \"Charger Carrier\" FROM data GROUP BY name\r\n\r\n\r\n",
+          "rawSql": "WITH data AS (\r\nSELECT\r\n  COALESCE(g.name, a.name) AS name\r\nFROM charging_processes p\r\n    LEFT JOIN charges c ON c.charging_process_id = p.id\r\n    LEFT JOIN addresses a ON a.id = p.address_id\r\n    LEFT JOIN geofences g ON g.id = p.geofence_id\r\nWHERE\r\n  p.car_id = $car_id \r\n  AND $__timeFilter(start_date)\r\n  AND c.fast_charger_present\r\n  AND COALESCE(g.name, a.name) ILIKE '%$carrier%' \r\nGROUP BY p.id, g.name, a.name\r\n)\r\nSELECT name AS \"充电运营商\" FROM data GROUP BY name\r\n\r\n\r\n",
           "refId": "A",
           "select": [
             [
@@ -946,7 +946,7 @@
               "group": [],
               "metricColumn": "none",
               "rawQuery": false,
-              "rawSql": "SELECT\n  start_date AS \"time\",\n  start_km\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
+              "rawSql": "SELECT\n  start_date AS \"时间\",\n  start_km\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
               "refId": "A",
               "select": [
                 [

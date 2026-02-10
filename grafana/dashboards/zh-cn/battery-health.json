@@ -317,7 +317,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  \n  CASE WHEN $custom_max_range > 0 THEN $custom_max_range ELSE ('$aux'::json ->> 'MaxRange')::float END as \"maxrange_$length_unit\",\n  ('$aux'::json ->> 'CurrentRange')::float  as \"currentrange_$length_unit\",\n  CASE WHEN $custom_max_range > 0 THEN $custom_max_range ELSE ('$aux'::json ->> 'MaxRange')::float END - ('$aux'::json ->> 'CurrentRange')::float as \"range_lost_$length_unit\"",
+          "rawSql": "SELECT  \n  CASE WHEN $custom_max_range > 0 THEN $custom_max_range ELSE ('$aux'::json ->> 'MaxRange')::float END as \"最大续航\",\n  ('$aux'::json ->> 'CurrentRange')::float  as \"当前续航\",\n  CASE WHEN $custom_max_range > 0 THEN $custom_max_range ELSE ('$aux'::json ->> 'MaxRange')::float END - ('$aux'::json ->> 'CurrentRange')::float as \"续航损失\"",
           "refId": "A",
           "sql": {
             "columns": [
@@ -454,7 +454,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select ROUND(convert_km(sum(distance)::numeric, '$length_unit'),0)|| ' $length_unit' as \"Logged\"\r\nfrom drives \r\nwhere car_id = $car_id;\r\n",
+          "rawSql": "select ROUND(convert_km(sum(distance)::numeric, '$length_unit'),0)|| ' $length_unit' as \"已记录\"\r\nfrom drives \r\nwhere car_id = $car_id;\r\n",
           "refId": "已记录",
           "sql": {
             "columns": [
@@ -538,7 +538,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (\r\n (SELECT ROUND(convert_km((max(end_km) - min(start_km))::numeric, '$length_unit'),0) FROM drives WHERE car_id = $car_id) - \r\n (SELECT ROUND(convert_km(sum(distance)::numeric, '$length_unit'),0) from drives where car_id = $car_id) || ' $length_unit'\r\n)\r\nAS \"Data lost (not logged)\"",
+          "rawSql": "SELECT (\r\n (SELECT ROUND(convert_km((max(end_km) - min(start_km))::numeric, '$length_unit'),0) FROM drives WHERE car_id = $car_id) - \r\n (SELECT ROUND(convert_km(sum(distance)::numeric, '$length_unit'),0) from drives where car_id = $car_id) || ' $length_unit'\r\n)\r\nAS \"数据丢失(未记录)\"",
           "refId": "数据丢失",
           "sql": {
             "columns": [
@@ -856,7 +856,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT  \n  LEAST(100, (100 - GREATEST(0, 100.0 - (('$aux'::json ->> 'CurrentCapacity')::float * 100.0 / CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END)))) as \"Battery Health (%)\"\n  \n",
+          "rawSql": "SELECT  \n  LEAST(100, (100 - GREATEST(0, 100.0 - (('$aux'::json ->> 'CurrentCapacity')::float * 100.0 / CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END)))) as \"电池健康度(%)\"\n  \n",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1020,7 +1020,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n\tCOUNT(*) AS \"# of Charges\"\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n\t",
+          "rawSql": "SELECT\r\n\tCOUNT(*) AS \"充电次数\"\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n\t",
           "refId": "充电次数",
           "sql": {
             "columns": [
@@ -1048,7 +1048,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tfloor(sum(charge_energy_added) / CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END) AS \"# of Charging cycles\"\nFROM charging_processes WHERE car_id = $car_id AND charge_energy_added > 0.01",
+          "rawSql": "SELECT\n\tfloor(sum(charge_energy_added) / CASE WHEN $custom_kwh_new > 0 THEN $custom_kwh_new ELSE ('$aux'::json ->> 'MaxCapacity')::float END) AS \"充电周期数\"\nFROM charging_processes WHERE car_id = $car_id AND charge_energy_added > 0.01",
           "refId": "充电循环次数",
           "sql": {
             "columns": [

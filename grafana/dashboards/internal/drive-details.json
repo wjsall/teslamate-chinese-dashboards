@@ -1862,7 +1862,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select convert_km(distance::numeric, '$length_unit') as \"$length_unit\" from drives where id = $drive_id;",
+          "rawSql": "select convert_km(distance::numeric, '$length_unit') as \"单位\" from drives where id = $drive_id;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -2271,7 +2271,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select\n\t(start_${preferred_range}_range_km - end_${preferred_range}_range_km) * car.efficiency * 1000 /\n\t  convert_km(distance::numeric, '$length_unit') as \"$length_unit\"\nfrom drives d\nJOIN cars car ON car.id = car_id\nwhere d.id = $drive_id;",
+          "rawSql": "select\n\t(start_${preferred_range}_range_km - end_${preferred_range}_range_km) * car.efficiency * 1000 /\n\t  convert_km(distance::numeric, '$length_unit') as \"单位\"\nfrom drives d\nJOIN cars car ON car.id = car_id\nwhere d.id = $drive_id;",
           "refId": "A",
           "sql": {
             "columns": [

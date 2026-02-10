@@ -171,7 +171,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select \n  sum((start_${preferred_range}_range_km - end_${preferred_range}_range_km) * cars.efficiency) / convert_km(sum(distance)::numeric, '$length_unit') * 1000 AS \"consumption_$length_unit\"\nfrom drives \ninner join cars on cars.id = car_id\nwhere \n  distance is not null and\n  start_${preferred_range}_range_km - end_${preferred_range}_range_km >= 0.1 and\n  car_id = $car_id",
+          "rawSql": "select \n  sum((start_${preferred_range}_range_km - end_${preferred_range}_range_km) * cars.efficiency) / convert_km(sum(distance)::numeric, '$length_unit') * 1000 AS \"能耗\"\nfrom drives \ninner join cars on cars.id = car_id\nwhere \n  distance is not null and\n  start_${preferred_range}_range_km - end_${preferred_range}_range_km >= 0.1 and\n  car_id = $car_id",
           "refId": "A",
           "sql": {
             "columns": [
@@ -282,7 +282,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH d1 AS (\n\tSELECT\n\t\tc.car_id,\n\t\tlag(end_${preferred_range}_range_km) OVER (ORDER BY start_date) - start_${preferred_range}_range_km AS range_loss,\n\t\tp.odometer - lag(p.odometer) OVER (ORDER BY start_date) AS distance\n\tFROM\n\t\tcharging_processes c\n\tLEFT JOIN positions p ON p.id = c.position_id \n\tWHERE\n\t  end_date IS NOT NULL AND\n\t  c.car_id = $car_id\n\tORDER BY\n\t\tstart_date\n),\nd2 AS (\nSELECT\n\tcar_id,\n\tsum(range_loss) AS range_loss,\n\tsum(distance) AS distance\nFROM\n\td1\nWHERE\n\tdistance >= 0 AND range_loss >= 0\nGROUP BY\n\tcar_id\n)\nSELECT\nrange_loss * c.efficiency / convert_km(distance::numeric, '$length_unit') * 1000 AS \"consumption_$length_unit\"\nFROM\n\td2\n\tLEFT JOIN cars c ON c.id = car_id",
+          "rawSql": "WITH d1 AS (\n\tSELECT\n\t\tc.car_id,\n\t\tlag(end_${preferred_range}_range_km) OVER (ORDER BY start_date) - start_${preferred_range}_range_km AS range_loss,\n\t\tp.odometer - lag(p.odometer) OVER (ORDER BY start_date) AS distance\n\tFROM\n\t\tcharging_processes c\n\tLEFT JOIN positions p ON p.id = c.position_id \n\tWHERE\n\t  end_date IS NOT NULL AND\n\t  c.car_id = $car_id\n\tORDER BY\n\t\tstart_date\n),\nd2 AS (\nSELECT\n\tcar_id,\n\tsum(range_loss) AS range_loss,\n\tsum(distance) AS distance\nFROM\n\td1\nWHERE\n\tdistance >= 0 AND range_loss >= 0\nGROUP BY\n\tcar_id\n)\nSELECT\nrange_loss * c.efficiency / convert_km(distance::numeric, '$length_unit') * 1000 AS \"能耗\"\nFROM\n\td2\n\tLEFT JOIN cars c ON c.id = car_id",
           "refId": "A",
           "sql": {
             "columns": [
@@ -393,7 +393,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select convert_km(sum(distance)::numeric, '$length_unit') as \"distance_$length_unit\" \nfrom drives \nwhere car_id = $car_id;",
+          "rawSql": "select convert_km(sum(distance)::numeric, '$length_unit') as \"距离\" \nfrom drives \nwhere car_id = $car_id;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -806,7 +806,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tefficiency / convert_km(1, '$length_unit') * 1000 as \"efficiency_$length_unit\"\nFROM\n\tcars\nWHERE\n\tid = $car_id;",
+          "rawSql": "SELECT\n\tefficiency / convert_km(1, '$length_unit') * 1000 as \"效率\"\nFROM\n\tcars\nWHERE\n\tid = $car_id;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -919,7 +919,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  round((charge_energy_added / NULLIF(end_ideal_range_km - start_ideal_range_km, 0))::numeric / convert_km(1, '$length_unit'), 3) * 1000 as \"efficiency_$length_unit\",\n  count(*) as count\nFROM\n  charging_processes\nWHERE \n  car_id = $car_id\n  AND duration_min > 10\n  AND end_battery_level <= 95\n  AND start_ideal_range_km IS NOT NULL\n  AND end_ideal_range_km IS NOT NULL\n  AND charge_energy_added > 0\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 3",
+          "rawSql": "SELECT\n  round((charge_energy_added / NULLIF(end_ideal_range_km - start_ideal_range_km, 0))::numeric / convert_km(1, '$length_unit'), 3) * 1000 as \"效率\",\n  count(*) as count\nFROM\n  charging_processes\nWHERE \n  car_id = $car_id\n  AND duration_min > 10\n  AND end_battery_level <= 95\n  AND start_ideal_range_km IS NOT NULL\n  AND end_ideal_range_km IS NOT NULL\n  AND charge_energy_added > 0\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 3",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1032,7 +1032,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  round((charge_energy_added / NULLIF(end_rated_range_km - start_rated_range_km, 0))::numeric / convert_km(1, '$length_unit'), 3) * 1000 as \"efficiency_$length_unit\",\n\tcount(*) as count\nFROM\n  charging_processes\nWHERE \n  car_id = $car_id\n  AND duration_min > 10\n  AND end_battery_level <= 95\n  AND start_rated_range_km IS NOT NULL\n  AND end_rated_range_km IS NOT NULL\n  AND charge_energy_added > 0\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 3",
+          "rawSql": "SELECT\n  round((charge_energy_added / NULLIF(end_rated_range_km - start_rated_range_km, 0))::numeric / convert_km(1, '$length_unit'), 3) * 1000 as \"效率\",\n\tcount(*) as count\nFROM\n  charging_processes\nWHERE \n  car_id = $car_id\n  AND duration_min > 10\n  AND end_battery_level <= 95\n  AND start_rated_range_km IS NOT NULL\n  AND end_rated_range_km IS NOT NULL\n  AND charge_energy_added > 0\nGROUP BY\n  1\nORDER BY\n  2 DESC\nLIMIT 3",
           "refId": "A",
           "sql": {
             "columns": [

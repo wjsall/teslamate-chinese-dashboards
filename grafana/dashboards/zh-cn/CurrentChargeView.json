@@ -233,7 +233,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT battery_level as \"SOC [%]\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
+          "rawSql": "SELECT battery_level as \"电量[%]\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
           "refId": "SOC",
           "resultFormat": "time_series",
           "select": [
@@ -412,7 +412,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": false,
-          "rawSql": "SELECT\n  start_date AS \"time\",\n  start_km\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
+          "rawSql": "SELECT\n  start_date AS \"时间\",\n  start_km\nFROM drives\nWHERE\n  $__timeFilter(start_date)\nORDER BY 1",
           "refId": "A",
           "select": [
             [
@@ -767,7 +767,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__time(date), battery_level as \"SOC [%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率 [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"Battery heater\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
+          "rawSql": "SELECT $__time(date), battery_level as \"电量[%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率 [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"电池加热器\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
           "refId": "Power",
           "resultFormat": "time_series",
           "select": [
@@ -873,7 +873,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": " SELECT battery_level as \"value\" FROM charges \twhere charging_process_id=$charging_processes \tORDER BY DATE ASC \tLIMIT 1",
+          "rawSql": " SELECT battery_level as \"数值\" FROM charges \twhere charging_process_id=$charging_processes \tORDER BY DATE ASC \tLIMIT 1",
           "refId": "Inital SOC",
           "resultFormat": "time_series",
           "select": [
@@ -907,7 +907,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT battery_level - (SELECT battery_level AS \"增加\" FROM charges where charging_process_id=$charging_processes\tORDER BY DATE ASC \tLIMIT 1) as \"energy_added\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
+          "rawSql": "SELECT battery_level - (SELECT battery_level AS \"增加\" FROM charges where charging_process_id=$charging_processes\tORDER BY DATE ASC \tLIMIT 1) as \"增加能量\" FROM charges c join charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) AND p.car_id = $car_id ORDER BY c.ID DESC LIMIT 1",
           "refId": "A",
           "select": [
             [
@@ -1443,7 +1443,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_km, '$length_unit')) as \"initial_range\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 asc limit 1",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_km, '$length_unit')) as \"初始续航\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 asc limit 1",
           "refId": "Initial Range",
           "resultFormat": "time_series",
           "select": [
@@ -1485,7 +1485,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_km, '$length_unit')) as \"rated_range\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 desc limit 1",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(rated_battery_range_km, '$length_unit')) as \"额定续航\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 desc limit 1",
           "refId": "Rated",
           "resultFormat": "time_series",
           "select": [
@@ -1526,7 +1526,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(est_battery_range_km, '$length_unit')) as \"estimated_range\" FROM positions WHERE $__timeFilter(date) GROUP BY 1 ORDER BY 1 desc limit 1",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_km(est_battery_range_km, '$length_unit')) as \"预估续航\" FROM positions WHERE $__timeFilter(date) GROUP BY 1 ORDER BY 1 desc limit 1",
           "refId": "Estimated",
           "resultFormat": "time_series",
           "select": [
@@ -1708,7 +1708,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_voltage > 2 then charger_voltage else charger_power / GREATEST(0.1, (((2.85 + (usable_battery_level * 0.013)) * 96.0) * charger_power / 100.0)) * 1000.0 end) as \"Volt\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(case when charger_voltage > 2 then charger_voltage else charger_power / GREATEST(0.1, (((2.85 + (usable_battery_level * 0.013)) * 96.0) * charger_power / 100.0)) * 1000.0 end) as \"电压\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Voltage",
           "select": [
             [
@@ -1915,7 +1915,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(outside_temp, '$temp_unit')) as \"outside_temp\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(outside_temp, '$temp_unit')) as \"车外温度\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Outdoor",
           "select": [
             [
@@ -1946,7 +1946,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(inside_temp, '$temp_unit')) AS \"inside_temp\" FROM positions WHERE car_id = $car_id and inside_temp is not null AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT $__timeGroupAlias(date,$__interval), avg(convert_celsius(inside_temp, '$temp_unit')) AS \"车内温度\" FROM positions WHERE car_id = $car_id and inside_temp is not null AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Inside",
           "select": [
             [
@@ -1977,7 +1977,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT \t$__timeGroupAlias(date,$__interval), \tavg(convert_celsius(driver_temp_setting, '$temp_unit')) as \"ac_temp\" FROM positions WHERE driver_temp_setting IS NOT NULL AND car_id = $car_id AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
+          "rawSql": "SELECT \t$__timeGroupAlias(date,$__interval), \tavg(convert_celsius(driver_temp_setting, '$temp_unit')) as \"空调温度\" FROM positions WHERE driver_temp_setting IS NOT NULL AND car_id = $car_id AND $__timeFilter(date) GROUP BY 1 ORDER BY 1 ",
           "refId": "Driver",
           "select": [
             [
