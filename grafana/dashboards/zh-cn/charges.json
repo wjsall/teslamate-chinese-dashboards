@@ -604,10 +604,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "按地理围栏、位置、类型、费用和时长浏览充电记录 以便有准确的总数以便准确统计充入的千瓦时及其对应tive costs",
       "fieldConfig": {
         "defaults": {
@@ -1422,10 +1419,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -1546,10 +1540,7 @@
       "type": "text"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -1660,10 +1651,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -1702,10 +1690,7 @@
     "list": [
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
         "includeAll": false,
         "label": "车辆",
@@ -1718,10 +1703,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_length from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1734,10 +1716,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_temperature from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1750,10 +1729,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select preferred_range from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1766,10 +1742,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select base_url from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1783,10 +1756,7 @@
       {
         "allValue": "-1",
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "SELECT name AS __text, id AS __value FROM geofences ORDER BY name COLLATE \"C\" ASC;",
         "includeAll": true,
         "label": "收藏点",

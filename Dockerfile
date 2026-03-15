@@ -11,13 +11,6 @@ ENV GF_DEFAULT_LANGUAGE=zh-Hans
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans
 ENV GF_USERS_DEFAULT_LOCALE=zh-Hans
 
-# 在官方 datasource.yml 中追加 uid: TeslaMate
-# 确保数据源 UID 固定为 TeslaMate，与仪表板引用一致
-USER root
-RUN sed -i '/^  - name: TeslaMate$/a\    uid: TeslaMate' \
-    /etc/grafana/provisioning/datasources/datasource.yml
-USER grafana
-
 # 复制中文 Dashboard 到 TeslaMate 标准位置
 COPY grafana/dashboards/zh-cn/*.json /dashboards/
 

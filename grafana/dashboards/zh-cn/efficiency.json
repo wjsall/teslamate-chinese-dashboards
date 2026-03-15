@@ -89,10 +89,7 @@
       }
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "（驾驶中续航损失 × 能效）/ 行驶距离",
       "fieldConfig": {
         "defaults": {
@@ -204,10 +201,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -236,10 +230,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "（充电间续航损失 × 能效）/ 行驶距离 在充电之间",
       "fieldConfig": {
         "defaults": {
@@ -375,10 +366,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -407,10 +395,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "所有记录行程的距离",
       "fieldConfig": {
         "defaults": {
@@ -510,10 +495,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -542,10 +524,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -861,10 +840,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -893,10 +869,7 @@
       "type": "table"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -995,10 +968,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -1027,10 +997,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1144,10 +1111,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -1176,10 +1140,7 @@
       "type": "table"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1293,10 +1254,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
@@ -1335,10 +1293,7 @@
     "list": [
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
         "hide": 2,
         "includeAll": true,
@@ -1352,10 +1307,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_temperature from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1368,10 +1320,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_length from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1384,10 +1333,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select preferred_range from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -1438,10 +1384,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select base_url from settings limit 1;",
         "hide": 2,
         "includeAll": false,

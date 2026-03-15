@@ -103,10 +103,7 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -124,10 +121,7 @@
       }
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -447,10 +441,7 @@
       "repeatDirection": "h",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "format": "table",
           "group": [],
           "metricColumn": "none",
@@ -606,10 +597,7 @@
       "type": "table"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "description": "使用本仪表盘可以分析每日/周/月/年的里程和行程次数。",
       "fieldConfig": {
         "defaults": {
@@ -811,10 +799,7 @@
       "repeatDirection": "h",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "format": "table",
           "group": [],
           "metricColumn": "none",
@@ -871,10 +856,7 @@
     "list": [
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "SELECT name AS __text, id AS __value FROM cars ORDER BY display_priority ASC, name ASC;",
         "hide": 2,
         "includeAll": true,
@@ -894,10 +876,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_length from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -917,10 +896,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select base_url from settings limit 1;",
         "hide": 2,
         "includeAll": false,

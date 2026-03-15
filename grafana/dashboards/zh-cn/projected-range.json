@@ -14,10 +14,7 @@
         "type": "dashboard"
       },
       {
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "enable": false,
         "hide": false,
         "iconColor": "rgba(255, 96, 96, 1)",
@@ -104,10 +101,7 @@
       }
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -274,10 +268,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -302,10 +293,7 @@
           }
         },
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -334,10 +322,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -493,10 +478,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -521,10 +503,7 @@
           }
         },
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -553,10 +532,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
+      "datasource": "TeslaMate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -740,10 +716,7 @@
       "pluginVersion": "11.6.1",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -768,10 +741,7 @@
           }
         },
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
+          "datasource": "TeslaMate",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
@@ -810,10 +780,7 @@
     "list": [
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
         "hide": 2,
         "includeAll": true,
@@ -827,10 +794,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_length from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -843,10 +807,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select preferred_range from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -859,10 +820,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select unit_of_temperature from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -875,10 +833,7 @@
       },
       {
         "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
+        "datasource": "TeslaMate",
         "definition": "select base_url from settings limit 1;",
         "hide": 2,
         "includeAll": false,
