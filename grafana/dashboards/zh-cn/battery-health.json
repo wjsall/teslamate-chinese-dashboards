@@ -1310,7 +1310,7 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT * FROM ((SELECT usable_battery_level, date\r\nFROM positions\r\nWHERE car_id = $car_id AND usable_battery_level IS NOT NULL\r\nORDER BY date DESC\r\nLIMIT 1)\r\nUNION\r\n(SELECT usable_battery_level, date\r\nFROM charges c\r\nJOIN charging_processes p ON p.id = c.charging_process_id\r\nWHERE p.car_id = $car_id AND usable_battery_level IS NOT NULL\r\nORDER BY date DESC\r\nLIMIT 1)) AS last_usable_battery_level LIMIT 1",
-          "refId": "电量",
+          "refId": "SOC",
           "sql": {
             "columns": [
               {
