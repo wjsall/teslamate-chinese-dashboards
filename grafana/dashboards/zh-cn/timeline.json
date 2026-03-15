@@ -801,31 +801,31 @@
         "options": [
           {
             "selected": false,
-            "text": "🚗 驾驶中",
-            "value": "🚗 Driving"
+            "text": "🚗 驾驶",
+            "value": "🚗 驾驶"
           },
           {
             "selected": false,
-            "text": "🔋 充电中",
-            "value": "🔋 Charging"
+            "text": "🔋 充电",
+            "value": "🔋 充电"
           },
           {
             "selected": false,
             "text": "🅿️ 停放",
-            "value": "🅿️ Parking"
+            "value": "🅿️ 停放"
           },
           {
             "selected": false,
             "text": "❓ 缺失",
-            "value": "❓ Missing"
+            "value": "❓ 缺失"
           },
           {
             "selected": false,
-            "text": "💾 更新中",
-            "value": "💾 Updating"
+            "text": "💾 更新",
+            "value": "💾 更新"
           }
         ],
-        "query": "🚗 Driving,🔋 Charging,🅿️ Parking,❓ Missing,💾 Updating",
+        "query": "🚗 驾驶,🔋 充电,🅿️ 停放,❓ 缺失,💾 更新",
         "type": "custom"
       },
       {
