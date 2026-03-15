@@ -151,7 +151,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "SoC"
+              "options": "电量"
             },
             "properties": [
               {
@@ -167,7 +167,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电量差"
+              "options": "电量变化"
             },
             "properties": [
               {
@@ -211,7 +211,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "动作"
+              "options": "操作"
             },
             "properties": [
               {
@@ -231,7 +231,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "kWh"
+              "options": "千瓦时"
             },
             "properties": [
               {
@@ -259,7 +259,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "持续时间"
+              "options": "时长"
             },
             "properties": [
               {
@@ -279,7 +279,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "起点地址"
+              "options": "起始地址"
             },
             "properties": [
               {
@@ -309,7 +309,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "终点地址"
+              "options": "结束地址"
             },
             "properties": [
               {
@@ -515,7 +515,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "动作"
+              "options": "操作"
             },
             "properties": [
               {
@@ -702,25 +702,25 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "End": true,
-              "start_date_ts": false
+              "start_date_ts": false,
+              "结束": true
             },
             "indexByName": {
-              "Action": 2,
-              "Duration": 7,
-              "End": 1,
-              "End Address": 4,
-              "SoC": 15,
-              "SoC Diff": 16,
-              "Start": 0,
-              "Start Address": 3,
+              "操作": 2,
+              "时长": 7,
+              "结束": 1,
+              "结束地址": 4,
+              "电量": 15,
+              "电量变化": 16,
+              "开始": 0,
+              "起始地址": 3,
               "distance_km": 8,
               "distance_mi": 9,
               "end_date_ts": 22,
               "end_path": 20,
               "end_range_km": 10,
               "end_range_mi": 11,
-              "kWh": 13,
+              "千瓦时": 13,
               "odometer_km": 5,
               "odometer_mi": 6,
               "outside_temp_avg_c": 17,
