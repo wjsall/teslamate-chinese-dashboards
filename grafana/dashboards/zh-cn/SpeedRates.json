@@ -286,7 +286,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Segment (mph)"
+                "value": "分段 (mph)"
               },
               {
                 "id": "custom.width",

@@ -1154,6 +1154,10 @@
             },
             "properties": [
               {
+                "id": "displayName",
+                "value": "占比(%)"
+              },
+              {
                 "id": "unit",
                 "value": "percent"
               },
@@ -1184,6 +1188,30 @@
               {
                 "id": "displayName",
                 "value": "行程ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Speed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "速度"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "时间"
               }
             ]
           }

@@ -247,7 +247,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Ø Range loss / h"
+                "value": "每小时续航损失"
               },
               {
                 "id": "unit",
@@ -428,7 +428,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "SoC Diff"
+                "value": "电量差"
               },
               {
                 "id": "unit",
