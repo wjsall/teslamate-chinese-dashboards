@@ -103,7 +103,10 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": "TeslaMate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,

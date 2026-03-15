@@ -77,7 +77,10 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": "TeslaMate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -134,7 +137,10 @@
       "pluginVersion": "8.5.15",
       "targets": [
         {
-          "datasource": "TeslaMate",
+          "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
           "format": "table",
           "group": [],
           "metricColumn": "none",
@@ -167,7 +173,10 @@
       "type": "stat"
     },
     {
-      "datasource": "TeslaMate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -289,7 +298,10 @@
       "pluginVersion": "8.5.15",
       "targets": [
         {
-          "datasource": "TeslaMate",
+          "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
           "format": "table",
           "group": [],
           "metricColumn": "none",
@@ -322,7 +334,10 @@
       "type": "table"
     },
     {
-      "datasource": "TeslaMate",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -391,7 +406,10 @@
       "pluginVersion": "8.5.15",
       "targets": [
         {
-          "datasource": "TeslaMate",
+          "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
           "format": "table",
           "group": [],
           "metricColumn": "none",
@@ -438,7 +456,10 @@
           "text": "Jo-El",
           "value": "1"
         },
-        "datasource": "TeslaMate",
+        "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
         "definition": "SELECT name AS __text, id AS __value FROM cars ORDER BY display_priority ASC, name ASC;",
         "hide": 0,
         "includeAll": false,
@@ -462,7 +483,10 @@
           "text": "http://192.168.2.249:4000",
           "value": "http://192.168.2.249:4000"
         },
-        "datasource": "TeslaMate",
+        "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
         "definition": "select base_url from settings limit 1;",
         "hide": 2,
         "includeAll": false,
@@ -486,7 +510,10 @@
           "text": "bar",
           "value": "bar"
         },
-        "datasource": "TeslaMate",
+        "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
         "definition": "SELECT unit_of_pressure FROM settings LIMIT 1",
         "hide": 2,
         "includeAll": false,
