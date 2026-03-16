@@ -1538,7 +1538,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "从这里您可以检查您的费用数据是否不完整（费用没有结束日期）如果是这样，您可以按照官方指南手动修复数据<a href='https://docs.teslamate.com.cn/docs/maintenance/manually_fixing_data' target='_blank'>手工修复数据</a>",
+        "content": "从这里您可以检查您的费用数据是否不完整（费用没有结束日期）如果是这样，您可以按照官方指南手动修复数据<a href='https://docs.teslamate.org/docs/maintenance/manually_fixing_data' target='_blank'>手工修复数据</a>",
         "mode": "markdown"
       },
       "pluginVersion": "11.6.1",
