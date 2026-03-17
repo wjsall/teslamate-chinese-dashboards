@@ -244,9 +244,7 @@
           "unit": "none",
           "decimals": 2
         },
-        "overrides": [
-          {"matcher": {"id": "byName", "options": "charge_cost"}, "properties": [{"id": "displayName", "value": "充电费用(元)"}]}
-        ]
+        "overrides": []
       },
       "gridPos": {"h": 9, "w": 8, "x": 16, "y": 6},
       "id": 6,
@@ -262,7 +260,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  CASE\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 23 AND 23 OR EXTRACT(HOUR FROM start_date) BETWEEN 0 AND 6 THEN '深夜谷时(23:00-07:00)'\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 7 AND 8 THEN '早高峰(07:00-09:00)'\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 9 AND 11 THEN '上午平时(09:00-12:00)'\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 12 AND 13 THEN '午间(12:00-14:00)'\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 14 AND 16 THEN '下午平时(14:00-17:00)'\n    WHEN EXTRACT(HOUR FROM start_date) BETWEEN 17 AND 19 THEN '晚高峰(17:00-20:00)'\n    ELSE '晚间(20:00-23:00)'\n  END AS time_period,\n  ROUND(COALESCE(SUM(cost), 0)::numeric, 2) AS charge_cost\nFROM charging_processes\nWHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date)\nGROUP BY 1\nORDER BY 2 DESC;",
+          "rawSql": "SELECT\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) = 23 OR EXTRACT(HOUR FROM start_date) BETWEEN 0 AND 6 THEN cost ELSE 0 END)::numeric, 2) AS \"深夜谷时(23-07点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 7 AND 8 THEN cost ELSE 0 END)::numeric, 2) AS \"早高峰(07-09点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 9 AND 11 THEN cost ELSE 0 END)::numeric, 2) AS \"上午平时(09-12点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 12 AND 13 THEN cost ELSE 0 END)::numeric, 2) AS \"午间(12-14点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 14 AND 16 THEN cost ELSE 0 END)::numeric, 2) AS \"下午平时(14-17点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 17 AND 19 THEN cost ELSE 0 END)::numeric, 2) AS \"晚高峰(17-20点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM start_date) BETWEEN 20 AND 22 THEN cost ELSE 0 END)::numeric, 2) AS \"晚间(20-23点)\"\nFROM charging_processes\nWHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date);",
           "refId": "A",
           "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}
         }
