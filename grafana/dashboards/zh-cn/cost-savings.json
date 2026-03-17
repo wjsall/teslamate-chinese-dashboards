@@ -318,16 +318,16 @@
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
       "fieldConfig": {
         "defaults": {
-          "max": "$annual_budget",
+          "max": 100,
           "min": 0,
           "color": {"mode": "thresholds"},
           "thresholds": {
-            "mode": "percentage",
-            "steps": [{"color": "green"}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]
           },
-          "unit": "none",
-          "decimals": 2,
-          "displayName": "充电费用 vs 年度预算"
+          "unit": "percent",
+          "decimals": 1,
+          "displayName": "已用预算占比"
         },
         "overrides": []
       },
@@ -342,13 +342,14 @@
         "showThresholdMarkers": true
       },
       "pluginVersion": "11.6.1",
+      "description": "今年已用充电费用占年度预算($annual_budget 元)的百分比。绿色<70%，黄色70-90%，红色>90%",
       "targets": [
         {
           "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost), 0)::numeric, 2) AS ytd_cost\nFROM charging_processes\nWHERE car_id = $car_id\n  AND cost IS NOT NULL\n  AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM NOW());",
+          "rawSql": "SELECT\n  CASE WHEN $annual_budget::numeric > 0 THEN\n    ROUND((COALESCE(SUM(cost), 0) / $annual_budget::numeric * 100)::numeric, 1)\n  ELSE 0 END AS budget_pct\nFROM charging_processes\nWHERE car_id = $car_id\n  AND cost IS NOT NULL\n  AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM NOW());",
           "refId": "A",
           "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}
         }
