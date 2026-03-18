@@ -37,6 +37,9 @@
 **动能回收分析** — 各固件版本回收率对比、每日/每周回收能量、温度影响
 ![动能回收分析](screenshots/regen-braking.png)
 
+**多车对比** — 名下所有车辆里程/能耗/费用/电池健康横向对比，自动适配车辆数量
+![多车对比](screenshots/vehicle-comparison.png)
+
 ---
 
 ### 核心仪表盘
