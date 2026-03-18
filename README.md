@@ -308,8 +308,23 @@ volumes:
       - teslamate-grafana-data:/var/lib/grafana
 ```
 
-然后重启：
+然后按以下步骤切换：
+
+> ⚠️ **重要：切换前必须清除旧数据卷**
+>
+> 原版 Grafana 首次启动时已将英文 Dashboard 写入数据卷，直接换镜像**不会自动覆盖**，界面仍会显示英文。
+> 必须先删除旧数据卷，让汉化版镜像重新初始化。
+>
+> **车辆行驶数据不受影响**（存储在独立的 `teslamate-db` 数据卷中）。
+
 ```bash
+# 1. 停止 Grafana 容器
+docker compose stop grafana
+
+# 2. 删除旧 Grafana 数据卷（清除英文 Dashboard 缓存）
+docker volume rm teslamate_teslamate-grafana-data
+
+# 3. 拉取汉化版镜像并启动
 docker compose pull grafana
 docker compose up -d grafana
 ```
@@ -349,6 +364,13 @@ docker compose restart grafana
 docker compose pull grafana
 docker compose up -d grafana
 ```
+
+> ⚠️ **如果更新后 Dashboard 仍显示旧版本**，说明 Grafana 数据卷有缓存残留，执行以下命令重置（车辆数据不受影响）：
+> ```bash
+> docker compose stop grafana
+> docker volume rm teslamate_teslamate-grafana-data
+> docker compose up -d grafana
+> ```
 
 ### 使用挂载方式
 ```bash
