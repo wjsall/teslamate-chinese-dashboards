@@ -750,7 +750,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "select \n  sum((start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km) * cars.efficiency) / sum(distance) * 1000 * \n    CASE WHEN '$length_unit' = 'km' THEN 1\n         WHEN '$length_unit' = 'mi' THEN 1.60934\n    END AS \"能耗\"\nfrom drives \ninner join cars on cars.id = car_id\nwhere $__timeFilter(end_date) \n  and distance is not null and\n  start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km >= 0.1 and\n  car_id = $car_id",
+          "rawSql": "select \n  sum((start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km) * cars.efficiency) / NULLIF(sum(distance), 0) * 1000 * \n    CASE WHEN '$length_unit' = 'km' THEN 1\n         WHEN '$length_unit' = 'mi' THEN 1.60934\n    END AS \"能耗\"\nfrom drives \ninner join cars on cars.id = car_id\nwhere $__timeFilter(end_date) \n  and distance is not null and\n  start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km >= 0.1 and\n  car_id = $car_id",
           "refId": "A",
           "select": [
             [
