@@ -297,7 +297,7 @@
         "defaults": {
           "color": {"mode": "thresholds"},
           "custom": {
-            "align": "auto",
+            "align": "center",
             "cellOptions": {"type": "auto"},
             "inspect": false
           },
@@ -336,7 +336,7 @@
         "defaults": {
           "color": {"mode": "thresholds"},
           "custom": {
-            "align": "auto",
+            "align": "center",
             "cellOptions": {"type": "auto"},
             "inspect": false
           },
