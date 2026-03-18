@@ -41,7 +41,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 1},
+      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 1},
       "id": 2,
       "description": "所有车辆核心指标一览。通过右上角时间选择器可调整统计范围，默认显示近一年数据。",
       "options": {
@@ -66,7 +66,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 11},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 8},
       "id": 3,
       "title": "里程 & 能耗",
       "type": "row"
@@ -95,7 +95,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
       "id": 4,
       "options": {
         "barRadius": 0.05,
@@ -148,7 +148,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
       "id": 5,
       "description": "能耗越低越省电。受驾驶风格、路况、温度影响，建议同时段对比更有参考价值。",
       "options": {
@@ -180,7 +180,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 20},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
       "id": 6,
       "title": "充电分析",
       "type": "row"
@@ -209,7 +209,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
       "id": 7,
       "description": "仅统计有费用记录的充电次数，未填写费用的充电不计入。",
       "options": {
@@ -263,7 +263,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
       "id": 8,
       "description": "直流快充(>22kW)次数占总充电次数的比例。建议控制在30%以下，过高会加速电池老化。",
       "options": {
@@ -295,7 +295,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
       "id": 9,
       "title": "行程分析",
       "type": "row"
@@ -324,7 +324,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
       "id": 10,
       "options": {
         "barRadius": 0.05,
@@ -377,7 +377,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 30},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
       "id": 11,
       "description": "每公里实际花费的电费，综合反映能耗效率与充电成本。数值越低越经济。",
       "options": {
@@ -402,6 +402,76 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT\n  COALESCE(c.name, CONCAT('VIN ', RIGHT(c.vin, 6))) AS \"车辆\",\n  ROUND((SUM(cp.cost) / NULLIF(SUM(d.distance), 0))::numeric, 4) AS \"每公里电费(元/km)\"\nFROM cars c\nLEFT JOIN drives d ON d.car_id = c.id AND d.end_date IS NOT NULL AND $__timeFilter(d.start_date)\nLEFT JOIN charging_processes cp ON cp.car_id = c.id AND cp.cost IS NOT NULL AND $__timeFilter(cp.start_date)\nGROUP BY c.id, c.name, c.vin\nHAVING SUM(d.distance) > 0\nORDER BY \"每公里电费(元/km)\" ASC NULLS LAST;",
+          "refId": "A",
+          "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 35},
+      "id": 12,
+      "title": "电池健康对比",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineWidth": 1,
+            "scaleDistribution": {"type": "linear"},
+            "thresholdsStyle": {"mode": "line+area"}
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 85},
+              {"color": "green", "value": 90}
+            ]
+          },
+          "unit": "none",
+          "decimals": 1,
+          "min": 70,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
+      "id": 13,
+      "description": "与官方电池健康度面板算法一致：取最近100次充电的平均容量 / 历史最大容量 × 100%。红色<85%、橙色85-90%、绿色>90%。",
+      "options": {
+        "barRadius": 0.05,
+        "barWidth": 0.6,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {"mode": "single", "sort": "none"},
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 200
+      },
+      "title": "各车电池健康度(%)",
+      "type": "barchart",
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH cap AS (\n  SELECT\n    cp.car_id,\n    c.rated_battery_range_km * (cars.efficiency * 100) / c.usable_battery_level AS capacity,\n    ROW_NUMBER() OVER (PARTITION BY cp.car_id ORDER BY cp.end_date DESC, c.date DESC) AS rn\n  FROM charging_processes cp\n  JOIN charges c ON c.charging_process_id = cp.id\n  JOIN cars ON cars.id = cp.car_id\n  WHERE cp.end_date IS NOT NULL\n    AND cp.charge_energy_added >= cars.efficiency * 100\n    AND c.usable_battery_level > 0\n)\nSELECT\n  COALESCE(cars.name, CONCAT('VIN ', RIGHT(cars.vin, 6))) AS \"车辆\",\n  ROUND(\n    LEAST(100,\n      AVG(CASE WHEN cap.rn <= 100 THEN cap.capacity END) /\n      NULLIF(MAX(cap.capacity), 0) * 100\n    )::numeric, 1\n  ) AS \"电池健康度(%)\"\nFROM cars\nLEFT JOIN cap ON cap.car_id = cars.id\nGROUP BY cars.id, cars.name, cars.vin\nHAVING MAX(cap.capacity) IS NOT NULL\nORDER BY \"电池健康度(%)\" DESC NULLS LAST;",
           "refId": "A",
           "sql": {"columns": [{"parameters": [], "type": "function"}], "groupBy": [{"property": {"type": "string"}, "type": "groupBy"}], "limit": 50}
         }
