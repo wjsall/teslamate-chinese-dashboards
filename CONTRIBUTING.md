@@ -98,7 +98,7 @@ docker run -d \
   -p 3000:3000 \
   -v $(pwd)/grafana/dashboards/zh-cn:/etc/grafana/provisioning/dashboards/zh:ro \
   -e GF_DEFAULT_LANGUAGE=zh-Hans \
-  grafana/grafana:latest
+  ghcr.io/wjsall/teslamate-chinese-dashboards:latest
 
 # 2. 访问 http://localhost:3000
 # 3. 检查修改后的 Dashboard
