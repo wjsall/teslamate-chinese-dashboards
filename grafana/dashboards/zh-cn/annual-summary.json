@@ -992,7 +992,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  COALESCE(a.display_name, CONCAT(d.car_id, ' trip')) AS address,\n  COUNT(*) AS visit_count,\n  ROUND(SUM(d.distance)::numeric, 0) AS total_km\nFROM drives d\nLEFT JOIN addresses a ON d.end_address_id = a.id\nWHERE d.car_id = $car_id\n  AND EXTRACT(YEAR FROM d.start_date) = $year::int\n  AND a.display_name IS NOT NULL\nGROUP BY 1\nORDER BY visit_count DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n  COALESCE(g.name, a.display_name, CONCAT(d.car_id, ' trip')) AS address,\n  COUNT(*) AS visit_count,\n  ROUND(SUM(d.distance)::numeric, 0) AS total_km\nFROM drives d\nLEFT JOIN addresses a ON d.end_address_id = a.id\nLEFT JOIN geofences g ON d.end_geofence_id = g.id\nWHERE d.car_id = $car_id\n  AND EXTRACT(YEAR FROM d.start_date) = $year::int\n  AND (g.name IS NOT NULL OR a.display_name IS NOT NULL)\nGROUP BY 1\nORDER BY visit_count DESC\nLIMIT 10;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1132,7 +1132,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  COALESCE(a.display_name, '未知地点') AS address,\n  COUNT(*) AS charge_count,\n  ROUND(SUM(cp.charge_energy_added)::numeric, 1) AS total_kwh\nFROM charging_processes cp\nLEFT JOIN addresses a ON cp.address_id = a.id\nWHERE cp.car_id = $car_id\n  AND EXTRACT(YEAR FROM cp.start_date) = $year::int\n  AND a.display_name IS NOT NULL\nGROUP BY 1\nORDER BY charge_count DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n  COALESCE(g.name, a.display_name, '未知地点') AS address,\n  COUNT(*) AS charge_count,\n  ROUND(SUM(cp.charge_energy_added)::numeric, 1) AS total_kwh\nFROM charging_processes cp\nLEFT JOIN addresses a ON cp.address_id = a.id\nLEFT JOIN geofences g ON cp.geofence_id = g.id\nWHERE cp.car_id = $car_id\n  AND EXTRACT(YEAR FROM cp.start_date) = $year::int\n  AND (g.name IS NOT NULL OR a.display_name IS NOT NULL)\nGROUP BY 1\nORDER BY charge_count DESC\nLIMIT 10;",
           "refId": "A",
           "sql": {
             "columns": [
