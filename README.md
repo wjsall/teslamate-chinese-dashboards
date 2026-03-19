@@ -81,7 +81,7 @@
 | 已汉化 | 258个 (100%) |
 | 汉化完成度 | 100% |
 | 质量等级 | A+ |
-| 最后更新 | 2026-03-17 |
+| 最后更新 | 2026-03-19 |
 
 **所有 Dashboard 均已完成简体中文汉化，开箱即用！** 🎉
 
@@ -166,7 +166,7 @@
 
 ### 方法一：使用预构建镜像（推荐 ⭐）
 
-无需克隆项目，直接使用 GitHub Container Registry 镜像：
+无需克隆项目，直接使用预构建镜像：
 
 ```yaml
 services:
@@ -184,6 +184,49 @@ services:
 - ✅ 完全免费，无需注册
 - ✅ 自动同步最新汉化
 - ✅ 开箱即用
+
+#### 🇨🇳 中国大陆用户：镜像拉取失败解决方案
+
+`ghcr.io`（GitHub Container Registry）在中国大陆访问不稳定，常见报错为 `connection refused`、`timeout` 或 `401`。有以下几种解决方案：
+
+**方案 A：配置 Docker 镜像代理（推荐）**
+
+在 `/etc/docker/daemon.json` 中添加代理地址（选择一个可用的）：
+
+```json
+{
+  "registry-mirrors": [
+    "https://dockerproxy.cn",
+    "https://docker.1ms.run",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+```
+
+然后重启 Docker：
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart docker
+```
+
+**方案 B：本地构建镜像（无需网络代理）**
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/wjsall/teslamate-chinese-dashboards.git
+cd teslamate-chinese-dashboards
+
+# 2. 在本地构建镜像（FROM teslamate/grafana:latest 可通过镜像代理加速）
+docker build -t teslamate-grafana-zh .
+
+# 3. 修改 docker-compose.yml 的 grafana.image 为 teslamate-grafana-zh
+# 4. 启动
+docker compose up -d
+```
+
+**方案 C：使用 Docker Hub 镜像（即将支持）**
+
+我们计划同步推送到 Docker Hub 以提升中国可用性，敬请期待。
 
 **验证安装:**
 ```bash
@@ -464,8 +507,8 @@ docker compose restart grafana
 ## 📦 版本信息
 
 ### 当前版本
-- **版本号**: v1.3.0
-- **发布日期**: 2026-03-17
+- **版本号**: v1.3.2
+- **发布日期**: 2026-03-19
 - **Dashboard 数量**: 38个（含7个原创分析仪表盘 + 3个内部详情页）
 - **汉化完成度**: 100%
 
@@ -477,6 +520,16 @@ docker compose restart grafana
 - ✅ Docker Compose 2.0+
 
 ### 更新日志
+
+#### v1.3.2 (2026-03-19)
+- 🔧 修复 dashboards.yml 路径错误（`/etc/grafana/.../zh-cn` → `/dashboards`，`/internal` → `/dashboards_internal`）
+- 🔧 Dockerfile 新增显式覆盖 Grafana provisioning 配置（避免基础镜像版本变化引起路径失效）
+- 🔧 修复 datasource.yml 硬编码端口/SSL 模式 → 改用 `${DATABASE_PORT}` / `${DATABASE_SSL_MODE}` 环境变量
+- 🔧 修复 statistics.json `high_precision` 变量 SQL 注入错误（`column "no" does not exist`）
+- 🔧 修复 ContinuousTrips.json 长途行程开始/结束时间列名不匹配（英文显示问题）
+- 🔧 修复 ChargingCurveStats.json / DCChargingCurvesByCarrier.json `GROUP BY` 别名引用错误
+- 🔧 修复 drives.json 行程列表时间点击无法跳转到行程详情（#2）
+- 📝 新增中国大陆用户镜像拉取失败解决方案（Docker 镜像代理 / 本地构建）
 
 #### v1.3.0 (2026-03-17)
 - 🆕 新增7个原创分析仪表盘

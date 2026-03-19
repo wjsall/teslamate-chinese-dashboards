@@ -12,8 +12,11 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  # 若要同步到 Docker Hub，在 repo Settings → Secrets 中添加：
+  #   DOCKERHUB_USERNAME: 你的 Docker Hub 用户名
+  #   DOCKERHUB_TOKEN: 你的 Docker Hub Access Token
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME && format('{0}/teslamate-chinese-dashboards', vars.DOCKERHUB_USERNAME) || '' }}
 
 jobs:
   build:
@@ -29,19 +32,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (ghcr.io)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ secrets.DOCKERHUB_USERNAME && format('{0}/teslamate-chinese-dashboards', secrets.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr

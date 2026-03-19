@@ -5,7 +5,7 @@ datasources:
     type: postgres
     uid: TeslaMate
     access: proxy
-    url: ${DATABASE_HOST}:5432
+    url: ${DATABASE_HOST}:${DATABASE_PORT}
     user: ${DATABASE_USER}
     basicAuth: false
     withCredentials: false
@@ -14,7 +14,7 @@ datasources:
       password: ${DATABASE_PASS}
     jsonData:
       database: ${DATABASE_NAME}
-      sslmode: disable
+      sslmode: ${DATABASE_SSL_MODE}
       postgresVersion: 1500
       maxOpenConns: 100
       maxIdleConns: 100

@@ -9,8 +9,7 @@ providers:
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/zh-cn
-      foldersFromFilesStructure: true
+      path: /dashboards
 
   - name: 'teslamate-internal'
     orgId: 1
@@ -20,5 +19,4 @@ providers:
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/internal
-      foldersFromFilesStructure: true
+      path: /dashboards_internal
