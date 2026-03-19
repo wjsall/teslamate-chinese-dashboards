@@ -224,9 +224,23 @@ docker build -t teslamate-grafana-zh .
 docker compose up -d
 ```
 
-**方案 C：使用 Docker Hub 镜像（即将支持）**
+**方案 C：使用 Docker Hub 镜像（推荐中国用户）**
 
-我们计划同步推送到 Docker Hub 以提升中国可用性，敬请期待。
+我们已同步推送到 Docker Hub，直接替换镜像地址即可：
+
+```yaml
+services:
+  grafana:
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest
+```
+
+或者手动拉取：
+
+```bash
+docker pull bswlhbhmt816/teslamate-chinese-dashboards:latest
+```
+
+Docker Hub 在中国大陆访问更稳定，如仍无法拉取可配合镜像代理使用。
 
 **验证安装:**
 ```bash
@@ -613,7 +627,8 @@ teslamate-chinese-dashboards/
 
 | 镜像地址 | 说明 |
 |----------|------|
-| `ghcr.io/wjsall/teslamate-chinese-dashboards:latest` | 最新稳定版（推荐） |
+| `ghcr.io/wjsall/teslamate-chinese-dashboards:latest` | 最新稳定版（GitHub Container Registry） |
+| `bswlhbhmt816/teslamate-chinese-dashboards:latest` | Docker Hub 镜像（中国大陆推荐） |
 | `ghcr.io/wjsall/teslamate-chinese-dashboards:sha-xxxxx` | 特定版本 |
 
 镜像构建状态：[![Build and Push to GitHub Container Registry](https://github.com/wjsall/teslamate-chinese-dashboards/actions/workflows/ghcr-build.yml/badge.svg)](https://github.com/wjsall/teslamate-chinese-dashboards/actions/workflows/ghcr-build.yml)
