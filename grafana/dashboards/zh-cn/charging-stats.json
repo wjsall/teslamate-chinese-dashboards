@@ -1360,6 +1360,18 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电量(kWh)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "交流"
             },
             "properties": [
@@ -1511,6 +1523,10 @@
               {
                 "id": "unit",
                 "value": "percent"
+              },
+              {
+                "id": "displayName",
+                "value": "占比(%)"
               }
             ]
           },
@@ -1523,6 +1539,10 @@
               {
                 "id": "unit",
                 "value": "none"
+              },
+              {
+                "id": "displayName",
+                "value": "充电总量(kWh)"
               }
             ]
           },
@@ -1535,6 +1555,30 @@
               {
                 "id": "displayName",
                 "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "loc_nm"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "位置"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charges"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电次数"
               }
             ]
           }
@@ -1684,6 +1728,18 @@
           "unit": "dtdurations"
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "时长"
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
