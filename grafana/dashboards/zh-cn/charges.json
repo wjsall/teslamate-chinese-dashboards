@@ -105,7 +105,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -176,7 +176,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -269,7 +269,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "充电使用能量"
+              "options": "charge_energy_used"
             },
             "properties": [
               {
@@ -298,7 +298,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -421,7 +421,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -545,7 +545,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -1103,7 +1103,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "充电使用能量"
+              "options": "charge_energy_used"
             },
             "properties": [
               {
@@ -1393,7 +1393,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           },
@@ -1512,7 +1512,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -1543,7 +1543,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           }
@@ -1655,7 +1655,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电使用能量"
+                "value": "charge_energy_used"
               }
             ]
           },

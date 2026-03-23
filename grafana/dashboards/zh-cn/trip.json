@@ -2264,7 +2264,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "充电添加能量"
+              "options": "charge_energy_added"
             },
             "properties": [
               {
@@ -2549,7 +2549,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "充电使用能量"
+              "options": "charge_energy_used"
             },
             "properties": [
               {
