@@ -365,7 +365,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^kWh$/",
+          "fields": "/^千瓦时$/",
           "values": false
         },
         "showUnfilled": true,
@@ -534,7 +534,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^Added$/",
+          "fields": "/^增加$/",
           "values": false
         },
         "showThresholdLabels": false,
@@ -1992,7 +1992,7 @@
           "calcs": [
             "mean"
           ],
-          "fields": "/^Volt$/",
+          "fields": "/^电压$/",
           "values": false
         },
         "text": {},
