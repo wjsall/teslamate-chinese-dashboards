@@ -400,8 +400,8 @@
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
         "tooltip": { "mode": "single", "sort": "none" }
       },
-      "description": "每个点代表一条充电记录推算出的满电续航。点越分散说明数据噪声越大（受温度、SOC校准影响）",
-      "title": "推算满电续航散点（原始数据）",
+      "description": "每个点代表一次充电会话的最高推算满电续航，点越分散说明数据噪声越大（受温度、SOC校准影响）",
+      "title": "推算满电续航散点（每次充电取最高值）",
       "type": "timeseries",
       "targets": [
         {
@@ -409,7 +409,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  c.date AS time,\n  ROUND(\n    (${preferred_range}_battery_range_km::float / NULLIF(c.usable_battery_level, 0) * 100\n  )::numeric, 0) AS \"推算满电续航\"\nFROM charges c\nJOIN charging_processes cp ON cp.id = c.charging_process_id\nWHERE cp.car_id = $car_id\n  AND c.usable_battery_level > 0\n  AND c.${preferred_range}_battery_range_km IS NOT NULL\nORDER BY c.date;",
+          "rawSql": "SELECT\n  MAX(c.date) AS time,\n  ROUND(MAX(\n    ${preferred_range}_battery_range_km::float / NULLIF(c.usable_battery_level, 0) * 100\n  )::numeric, 0) AS \"推算满电续航\"\nFROM charges c\nJOIN charging_processes cp ON cp.id = c.charging_process_id\nWHERE cp.car_id = $car_id\n  AND c.usable_battery_level > 0\n  AND c.${preferred_range}_battery_range_km IS NOT NULL\nGROUP BY cp.id\nORDER BY 1;",
           "refId": "A"
         }
       ]
