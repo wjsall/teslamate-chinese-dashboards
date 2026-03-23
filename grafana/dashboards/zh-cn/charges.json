@@ -176,7 +176,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "charge_energy_used"
+                "value": "用电量"
               }
             ]
           }
@@ -1265,7 +1265,7 @@
               },
               {
                 "id": "displayName",
-                "value": "Odometer"
+                "value": "里程表"
               },
               {
                 "id": "custom.minWidth",
@@ -1289,7 +1289,7 @@
               },
               {
                 "id": "displayName",
-                "value": "Odometer"
+                "value": "里程表"
               },
               {
                 "id": "custom.minWidth",
@@ -1370,54 +1370,6 @@
               {
                 "id": "displayName",
                 "value": "电池电量"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "charge_energy_added"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "充电量"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "charge_energy_used"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "charge_energy_used"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "start_date"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "开始时间"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "end_date"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "结束时间"
               }
             ]
           }
