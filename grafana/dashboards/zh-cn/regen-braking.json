@@ -903,6 +903,10 @@
               {
                 "id": "custom.axisLabel",
                 "value": "室外温度(°C)"
+              },
+              {
+                "id": "displayName",
+                "value": "室外温度(°C)"
               }
             ]
           },
