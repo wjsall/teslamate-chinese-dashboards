@@ -1234,7 +1234,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "❄"
+                "value": "❄受限"
               },
               {
                 "id": "custom.cellOptions",
@@ -1269,10 +1269,6 @@
               {
                 "id": "custom.minWidth",
                 "value": 50
-              },
-              {
-                "id": "description",
-                "value": "电池可用容量受限标志。❄ 表示该行程中实际可用电量低于仪表显示电量，常见于低温天气（Tesla 保留部分电量用于电池加热）或电池老化。出现❄时该行程的能耗数据可能因热管理消耗而偏高。"
               }
             ]
           },
@@ -1499,7 +1495,8 @@
         }
       ],
       "title": "行程",
-      "type": "table"
+      "type": "table",
+      "description": "列说明：❄ 表示该行程电池可用容量受限，常见于低温天气（Tesla 保留部分电量用于电池加热）或电池老化，此时能耗数据可能偏高。"
     },
     {
       "collapsed": false,
