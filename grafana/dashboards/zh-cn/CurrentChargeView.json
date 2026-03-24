@@ -1325,7 +1325,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  NOW() AS time,\n  unnest(ARRAY[pos.latitude, pos.latitude]) AS latitude,\n  unnest(ARRAY[pos.longitude, pos.longitude]) AS longitude\nFROM charging_processes cp\nJOIN positions pos ON pos.id = cp.position_id\nWHERE cp.id = $charging_processes",
+          "rawSql": "SELECT\n  $__time(date),\n  latitude,\n  longitude\nFROM positions\nWHERE\n  car_id = $car_id AND\n  $__timeFilter(date)\nORDER BY\n  date ASC",
           "refId": "A",
           "select": [
             [
