@@ -130,7 +130,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  GREATEST(0, LEAST(100,\n    50\n    + CASE WHEN full_pct <= 0.05 THEN 30 WHEN full_pct <= 0.15 THEN 15 WHEN full_pct <= 0.3 THEN 0 ELSE -15 END\n    + CASE WHEN low_pct <= 0.05 THEN 30 WHEN low_pct <= 0.1 THEN 15 WHEN low_pct <= 0.2 THEN 0 ELSE -15 END\n  ))::int AS score\nFROM (\n  SELECT\n    ROUND(AVG(CASE WHEN end_battery_level >= 95 THEN 1.0 ELSE 0.0 END), 3) AS full_pct,\n    ROUND(AVG(CASE WHEN start_battery_level <= 15 THEN 1.0 ELSE 0.0 END), 3) AS low_pct\n  FROM charging_processes\n  WHERE car_id = $car_id AND $__timeFilter(start_date)\n) s",
+          "rawSql": "SELECT\n  GREATEST(0, LEAST(100,\n    50\n    + CASE\n        WHEN cs.lfp_battery THEN\n          CASE WHEN full_pct >= 0.95 THEN 30 WHEN full_pct >= 0.8 THEN 15 WHEN full_pct >= 0.6 THEN 0 ELSE -15 END\n        ELSE\n          CASE WHEN full_pct <= 0.05 THEN 30 WHEN full_pct <= 0.15 THEN 15 WHEN full_pct <= 0.3 THEN 0 ELSE -15 END\n      END\n    + CASE WHEN low_pct <= 0.05 THEN 30 WHEN low_pct <= 0.1 THEN 15 WHEN low_pct <= 0.2 THEN 0 ELSE -15 END\n  ))::int AS score\nFROM (\n  SELECT\n    ROUND(AVG(CASE WHEN end_battery_level >= 95 THEN 1.0 ELSE 0.0 END), 3) AS full_pct,\n    ROUND(AVG(CASE WHEN start_battery_level <= 15 THEN 1.0 ELSE 0.0 END), 3) AS low_pct\n  FROM charging_processes\n  WHERE car_id = $car_id AND $__timeFilter(start_date)\n) s\nCROSS JOIN (\n  SELECT cs.lfp_battery\n  FROM cars c\n  JOIN car_settings cs ON cs.id = c.settings_id\n  WHERE c.id = $car_id\n) cs",
           "refId": "A",
           "sql": {
             "columns": [
@@ -151,7 +151,7 @@
           }
         }
       ],
-      "description": "评分说明：基于三个维度 — 避免充满(100%)、避免低电(<15%)充电、控制直流快充占比。满分100分，80+优秀，60-80良好，<60需改善。",
+      "description": "评分说明：自动识别电池类型并调整评分逻辑。【三元锂】避免充满(95%+)、避免低电(<15%)充电；【磷酸铁锂】鼓励常充满(95%+)校准BMS、避免低电(<15%)充电。满分100分，80+优秀，60-80良好，<60需改善。",
       "title": "充电习惯综合评分 (0-100)",
       "type": "gauge"
     },
@@ -257,15 +257,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
-              },
-              {
-                "color": "yellow",
-                "value": 15
-              },
-              {
-                "color": "red",
-                "value": 30
+                "color": "super-light-blue"
               }
             ]
           },
@@ -297,7 +289,7 @@
         "textMode": "auto"
       },
       "pluginVersion": "11.6.1",
-      "description": "充至95%以上的充电次数占比。日常充电建议设置到80%，偶尔长途前可充满，频繁充满会加速电池老化。",
+      "description": "充至95%以上的充电次数占比。\n【三元锂】建议低于20%，频繁充满会加速电池老化；\n【磷酸铁锂】建议高于80%，需定期充满以校准BMS。",
       "targets": [
         {
           "datasource": {
