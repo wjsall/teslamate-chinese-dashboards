@@ -1325,7 +1325,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  cp.start_date AS time,\n  pos.latitude,\n  pos.longitude\nFROM charging_processes cp\nJOIN positions pos ON pos.id = cp.position_id\nWHERE cp.car_id = $car_id\n  AND $__timeFilter(cp.start_date)\nORDER BY cp.start_date DESC\nLIMIT 1",
+          "rawSql": "SELECT\n  NOW() AS time,\n  pos.latitude,\n  pos.longitude\nFROM charging_processes cp\nJOIN positions pos ON pos.id = cp.position_id\nWHERE cp.car_id = $car_id\n  AND cp.end_date IS NULL\nORDER BY cp.start_date DESC\nLIMIT 1",
           "refId": "A",
           "select": [
             [
