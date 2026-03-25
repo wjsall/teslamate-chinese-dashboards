@@ -1,0 +1,576 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "基于行程数据的驾驶习惯评分分析：效率、平稳（事件计数）、速度（超速比例）、能量回收四维度",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "gauge",
+      "title": "综合评分",
+      "description": "效率(30%) + 平稳(30%) + 速度(20%) + 回收(20%) 加权平均",
+      "gridPos": {"h": 8, "w": 4, "x": 0, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH pos_scores AS (\n  SELECT\n    p.drive_id,\n    LEAST(100, GREATEST(0, 100 - (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -30 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0))) AS smooth,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen,\n    LEAST(100, GREATEST(0, 100 - COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) * 5)) AS spd\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id, d.distance\n),\ndrive_scores AS (\n  SELECT\n    LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200)) AS eff,\n    COALESCE(ps.smooth, 100) AS smooth,\n    COALESCE(ps.spd, 100) AS spd,\n    COALESCE(ps.regen, 0) AS regen\n  FROM drives d\n  LEFT JOIN pos_scores ps ON ps.drive_id = d.id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n    AND d.start_ideal_range_km IS NOT NULL\n    AND d.end_ideal_range_km IS NOT NULL\n)\nSELECT ROUND(AVG(eff)*0.30 + AVG(smooth)*0.30 + AVG(spd)*0.20 + AVG(regen)*0.20)::integer AS \"综合评分\"\nFROM drive_scores",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "驾驶风格",
+      "description": "基于综合评分的驾驶风格分类",
+      "gridPos": {"h": 8, "w": 4, "x": 4, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"type": "range", "options": {"from": 90, "to": 100, "result": {"text": "节能达人", "color": "green", "index": 0}}},
+            {"type": "range", "options": {"from": 80, "to": 89.9, "result": {"text": "稳健驾驶", "color": "green", "index": 1}}},
+            {"type": "range", "options": {"from": 70, "to": 79.9, "result": {"text": "普通驾驶", "color": "yellow", "index": 2}}},
+            {"type": "range", "options": {"from": 60, "to": 69.9, "result": {"text": "偏激进", "color": "orange", "index": 3}}},
+            {"type": "range", "options": {"from": 0, "to": 59.9, "result": {"text": "激进驾驶", "color": "red", "index": 4}}}
+          ],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 60},
+              {"color": "yellow", "value": 70},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH pos_scores AS (\n  SELECT\n    p.drive_id,\n    LEAST(100, GREATEST(0, 100 - (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -30 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0))) AS smooth,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen,\n    LEAST(100, GREATEST(0, 100 - COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) * 5)) AS spd\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id, d.distance\n),\ndrive_scores AS (\n  SELECT\n    LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200)) AS eff,\n    COALESCE(ps.smooth, 100) AS smooth,\n    COALESCE(ps.spd, 100) AS spd,\n    COALESCE(ps.regen, 0) AS regen\n  FROM drives d\n  LEFT JOIN pos_scores ps ON ps.drive_id = d.id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n    AND d.start_ideal_range_km IS NOT NULL\n    AND d.end_ideal_range_km IS NOT NULL\n)\nSELECT ROUND(AVG(eff)*0.30 + AVG(smooth)*0.30 + AVG(spd)*0.20 + AVG(regen)*0.20)::integer AS \"驾驶风格\"\nFROM drive_scores",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "效率分",
+      "description": "理想续航消耗 vs 实际里程，权重30%\n100分：实际能耗 ≤ 理想额定\n0分：超出额定能耗100%",
+      "gridPos": {"h": 8, "w": 4, "x": 8, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(LEAST(100, GREATEST(0, 100 - GREATEST(0, (start_ideal_range_km - end_ideal_range_km) / NULLIF(distance, 0) - 1.0) * 200)))::numeric)::integer AS \"效率分\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1\n  AND start_ideal_range_km IS NOT NULL\n  AND end_ideal_range_km IS NOT NULL",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "平稳分",
+      "description": "急加速+急刹车时间占比（功率>60kW 或 <-40kW），权重30%\n100分：全程平稳\n0分：≥100%时间急加速/急刹车（极度激进）",
+      "gridPos": {"h": 8, "w": 4, "x": 12, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(LEAST(100, GREATEST(0, 100 - combined_pct))))::integer AS \"平稳分\"\nFROM (\n  SELECT\n    (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -40 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0) AS combined_pct\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id\n) t",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "速度分",
+      "description": "超速采样点占比（速度>130km/h），权重20%\n100分：无超速采样点\n0分：20%以上时间超速",
+      "gridPos": {"h": 8, "w": 4, "x": 16, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(LEAST(100, GREATEST(0, 100 - overspeed_pct * 5)))::integer AS \"速度分\"\nFROM (\n  SELECT\n    COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS overspeed_pct\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n) t",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "回收分",
+      "description": "能量回收比（回收能量÷消耗能量），权重20%\n100分：回收比 ≥ 33%（积极单踏板驾驶）\n0分：完全踩刹车，不使用能量回收",
+      "gridPos": {"h": 8, "w": 4, "x": 20, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 60},
+              {"color": "green", "value": 80}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(trip_regen))::integer AS \"回收分\"\nFROM (\n  SELECT LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS trip_regen\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id\n) t",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "综合评分趋势",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {"type": "linear"},
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {"group": "A", "mode": "none"},
+            "thresholdsStyle": {"mode": "off"}
+          },
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 80}
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "综合评分"},
+            "properties": [
+              {"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}},
+              {"id": "custom.lineWidth", "value": 2}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "效率分"},
+            "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "平稳分"},
+            "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "速度分"},
+            "properties": [{"id": "color", "value": {"fixedColor": "purple", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "回收分"},
+            "properties": [{"id": "color", "value": {"fixedColor": "teal", "mode": "fixed"}}]
+          }
+        ]
+      },
+      "options": {
+        "legend": {"calcs": ["mean", "min", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH pos_scores AS (\n  SELECT\n    p.drive_id,\n    LEAST(100, GREATEST(0, 100 - (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -30 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0))) AS smooth,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen,\n    LEAST(100, GREATEST(0, 100 - COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) * 5)) AS spd\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id, d.distance\n),\ndrive_scores AS (\n  SELECT\n    date_trunc('day', d.start_date) AS day,\n    LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200)) AS eff,\n    COALESCE(ps.smooth, 100) AS smooth,\n    COALESCE(ps.spd, 100) AS spd,\n    COALESCE(ps.regen, 0) AS regen\n  FROM drives d\n  LEFT JOIN pos_scores ps ON ps.drive_id = d.id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n    AND d.start_ideal_range_km IS NOT NULL\n    AND d.end_ideal_range_km IS NOT NULL\n)\nSELECT\n  day AS time,\n  ROUND(AVG(eff)*0.30 + AVG(smooth)*0.30 + AVG(spd)*0.20 + AVG(regen)*0.20) AS \"综合评分\"\nFROM drive_scores\nGROUP BY 1\nORDER BY 1",
+          "refId": "A",
+          "resultFormat": "time_series"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "time_series",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "WITH pos_scores AS (\n  SELECT\n    p.drive_id,\n    d.start_date,\n    LEAST(100, GREATEST(0, 100 - (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -30 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0))) AS smooth,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen,\n    LEAST(100, GREATEST(0, 100 - COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) * 5)) AS spd\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id, d.distance, d.start_date\n)\nSELECT\n  date_trunc('day', start_date) AS time,\n  ROUND(AVG(smooth)) AS \"平稳分\",\n  ROUND(AVG(spd)) AS \"速度分\"\nFROM pos_scores\nGROUP BY 1\nORDER BY 1",
+          "refId": "B",
+          "resultFormat": "time_series"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "time_series",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "WITH drive_regen AS (\n  SELECT\n    d.id AS drive_id,\n    date_trunc('day', d.start_date) AS day,\n    LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200)) AS eff_score,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen_score\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n    AND d.start_ideal_range_km IS NOT NULL\n    AND d.end_ideal_range_km IS NOT NULL\n  GROUP BY d.id, d.start_date, d.start_ideal_range_km, d.end_ideal_range_km, d.distance\n)\nSELECT\n  day AS time,\n  ROUND(AVG(eff_score)) AS \"效率分\",\n  ROUND(AVG(regen_score)) AS \"回收分\"\nFROM drive_regen\nGROUP BY 1\nORDER BY 1",
+          "refId": "C",
+          "resultFormat": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "行程评分明细",
+      "gridPos": {"h": 10, "w": 16, "x": 0, "y": 16},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "custom": {
+            "align": "center",
+            "cellOptions": {"type": "auto"},
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 80}
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "出发时间"},
+            "properties": [
+              {"id": "custom.width", "value": 130},
+              {"id": "custom.align", "value": "left"}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "距离(km)"},
+            "properties": [{"id": "custom.width", "value": 90}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "时长(分)"},
+            "properties": [{"id": "custom.width", "value": 80}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "最高速(km/h)"},
+            "properties": [{"id": "custom.width", "value": 110}]
+          },
+          {
+            "matcher": {"id": "byRegexp", "options": ".*分$"},
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"color": "red", "value": null},
+                    {"color": "yellow", "value": 60},
+                    {"color": "green", "value": 80}
+                  ]
+                }
+              },
+              {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}},
+              {"id": "custom.width", "value": 80},
+              {"id": "min", "value": 0},
+              {"id": "max", "value": 100}
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+        "showHeader": true,
+        "sortBy": [{"desc": true, "displayName": "出发时间"}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH pos_scores AS (\n  SELECT\n    p.drive_id,\n    (COUNT(CASE WHEN p.power > 60 THEN 1 END) + COUNT(CASE WHEN p.power < -30 THEN 1 END)) * 100.0 / NULLIF(COUNT(*), 0) AS high_power_pct,\n    COUNT(CASE WHEN p.speed > 130 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS overspeed_pct,\n    LEAST(100, SUM(CASE WHEN p.power < 0 THEN ABS(p.power) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN p.power > 0 THEN p.power ELSE 0 END), 0) * 3) AS regen_score\n  FROM positions p\n  JOIN drives d ON d.id = p.drive_id\n  WHERE d.car_id = $car_id\n    AND $__timeFilter(d.start_date)\n    AND d.end_date IS NOT NULL\n    AND d.distance > 1\n  GROUP BY p.drive_id, d.distance\n)\nSELECT\n  to_char(d.start_date, 'MM-DD HH24:MI') AS \"出发时间\",\n  ROUND(d.distance::numeric, 1) AS \"距离(km)\",\n  d.duration_min AS \"时长(分)\",\n  d.speed_max AS \"最高速(km/h)\",\n  ROUND(LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200))::numeric) AS \"效率分\",\n  ROUND(LEAST(100, GREATEST(0, 100 - COALESCE(ps.high_power_pct, 0)))::numeric) AS \"平稳分\",\n  ROUND(LEAST(100, GREATEST(0, 100 - COALESCE(ps.overspeed_pct, 0) * 5))::numeric) AS \"速度分\",\n  ROUND(COALESCE(ps.regen_score, 0)::numeric) AS \"回收分\",\n  ROUND((\n    LEAST(100, GREATEST(0, 100 - GREATEST(0, (d.start_ideal_range_km - d.end_ideal_range_km) / NULLIF(d.distance, 0) - 1.0) * 200)) * 0.30 +\n    LEAST(100, GREATEST(0, 100 - COALESCE(ps.high_power_pct, 0))) * 0.30 +\n    LEAST(100, GREATEST(0, 100 - COALESCE(ps.overspeed_pct, 0) * 5)) * 0.20 +\n    COALESCE(ps.regen_score, 0) * 0.20\n  )::numeric) AS \"综合评分\"\nFROM drives d\nLEFT JOIN pos_scores ps ON ps.drive_id = d.id\nWHERE d.car_id = $car_id\n  AND $__timeFilter(d.start_date)\n  AND d.end_date IS NOT NULL\n  AND d.distance > 1\n  AND d.start_ideal_range_km IS NOT NULL\n  AND d.end_ideal_range_km IS NOT NULL\nORDER BY d.start_date DESC\nLIMIT 100",
+          "refId": "A",
+          "resultFormat": "table"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "驾驶数据汇总",
+      "description": "当前时间范围内的行程统计数据",
+      "gridPos": {"h": 10, "w": 8, "x": 16, "y": 16},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "text"},
+          "mappings": [],
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::integer AS \"总行程数\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "A",
+          "resultFormat": "table"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(SUM(distance)::numeric, 0)::integer AS \"总里程(km)\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "B",
+          "resultFormat": "table"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(distance)::numeric, 1) AS \"平均行程(km)\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "C",
+          "resultFormat": "table"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(MAX(distance)::numeric, 1) AS \"最长行程(km)\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "D",
+          "resultFormat": "table"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(speed_max)::integer AS \"最高时速(km/h)\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "E",
+          "resultFormat": "table"
+        },
+        {
+          "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(SUM(duration_min) / 60.0, 1) AS \"总驾驶时长(h)\"\nFROM drives\nWHERE car_id = $car_id\n  AND $__timeFilter(start_date)\n  AND end_date IS NOT NULL\n  AND distance > 1",
+          "refId": "F",
+          "resultFormat": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["teslamate"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "grafana-postgresql-datasource", "uid": "TeslaMate"},
+        "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "车辆",
+        "multi": false,
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      }
+    ]
+  },
+  "time": {"from": "now-30d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "驾驶评分",
+  "uid": "driving-score",
+  "version": 2
+}
