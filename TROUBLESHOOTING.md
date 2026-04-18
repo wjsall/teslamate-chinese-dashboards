@@ -306,11 +306,12 @@ OpenStreetMap 地图服务在国内可能受限，需要代理。
 按 F12 → Console 标签 → 查看是否有地图相关错误
 ```
 
-**解决：配置 Grafana 地图代理**
-编辑 `docker-compose.yml`，在 grafana 的 environment 中添加：
-```yaml
-- GF_PLUGIN_GRAFANA_MAP_SERVER_URL=https://tile.openstreetmap.org
-```
+**解决：需要自建可访问的 OSM 瓦片代理**
+由于国内无法直连 `tile.openstreetmap.org`，通常有两种办法：
+1. 在可访问海外的服务器上架设 OSM 瓦片代理，然后在每个含地图的面板里把瓦片 URL 改为你的代理地址（Panel → Edit → Map layers → Base layer → URL template）
+2. 使用国内可直连的瓦片源替换底图（Grafana Geomap 仅支持 XYZ 瓦片协议，自行评估许可与合规）
+
+> 说明：Grafana 本身不提供地图瓦片代理 env var，需要在面板配置里改 URL template，或通过 provisioning 定制默认底图。
 
 ---
 
