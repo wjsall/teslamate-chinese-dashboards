@@ -252,6 +252,41 @@ docker compose restart teslamate grafana
 
 ---
 
+### ❌ 「自定义新车电池容量」「自定义新车最大续航里程」每次刷新重置为 0
+
+**症状**：在「电池健康」仪表盘里输入了自定义值，关闭浏览器或刷新后又变回 `0`。
+
+**原因**：这是 Grafana **textbox 类型变量**的设计行为，输入值只保存在当前 URL 中，不会持久化到数据库或本地存储。
+
+**解决方法 1（推荐）：URL 书签**
+
+1. 在仪表盘里输入你的实际值（例如 `82` 度、`600` km）
+2. 等 1-2 秒，浏览器地址栏 URL 末尾会出现：
+   ```
+   ?var-custom_kwh_new=82&var-custom_max_range=600
+   ```
+3. 把这个完整 URL 加到浏览器书签
+4. 以后从书签打开，数值自动预填
+
+**解决方法 2：修改 JSON 默认值（仅自用场景）**
+
+编辑 `grafana/dashboards/zh-cn/battery-health.json`，找到 `custom_kwh_new` 和 `custom_max_range` 两个变量，把以下三处 `"0"` 改成你的值：
+
+```json
+{
+  "name": "custom_kwh_new",
+  "current": {"text": "82", "value": "82"},
+  "query": "82",
+  "options": [{"selected": true, "text": "82", "value": "82"}]
+}
+```
+
+保存后重启 Grafana 容器或等 10 秒自动 reload。
+
+**为什么不做成默认就保存？** 不同车型/电池容量/购车里程都不同，没有对所有用户都正确的默认值，所以保留可调输入框。
+
+---
+
 ## 🚗 数据问题
 
 ### ❌ 车辆数据不更新
