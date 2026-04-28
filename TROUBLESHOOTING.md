@@ -516,7 +516,7 @@ sudo firewall-cmd --reload
 
 ### ❌ 从外网访问（公网 IP）
 
-⚠️ **直接把 TeslaMate `:4000` 暴露到公网 = 任何人能看到你的车辆位置/历史行程**。Grafana `:3000` 默认 admin/admin 也是一秒被攻破。**强烈建议先看 [QUICKSTART.md - 云服务器场景：安全防护必读](QUICKSTART.md#云服务器场景安全防护必读场景-b-用户)** 完整 5 级防护清单。
+⚠️ **直接把 TeslaMate `:4000` 暴露到公网 = 任何人能看到你的车辆位置/历史行程**。Grafana `:3000` 默认 admin/admin 也是一秒被攻破。**强烈建议先看 [QUICKSTART.md - 云服务器场景：安全防护必读](QUICKSTART.md#cloud-security)** 完整 5 级防护清单。
 
 简版快速选项（详细操作见上述 QUICKSTART 章节）：
 1. **Tailscale / ZeroTier**（推荐新手）：虚拟内网，云服务器关掉公网端口，本地像局域网访问
