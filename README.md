@@ -46,9 +46,9 @@
 > docker compose pull && docker compose up -d
 >
 > # 2. 装坐标函数 + 分时电价系统（远程 curl，不用 git clone）
-> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-coord-functions.sql \
+> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.5.0/sql/install-coord-functions.sql \
 >   | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
-> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-tou.sql \
+> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.5.0/sql/install-tou.sql \
 >   | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
 >
 > # 3. 重启 Grafana
@@ -179,7 +179,7 @@
 
 **新手建议**：先看「新手向导」→「功能地图」→「场景速查手册」→「数据指标手册」
 
-## 📁 包含的 Dashboard (40个)
+## 📁 包含的 Dashboard (42个)
 
 ### 核心功能 (4个)
 - ✅ **概览 (Overview)** - 车辆整体状态和关键指标
@@ -605,7 +605,7 @@ docker compose restart grafana
 ### 当前版本
 - **版本号**: v1.4.2
 - **发布日期**: 2026-04-28
-- **Dashboard 数量**: 40个（含9个原创分析仪表盘 + 3个内部详情页）
+- **Dashboard 数量**: 42个（含9个原创分析仪表盘 + 3个内部详情页）
 - **汉化完成度**: 99%
 
 ### 兼容性
@@ -760,11 +760,11 @@ teslamate-chinese-dashboards/
 ├── simple-deploy.sh            # 一键安装脚本
 ├── grafana/
 │   └── dashboards/
-│       ├── zh-cn/              # 40个主要汉化Dashboard → 挂载到 /dashboards/
+│       ├── zh-cn/              # 42个主要汉化Dashboard → 挂载到 /dashboards/
 │       │   ├── overview.json
 │       │   ├── states.json
 │       │   ├── charging-stats.json
-│       │   └── ... (共40个)
+│       │   └── ... (共42个)
 │       └── internal/           # 3个内部详情页 → 挂载到 /dashboards_internal/
 │           ├── home.json
 │           ├── drive-details.json

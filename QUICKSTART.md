@@ -567,7 +567,7 @@ git pull                                         # git clone 用户
 docker exec -i teslamate-database-1 psql -U teslamate teslamate < sql/install-coord-functions.sql
 
 # 一键脚本用户（没有本地 sql/，用 curl 拉远程）：
-curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-coord-functions.sql | \
+curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.5.0/sql/install-coord-functions.sql | \
   docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
 
 # 3. 重启 Grafana
