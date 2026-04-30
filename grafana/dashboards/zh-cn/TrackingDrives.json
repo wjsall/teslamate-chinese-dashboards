@@ -519,7 +519,6 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "fixedColor": "red",
             "mode": "thresholds"
           },
           "custom": {

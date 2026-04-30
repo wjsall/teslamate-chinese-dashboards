@@ -1,0 +1,785 @@
+{
+  "title": "🌡️ 天气-能耗关联",
+  "uid": "weather-efficiency",
+  "tags": [
+    "tesla",
+    "trip",
+    "efficiency",
+    "weather"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "refresh": "",
+  "editable": true,
+  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "车辆选择器（来自 cars 表）",
+        "includeAll": false,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "options": {
+        "mode": "markdown",
+        "content": "\n# 🌡️ 天气-能耗关联\n\n国内特斯拉车主 #1 痛点：「冬天到底掉多少电」。这个仪表盘用 TeslaMate 已记录的每次行驶外部温度 + 续航损耗，**量化温度对能耗的真实影响**。\n\n**怎么看**：\n- **温度桶曲线** — 每 2°C 一档，柱高=该桶中位能耗，柱色按温度冷蓝→热红\n- **月度双轴** — 蓝线月均温度 vs 黄柱月均能耗，反相关一目了然\n- **温度区间柱图** — 5 个温度档位的平均 Wh/km，估算续航差距\n- **季节对比** — 量化「冬季比夏季多耗 X%」\n"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "🌡 平均温度",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n SELECT ROUND(AVG(temp)::numeric, 1) AS \"°C\" FROM d",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "⚡ 平均能耗",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n SELECT ROUND(AVG(wh_per_km)::numeric, 0) AS \"Wh/km\" FROM d",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "❄ 最冷月平均能耗",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n,\nm AS (\n  SELECT date_trunc('month', start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS mo,\n    AVG(temp) AS avg_temp, AVG(wh_per_km) AS avg_wh\n  FROM d GROUP BY 1\n)\n\nSELECT ROUND(avg_wh::numeric, 0) AS \"Wh/km\" FROM m ORDER BY avg_temp ASC LIMIT 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 220
+              },
+              {
+                "color": "red",
+                "value": 280
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "☀ 最热月平均能耗",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n,\nm AS (\n  SELECT date_trunc('month', start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS mo,\n    AVG(temp) AS avg_temp, AVG(wh_per_km) AS avg_wh\n  FROM d GROUP BY 1\n)\n\nSELECT ROUND(avg_wh::numeric, 0) AS \"Wh/km\" FROM m ORDER BY avg_temp DESC LIMIT 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 180
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "📊 温度桶能耗曲线（每 2°C 一档，柱色：冷蓝→热红）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n\nSELECT\n  (FLOOR(temp / 2.0) * 2)::int AS \"温度 (°C)\",\n  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wh_per_km)::numeric, 0) AS \"中位 (Wh/km)\"\nFROM d\nWHERE wh_per_km BETWEEN 80 AND 350\nGROUP BY 1\nHAVING COUNT(*) >= 3\nORDER BY 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "light-blue",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 20
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 35
+              }
+            ]
+          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "温度 (°C)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "温度 (°C)",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "barWidth": 0.85,
+        "groupWidth": 0.7,
+        "colorByField": "温度 (°C)",
+        "text": {
+          "valueSize": 22,
+          "titleSize": 14
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 10
+      },
+      "description": "每 2°C 分一桶，画该桶里所有行驶的中位能耗。比散点更能看出趋势，柱顶数字仅在样本数 ≥3 时显示。"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "📈 月度温度 vs 能耗（蓝线=温度，黄柱=能耗）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n\nSELECT\n  date_trunc('month', start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS time,\n  ROUND(AVG(temp)::numeric, 1) AS \"月均温度 (°C)\",\n  ROUND(AVG(wh_per_km)::numeric, 0) AS \"月均能耗 (Wh/km)\"\nFROM d\nGROUP BY 1\nORDER BY 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "月均温度 (°C)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "celsius"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "月均能耗 (Wh/km)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 70
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "🌡 温度区间能耗对比（每桶平均 Wh/km）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n\nSELECT\n  bucket AS \"区间\",\n  ROUND(AVG(wh_per_km)::numeric, 0) AS \"平均能耗 (Wh/km)\"\nFROM (\n  SELECT wh_per_km,\n    CASE\n      WHEN temp <= 0 THEN '❄ ≤ 0°C 严寒'\n      WHEN temp <= 10 THEN '🥶 0-10°C 寒冷'\n      WHEN temp <= 20 THEN '😊 10-20°C 凉爽'\n      WHEN temp <= 30 THEN '☀ 20-30°C 温暖'\n      ELSE '🔥 > 30°C 酷热'\n    END AS bucket,\n    CASE\n      WHEN temp <= 0 THEN 1\n      WHEN temp <= 10 THEN 2\n      WHEN temp <= 20 THEN 3\n      WHEN temp <= 30 THEN 4\n      ELSE 5\n    END AS sort_order\n  FROM d\n  WHERE wh_per_km BETWEEN 50 AND 500\n) sub\nGROUP BY bucket, sort_order\nORDER BY sort_order",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 180
+              },
+              {
+                "color": "orange",
+                "value": 220
+              },
+              {
+                "color": "red",
+                "value": 280
+              }
+            ]
+          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "区间",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "barWidth": 0.85,
+        "groupWidth": 0.7
+      },
+      "pluginVersion": "12.4.0",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "🍂 季节能耗对比（北半球，按月份分）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n,\nfiltered AS (\n  SELECT temp, wh_per_km, distance,\n    EXTRACT(MONTH FROM start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')::int AS month_local\n  FROM d\n  WHERE wh_per_km BETWEEN 50 AND 500\n),\nseasonal AS (\n  SELECT\n    CASE\n      WHEN month_local IN (12,1,2) THEN '🥶 冬 (12-2月)'\n      WHEN month_local IN (3,4,5)  THEN '🌸 春 (3-5月)'\n      WHEN month_local IN (6,7,8)  THEN '☀ 夏 (6-8月)'\n      ELSE '🍂 秋 (9-11月)'\n    END AS season,\n    CASE\n      WHEN month_local IN (12,1,2) THEN 1\n      WHEN month_local IN (3,4,5)  THEN 2\n      WHEN month_local IN (6,7,8)  THEN 3\n      ELSE 4\n    END AS sort_order,\n    temp, wh_per_km, distance\n  FROM filtered\n),\noverall AS (SELECT AVG(wh_per_km) AS avg_filtered FROM seasonal)\nSELECT\n  season AS \"季节\",\n  COUNT(*) AS \"行程数\",\n  ROUND(SUM(distance)::numeric, 0) AS \"总里程 (km)\",\n  ROUND(AVG(temp)::numeric, 1) AS \"平均温度 (°C)\",\n  ROUND(AVG(wh_per_km)::numeric, 0) AS \"平均能耗 (Wh/km)\",\n  ROUND(((AVG(wh_per_km) - (SELECT avg_filtered FROM overall)) / (SELECT avg_filtered FROM overall) * 100)::numeric, 1) AS \"vs 过滤后均值 %\"\nFROM seasonal\nGROUP BY season, sort_order\nORDER BY sort_order",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "vs 过滤后均值 %"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "transparent",
+                      "value": -3
+                    },
+                    {
+                      "color": "transparent",
+                      "value": 0
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "车辆信息",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "battery"
+      ],
+      "targetBlank": false,
+      "title": "电池",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "trip"
+      ],
+      "targetBlank": false,
+      "title": "行驶",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "中文文档",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://github.com/wjsall/teslamate-chinese-dashboards"
+    }
+  ]
+}

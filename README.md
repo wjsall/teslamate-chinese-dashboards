@@ -2,7 +2,7 @@
 
 **TeslaMate Chinese Grafana Dashboards** — Simplified Chinese localization for TeslaMate, ready to use out of the box.
 
-简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 42个仪表板 99% 汉化 | 支持 Docker 一键部署
+简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 43 个仪表盘 99% 汉化 | 支持 Docker 一键部署
 
 ---
 
@@ -42,7 +42,7 @@
 > ### 方法 C — 手动派（自己写 docker compose 套了我们镜像的）
 >
 > ```bash
-> # 1. 拉新镜像（带 Volkov 插件 + 42 个仪表盘）
+> # 1. 拉新镜像（带 Volkov 插件 + 43 个仪表盘）
 > docker compose pull && docker compose up -d
 >
 > # 2. 装坐标函数 + 分时电价系统（远程 curl，不用 git clone）
@@ -154,7 +154,7 @@
 - ✅ **开箱即用** - 无需 Docker Hub 账号，直接挂载使用
 - ✅ **一键安装** - 提供多种安装方式，5分钟完成部署
 - ✅ **持续更新** - 通过 git pull 即可获取最新汉化
-- ✅ **深度汉化** - 42个 Dashboard，含9个全新原创分析图表
+- ✅ **深度汉化** - 43 个 Dashboard，含12 个全新原创分析图表
 - 🌏 **地图源一键切换（独有）** - 9 个含地图仪表盘顶部加 OSM / 高德 / 高德卫星 / 谷歌 / 谷歌卫星 / Carto 下拉框，秒切，自动 GCJ-02 坐标纠偏（v1.4.2+）
   - 国内用户告别手动改 SQL，海外华人用户也能用谷歌中文路网
 - ✅ **完整适配 TeslaMate 3.0** - 同步官方全部新特性，已验证兼容 Grafana 12.4.0
@@ -163,7 +163,7 @@
 
 | 指标 | 数值 |
 | --- | --- |
-| Dashboard 数量 | 42个 ✅ |
+| Dashboard 数量 | 43个 ✅ |
 | 内部详情页 | 3个（行程/充电详情）|
 | 文件总大小 | ~1.2MB |
 | 面板总数 | 379个 |
@@ -171,7 +171,7 @@
 | 质量等级 | A+ |
 | 最后更新 | 2026-04-28 |
 
-**42个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
+**43 个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
 
 ## 📚 使用文档
 
@@ -180,14 +180,14 @@
 | 文档 | 说明 | 适合人群 |
 |------|------|----------|
 | **[新手向导](QUICKSTART.md)** | 从零开始安装，含 FAQ | 完全新手 |
-| **[功能地图](DASHBOARD_MAP.md)** | 42个 Dashboard 分类导航 | 新用户 |
+| **[功能地图](DASHBOARD_MAP.md)** | 43 个 Dashboard 分类导航 | 新用户 |
 | **[场景速查手册](SCENE_GUIDE.md)** | 什么时候看什么 Dashboard | 所有用户 |
 | **[数据指标手册](METRICS_GUIDE.md)** | 指标解释、正常范围、异常处理 | 进阶用户 |
 | **[故障排查手册](TROUBLESHOOTING.md)** | 遇到问题按症状查解决方案 | 遇到问题时 |
 
 **新手建议**：先看「新手向导」→「功能地图」→「场景速查手册」→「数据指标手册」
 
-## 📁 包含的 Dashboard (42个)
+## 📁 包含的 Dashboard (43个)
 
 ### 核心功能 (4个)
 - ✅ **概览 (Overview)** - 车辆整体状态和关键指标
@@ -344,7 +344,7 @@ docker compose logs grafana
 open http://localhost:3000
 
 # 4. 验证 Dashboard
-# 登录后应该看到 40 个中文 Dashboard
+# 登录后应该看到 43 个中文 Dashboard
 ```
 
 ### 方法二：一键安装脚本
@@ -567,7 +567,7 @@ docker compose restart grafana
 1. **检查路径**
    ```bash
    ls -la grafana/dashboards/zh-cn/
-   # 应该看到 40 个 JSON 文件
+   # 应该看到 43 个 JSON 文件
    ```
 
 2. **检查权限**
@@ -613,7 +613,7 @@ docker compose restart grafana
 ### 当前版本
 - **版本号**: v1.4.2
 - **发布日期**: 2026-04-28
-- **Dashboard 数量**: 42个（含9个原创分析仪表盘 + 3个内部详情页）
+- **Dashboard 数量**: 43个（含12 个原创分析仪表盘 + 3个内部详情页）
 - **汉化完成度**: 99%
 
 ### 兼容性
@@ -768,7 +768,7 @@ teslamate-chinese-dashboards/
 ├── simple-deploy.sh            # 一键安装脚本
 ├── grafana/
 │   └── dashboards/
-│       ├── zh-cn/              # 42个主要汉化Dashboard → 挂载到 /dashboards/
+│       ├── zh-cn/              # 43个主要汉化Dashboard → 挂载到 /dashboards/
 │       │   ├── overview.json
 │       │   ├── states.json
 │       │   ├── charging-stats.json
@@ -923,7 +923,7 @@ MIT License - 与 TeslaMate 项目相同
 
 ## 💰 支持项目
 
-这个项目我**业余时间** 1 个人在维护：42 个仪表盘汉化 + 9 个原创面板 + v1.4.2 地图源切换 + GCJ-02 坐标纠偏 + **v1.5.0 完整分时电价系统**。
+这个项目我**业余时间** 1 个人在维护：43 个仪表盘汉化 + 12 个原创面板 + v1.4.2 地图源切换 + GCJ-02 坐标纠偏 + **v1.5.0 完整分时电价系统**。
 
 ### v1.5.0 分时电价系统折腾了几个月
 

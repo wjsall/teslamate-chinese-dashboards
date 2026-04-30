@@ -141,7 +141,11 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "show": "points"
+            "show": "points",
+            "axisBorderShow": false,
+            "fillOpacity": 50,
+            "pointShape": "circle",
+            "pointStrokeWidth": 1
           },
           "mappings": [],
           "thresholds": {

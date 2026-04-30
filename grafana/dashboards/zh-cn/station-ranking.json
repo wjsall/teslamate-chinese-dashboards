@@ -479,8 +479,7 @@
           },
           "unit": "none",
           "decimals": 3,
-          "min": 0,
-          "displayName": "${__field.name}"
+          "min": 0
         },
         "overrides": []
       },

@@ -1,6 +1,6 @@
 # TeslaMate 中文 Dashboard 场景速查手册
 
-> 40个 Dashboard，该看什么？什么时候看？这份手册告诉你。
+> 43 个 Dashboard，该看什么？什么时候看？这份手册告诉你。
 
 ---
 
