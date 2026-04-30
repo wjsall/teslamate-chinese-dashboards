@@ -18,7 +18,7 @@ ENV DATABASE_SSL_MODE=disable
 # 用 GF_INSTALL_PLUGINS 让 Grafana 启动时自动装，比 RUN grafana-cli 镜像更小
 # pin 主版本号防止上游 breaking change；升级前请先在测试环境验证
 # 第三方依赖：https://github.com/VolkovLabs/volkovlabs-form-panel （Apache 2.0，签名验证）
-ENV GF_INSTALL_PLUGINS=volkovlabs-form-panel 6.3.2
+ENV GF_INSTALL_PLUGINS="volkovlabs-form-panel 6.3.2"
 
 # 清除基础镜像自带的所有数据源配置（避免 TeslaMate.yml 等旧文件与新配置同时加载导致 ×2 报错）
 # 再写入唯一的数据源配置文件
