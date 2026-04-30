@@ -657,6 +657,85 @@ lng_for_map(map_url, lat, lng)
 
 ---
 
+<a id="tou-pricing"></a>
+
+## ⚡ 分时电价配置（v1.5.0+ 中文版独有）
+
+国内电网普遍有峰平谷电价。TeslaMate 默认只能存一个固定单价，没法反映真实的家充成本。v1.5.0 加了完整的 分时电价系统：在线配置时段单价、自动算每笔充电的真实费用、所有费用面板透明替换。
+
+**没装分时电价的用户**：所有功能 fallback 到原 `cp.cost`，**无任何感知差异**。装分时电价 是可选的，看你需不需要。
+
+### 适合谁？
+
+- ✅ 家里安了私人充电桩，电价是按峰平谷计费的
+- ✅ 想知道「我家充实际花了多少钱」「凌晨充比白天便宜多少」
+- ✅ 多车家庭，想看每辆车在家充了多少
+- ❌ 只用第三方充电桩（特来电/星星/小桔），它们 App 直接显示费用，分时电价用处不大
+
+### 3 步配好
+
+#### 1. 升级（v1.4.x → v1.5.0）
+
+跟 v1.4.2 升级一样：
+
+```bash
+bash scripts/upgrade.sh
+```
+
+upgrade.sh 自动 6 步（地图 + 分时电价 + 插件 + 重启）。如果你是新装用户，跳过这步直接到第 2 步。
+
+#### 2. 配分时电价（5 步交互式向导）
+
+```bash
+bash scripts/tou-wizard.sh
+```
+
+按提示选：
+1. 你城市（北京/上海/深圳/广州/浙江/江苏 共 6 个内置模板，2025 年参考价）
+2. 应用到哪个地理围栏（在 TeslaMate 里你设的「家」围栏）
+3. 是否按账单微调单价（按你电费账单实际数字改）
+4. 快充是否单独算（一般跳过，超充按运营商 App 真实付款最准）
+5. 试算最近一笔家充对账
+
+或者打开 Grafana 的「**⚡ 分时电价配置**」仪表盘 →「**🌆 一键导入城市模板**」一键套用。
+
+#### 3. 把历史充电按分时电价重算
+
+配分时电价 **之前**已经发生的充电不会自动重算，跑一下 backfill：
+
+```bash
+docker exec teslamate-database-1 psql -U teslamate -d teslamate -c "SELECT backfill_all_tou()"
+```
+
+或在「⚡ 分时电价配置」仪表盘最下方点「**🔄 重算所有历史充电**」按钮。
+
+### 配完了去哪里看？
+
+- **「⚡ 分时电价配置」仪表盘** —「💰 最近 10 笔家充对账」直接看 分时 vs 原价差额
+- **「🏆 充电桩性价比榜」仪表盘**（v1.5.0 新增）— 按 ¥/度 排序所有充电点，家充按分时 算
+- **充电费用统计 / 省钱分析 / 年度报告** — 9 个仪表盘 60+ 处 SQL 自动按分时显示
+
+### 不想要了怎么办？
+
+完全可逆，**TeslaMate 任何表都没动**：
+
+```bash
+# 选项 A：清空 分时电价配置（保留函数 + 旁路表）
+docker exec teslamate-database-1 psql -U teslamate -d teslamate \
+  -c "TRUNCATE tou_rates RESTART IDENTITY CASCADE; TRUNCATE charging_processes_tou_cost"
+
+# 选项 B：仪表盘 SQL 改回原 cost
+python3 scripts/wrap-cost-with-tou-view.py --revert
+```
+
+### 详细文档
+
+- [`sql/install-tou.sql`](sql/install-tou.sql) — 表/函数/触发器/视图全部 schema
+- [`scripts/setup-tou.sh`](scripts/setup-tou.sh) — CLI 命令清单
+- 「⚡ 分时电价配置」仪表盘内置审计面板 — 时段空缺/重叠/月份缺失自动检测
+
+---
+
 <a id="cloud-security"></a>
 
 ## ☁️ 云服务器场景：安全防护必读（场景 B 用户）

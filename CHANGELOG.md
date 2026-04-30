@@ -1,5 +1,83 @@
 # 更新日志
 
+## [v1.5.0] - 2026-04-30
+
+### ⚡ 重磅：分时电价系统 + 充电桩性价比榜（中文版独有）
+
+国内电网普遍有峰平谷电价，TeslaMate 默认只能存一个固定单价。家充实际花了多少钱、什么时段最便宜、有没有错开峰段 — 一片黑箱。
+
+**v1.5.0 把 分时电价配置 + 历史回填 + 全仪表盘自动按真实费用显示，全部一键打通。**
+
+#### 🆕「⚡ 分时电价配置」全新仪表盘
+
+- **24 小时电价分布柱图**：按所选充电点 + 当前日期，每小时单价绿/黄/橙/红自动着色
+- **配置审计**：自动检查时段空缺 / 重叠 / 月份未配置，0 行 = ✓ 配置完整
+- **⚡ 一键填一整季节**：填谷+峰时段 + 3 档单价，平价自动占剩余；高级模式还可加尖 / 深谷
+- **🌆 一键导入城市模板**：北京/上海/深圳/广州/浙江/江苏 6 套 2025 参考价
+- **✏️ 修改单价 / 🗑️ 删除整段 / 🔄 重算所有历史**
+- **💰 最近 10 笔家充对账**：原费用 vs 分时 vs 差额一目了然
+
+#### 🆕「🏆 充电桩性价比榜」全新仪表盘
+
+按真实 ¥/度（家充走分时电价，第三方走原价）排序：
+
+- **排行榜表格**：累计费用 / 累计电量 / **¥/度（分时）** / **¥/度（原价）** / 平均功率 / 次均费用
+- **¥/度 Top 10 横排柱图**：颜色分档（绿=家充谷段 / 黄=平 / 橙=峰 / 红=超充）
+- **30 天 vs 之前涨/降价对比**（≥5% 红绿提示）
+- **充电桩地图**：颜色 = ¥/度，圆点大小 = 充电次数
+
+#### 🔧 数据库基础设施（不动 TeslaMate 任何表）
+
+- `tou_rates` 配置表 + `charging_processes_tou_cost` 旁路表
+- `compute_tou_cost(cp_id)` — 按 charges 表逐秒采样加权算分时电价真实费用
+- `effective_cost(cp_id, fallback)` — 透明函数：旁路有则用分时电价，否则回退原 cost
+- 触发器 `tou_recalc` 充电完成自动算（异常吞掉不阻塞 TeslaMate 主流程）
+- 季节判断忽略年份、处理跨年环绕（12-2 月冬季）
+- `audit_tou_config()` / `dedup_tou_rates()` / `backfill_all_tou()` 审计/去重/回填工具
+- DB 层 UNIQUE 索引防完全重复
+
+#### 📊 9 个仪表盘 60+ 处 SQL 自动适配分时电价
+
+`scripts/wrap-cost-with-tou-view.py` 按 SQL 子查询作用域分析包装 9 个核心仪表盘：
+
+- 充电费用统计、省钱分析、年度报告、多车对比、充电桩排行榜、超充总费用、平均每度电价、累计总费用 等
+- 装了分时电价的用户透明显示分时电价真实费用
+- **没装分时电价的用户 fallback 原 cost，无任何感知差异**
+- 一键回滚：`python3 scripts/wrap-cost-with-tou-view.py --revert`
+
+#### 🚀 升级路径
+
+`scripts/upgrade.sh` 整合 6 步（地图 + 分时电价 + 插件 + Grafana 重启）：
+
+```bash
+bash scripts/upgrade.sh
+```
+
+新装用户拉镜像自动带 `volkovlabs-form-panel` 插件（Dockerfile `ENV GF_INSTALL_PLUGINS`）。
+
+#### 🛠️ 配套工具
+
+- `scripts/setup-tou.sh` — CLI（install / import / list / test / reset）
+- `scripts/tou-wizard.sh` — 5 步交互式向导
+- `scripts/build-tou-dashboard.py` / `scripts/build-station-ranking.py` — 仪表盘生成器（避免 JSON 手写）
+- `scripts/lib/detect-containers.sh` — 容器检测公共函数（3 脚本共用）
+
+### 🐛 安全 + 重构
+
+- **修 SQL 注入**：所有 `${payload.X}` 数值参数 `NULLIF('${...}', '')::INT/NUMERIC` 强转
+- **修 SQL 注入**：shell 脚本 `'$geofence_name'` 改用 psql `:'gname'` 变量代入
+- **去重**：`_tou_delete_season()` SQL helper / `RATE_THRESHOLDS` / `RATE_LIST_INITIAL_SQL` / `season_range_elements()` 公共常量
+- **删死代码**：`has_unaliased_charging_processes` 函数 + `n=0` 重复赋值
+- **数据源单一化**：删 `sql/tou-templates/` 7 个 SQL 文件，城市模板迁移到 `apply_city_template()` PG 函数
+
+### 📚 文档更新
+
+- README.md 顶部加 v1.5.0 升级提示
+- QUICKSTART.md 新增「分时电价配置」章节
+- 4 路并行代码审查（Security / Reuse / Quality / Efficiency），22 项 finding 全部处理或归档
+
+---
+
 ## [v1.4.2] - 2026-04-28
 
 ### 🌏 重磅：地图源一键切换 + 自动 GCJ-02 坐标纠偏（中文版独有）

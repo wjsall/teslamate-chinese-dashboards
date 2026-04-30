@@ -211,7 +211,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tsum(charge_energy_added)\nFROM\n\tcharging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id;\n",
+          "rawSql": "SELECT\n\tsum(charge_energy_added)\nFROM charging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id;\n",
           "refId": "A",
           "select": [
             [
@@ -324,7 +324,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tsum(charge_energy_added)\nFROM\n\tcharging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND cost = 0;\n",
+          "rawSql": "SELECT\n\tsum(charge_energy_added)\nFROM charging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND effective_cost(id, cost) = 0;\n",
           "refId": "A",
           "select": [
             [
@@ -437,7 +437,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH energy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id),\r\nsince as (\r\n\tSELECT date FROM positions\r\n\tWHERE car_id = $car_id\r\n\tORDER BY date ASC\r\n\tLIMIT 1\r\n)\r\nSELECT (energy.charged_kWh / $distance_driven) as \"每单位耗电\" FROM energy",
+          "rawSql": "WITH energy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM charging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id),\r\nsince as (\r\n\tSELECT date FROM positions\r\n\tWHERE car_id = $car_id\r\n\tORDER BY date ASC\r\n\tLIMIT 1\r\n)\r\nSELECT (energy.charged_kWh / $distance_driven) as \"每单位耗电\" FROM energy",
           "refId": "A",
           "select": [
             [
@@ -538,7 +538,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tcount(*)\nFROM\n\tcharging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND charge_energy_added > 0.01\n\tAND car_id = $car_id;",
+          "rawSql": "SELECT\n\tcount(*)\nFROM charging_processes\nWHERE\n\t$__timeFilter(end_date)\n\tAND charge_energy_added > 0.01\n\tAND car_id = $car_id;",
           "refId": "A",
           "select": [
             [
@@ -686,7 +686,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH ChargeLocations AS (\r\nSELECT\r\n  CASE\r\n    WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%Home%' THEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), ''))))\r\n\t  WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%Work%' THEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), ''))))\r\n\t  WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%$geofence%' THEN '超级充电站'\r\n\t  ELSE '其他'\r\n  END AS location, charge_energy_added, cost\r\nFROM\r\n\tcharging_processes c\r\nLEFT JOIN addresses address ON c.address_id = address.id\r\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n\tAND c.charge_energy_added > 0\r\n), AllCharges AS (\r\nSELECT\r\n  location, SUM(charge_energy_added) AS Energy\r\nFROM ChargeLocations\r\nGROUP BY 1\r\nUNION \r\nSELECT\r\n  '免费' AS location,\r\n\tsum(charge_energy_added) AS Energy\r\nFROM\r\n\tChargeLocations\r\nWHERE\r\n\tcost = 0 AND location NOT ILIKE '%$geofence%' \r\n), Nominated AS (\r\n  SELECT SUM(energy) AS Nominated FROM AllCharges\r\n    WHERE location <> '其他'\r\n), Total AS (\r\n  SELECT SUM(charge_energy_added) as Total FROM ChargeLocations\r\n)\r\nSELECT * FROM AllCharges\r\nWHERE location <> '其他'\r\nUNION \r\nSELECT '其他' AS location, (Total - Nominated) as energy FROM Total, Nominated\r\nORDER BY Energy DESC",
+          "rawSql": "WITH ChargeLocations AS (\r\nSELECT\r\n  CASE\r\n    WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%Home%' THEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), ''))))\r\n\t  WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%Work%' THEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), ''))))\r\n\t  WHEN COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.display_name), '')))) ILIKE '%$geofence%' THEN '超级充电站'\r\n\t  ELSE '其他'\r\n  END AS location, charge_energy_added, cost\r\nFROM charging_processes c\r\nLEFT JOIN addresses address ON c.address_id = address.id\r\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n\tAND c.charge_energy_added > 0\r\n), AllCharges AS (\r\nSELECT\r\n  location, SUM(charge_energy_added) AS Energy\r\nFROM ChargeLocations\r\nGROUP BY 1\r\nUNION \r\nSELECT\r\n  '免费' AS location,\r\n\tsum(charge_energy_added) AS Energy\r\nFROM\r\n\tChargeLocations\r\nWHERE\r\n\tcost = 0 AND location NOT ILIKE '%$geofence%' \r\n), Nominated AS (\r\n  SELECT SUM(energy) AS Nominated FROM AllCharges\r\n    WHERE location <> '其他'\r\n), Total AS (\r\n  SELECT SUM(charge_energy_added) as Total FROM ChargeLocations\r\n)\r\nSELECT * FROM AllCharges\r\nWHERE location <> '其他'\r\nUNION \r\nSELECT '其他' AS location, (Total - Nominated) as energy FROM Total, Nominated\r\nORDER BY Energy DESC",
           "refId": "A",
           "select": [
             [
@@ -956,7 +956,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH free_energy AS (\r\nSELECT sum(charge_energy_added) AS free_charged_kWh\r\nFROM charging_processes cp\r\nINNER JOIN geofences g ON g.id = cp.geofence_id\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id AND g.name = '$geofence'\r\nGROUP BY g.name),\r\nenergy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven * free_energy.free_charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, free_energy",
+          "rawSql": "WITH free_energy AS (\r\nSELECT sum(charge_energy_added) AS free_charged_kWh\r\nFROM charging_processes cp\r\nINNER JOIN geofences g ON g.id = cp.geofence_id\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id AND g.name = '$geofence'\r\nGROUP BY g.name),\r\nenergy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM charging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven * free_energy.free_charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, free_energy",
           "refId": "A",
           "select": [
             [
@@ -1106,7 +1106,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH free_energy AS (\r\nSELECT sum(charge_energy_added) AS free_charged_kWh\r\nFROM charging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n\tAND cost = 0),\r\nenergy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven * free_energy.free_charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, free_energy",
+          "rawSql": "WITH free_energy AS (\r\nSELECT sum(charge_energy_added) AS free_charged_kWh\r\nFROM charging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n\tAND effective_cost(id, cost) = 0),\r\nenergy as(\r\nSELECT\r\n\tsum(charge_energy_added) AS charged_kWh\r\nFROM charging_processes\r\nWHERE\r\n\t$__timeFilter(end_date)\r\n\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven * free_energy.free_charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, free_energy",
           "refId": "A",
           "select": [
             [
@@ -1244,7 +1244,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH suc_data AS (\r\n\tSELECT c.charging_process_id\r\n\tFROM charges c\r\n\tLEFT JOIN charging_processes cp ON cp.id = c.charging_process_id\r\n\tLEFT JOIN addresses addr ON addr.id = cp.address_id\r\n\tLEFT JOIN geofences geo ON geo.id = geofence_id\r\n\tWHERE \r\n    cp.car_id = $car_id AND c.fast_charger_present\r\n\t\tAND COALESCE(geo.name, CONCAT_WS(', ', COALESCE(addr.name, nullif(CONCAT_WS(' ', addr.display_name), '')))) ILIKE '%$geofence%'\r\n    AND $__timeFilter(end_date)\r\n\tGROUP BY 1\r\n), suc_energy AS (\r\n  SELECT coalesce(sum(charge_energy_added), 0) AS charged_kWh\r\n  FROM  charging_processes cp\r\n  INNER JOIN suc_data ON suc_data.charging_process_id = cp.id\r\n), energy AS(\r\n  SELECT\r\n\t  sum(charge_energy_added) AS charged_kWh\r\n  FROM charging_processes\r\n  WHERE $__timeFilter(end_date)\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven  * suc_energy.charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, suc_energy;\r\n",
+          "rawSql": "WITH suc_data AS (\r\n\tSELECT c.charging_process_id\r\n\tFROM charges c\r\n\tLEFT JOIN charging_processes cp ON cp.id = c.charging_process_id\r\n\tLEFT JOIN addresses addr ON addr.id = cp.address_id\r\n\tLEFT JOIN geofences geo ON geo.id = geofence_id\r\n\tWHERE \r\n    cp.car_id = $car_id AND c.fast_charger_present\r\n\t\tAND COALESCE(geo.name, CONCAT_WS(', ', COALESCE(addr.name, nullif(CONCAT_WS(' ', addr.display_name), '')))) ILIKE '%$geofence%'\r\n    AND $__timeFilter(end_date)\r\n\tGROUP BY 1\r\n), suc_energy AS (\r\n  SELECT coalesce(sum(charge_energy_added), 0) AS charged_kWh\r\n  FROM charging_processes cp\r\n  INNER JOIN suc_data ON suc_data.charging_process_id = cp.id\r\n), energy AS(\r\n  SELECT\r\n\t  sum(charge_energy_added) AS charged_kWh\r\n  FROM charging_processes\r\n  WHERE $__timeFilter(end_date)\tAND car_id = $car_id\r\n)\r\nSELECT ($distance_driven  * suc_energy.charged_kWh / energy.charged_kWh) as \"距离\" FROM energy, suc_energy;\r\n",
           "refId": "A",
           "select": [
             [
@@ -1894,7 +1894,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT (\n  SELECT sum(cost)\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n) / $distance_driven * 100",
+          "rawSql": "SELECT (\n  SELECT sum(effective_cost(id, cost))\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n) / $distance_driven * 100",
           "refId": "A",
           "select": [
             [
@@ -2003,7 +2003,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT (\n  SELECT sum(cost)\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n) / (\n  SELECT sum(greatest(charge_energy_added, charge_energy_used))\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n)",
+          "rawSql": "SELECT (\n  SELECT sum(effective_cost(id, cost))\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n) / (\n  SELECT sum(greatest(charge_energy_added, charge_energy_used))\n  FROM charging_processes\n  WHERE $__timeFilter(end_date) AND car_id = $car_id\n)",
           "refId": "A",
           "select": [
             [
@@ -2329,7 +2329,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "WITH d1 AS (\n\tSELECT\n\t\tc.car_id,\n\t\tlag(end_[[preferred_range]]_range_km) OVER (ORDER BY start_date) - start_[[preferred_range]]_range_km AS range_loss,\n\t\tp.odometer - lag(p.odometer) OVER (ORDER BY start_date) AS distance\n\tFROM\n\t\tcharging_processes c\n\tLEFT JOIN positions p ON p.id = c.position_id \n\tWHERE\n\t  end_date IS NOT NULL AND\n\t  c.car_id = $car_id\n\tORDER BY\n\t\tstart_date\n),\nd2 AS (\nSELECT\n\tcar_id,\n\tsum(range_loss) AS range_loss,\n\tsum(distance) AS distance\nFROM\n\td1\nWHERE\n\tdistance >= 0 AND range_loss >= 0\nGROUP BY\n\tcar_id\n)\nSELECT\nrange_loss * c.efficiency / distance * 1000 *\n  CASE WHEN '$length_unit' = 'km' THEN 1\n       WHEN '$length_unit' = 'mi' THEN 1.60934\n  END AS \"能耗\"\nFROM\n\td2\n\tLEFT JOIN cars c ON c.id = car_id",
+          "rawSql": "WITH d1 AS (\n\tSELECT\n\t\tc.car_id,\n\t\tlag(end_[[preferred_range]]_range_km) OVER (ORDER BY start_date) - start_[[preferred_range]]_range_km AS range_loss,\n\t\tp.odometer - lag(p.odometer) OVER (ORDER BY start_date) AS distance\n\tFROM charging_processes c\n\tLEFT JOIN positions p ON p.id = c.position_id \n\tWHERE\n\t  end_date IS NOT NULL AND\n\t  c.car_id = $car_id\n\tORDER BY\n\t\tstart_date\n),\nd2 AS (\nSELECT\n\tcar_id,\n\tsum(range_loss) AS range_loss,\n\tsum(distance) AS distance\nFROM\n\td1\nWHERE\n\tdistance >= 0 AND range_loss >= 0\nGROUP BY\n\tcar_id\n)\nSELECT\nrange_loss * c.efficiency / distance * 1000 *\n  CASE WHEN '$length_unit' = 'km' THEN 1\n       WHEN '$length_unit' = 'mi' THEN 1.60934\n  END AS \"能耗\"\nFROM\n\td2\n\tLEFT JOIN cars c ON c.id = car_id",
           "refId": "A",
           "select": [
             [
@@ -2503,7 +2503,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM\n\tcharging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM charging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
           "refId": "A",
           "select": [
             [
@@ -2658,7 +2658,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM\n\tcharging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND cost > 0\n\tAND charge_energy_added > 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM charging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND cost > 0\n\tAND charge_energy_added > 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
           "refId": "A",
           "select": [
             [
@@ -2813,7 +2813,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM\n\tcharging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\n\tAND COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) ILIKE '%$geofence%'\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM charging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\n\tAND COALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) ILIKE '%$geofence%'\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
           "refId": "A",
           "select": [
             [
@@ -2968,7 +2968,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM\n\tcharging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\n\tAND cost = 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
+          "rawSql": "SELECT\n\tCOALESCE(geofence.name, CONCAT_WS(', ', COALESCE(address.name, nullif(CONCAT_WS(' ', address.road, address.house_number), '')), address.city)) AS location,\n\tCASE\n      WHEN SUM(charge_energy_added) < 1000 THEN SUM(charge_energy_added)::NUMERIC(4,0)::VARCHAR || ' kWh' \n      WHEN SUM(charge_energy_added) < 1000000 THEN (SUM(charge_energy_added) / 1000)::NUMERIC(9, 3)::VARCHAR || ' MWh' \n      WHEN SUM(charge_energy_added) >= 1000000 THEN (SUM(charge_energy_added) / 1000000)::NUMERIC(9, 3)::VARCHAR || ' GWh' \n   END as charge_energy_added, sum(cost) AS \"费用\"\nFROM charging_processes c\nLEFT JOIN addresses address ON c.address_id = address.id\nLEFT JOIN geofences geofence ON geofence_id = geofence.id\nWHERE\n\t$__timeFilter(end_date)\n\tAND car_id = $car_id\n\tAND charge_energy_added > 0\n\tAND cost = 0\nGROUP BY\n\t1\nORDER BY\n\tSUM(charge_energy_added) DESC\nLIMIT 10;",
           "refId": "A",
           "select": [
             [

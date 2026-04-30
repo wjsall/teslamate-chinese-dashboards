@@ -2,48 +2,71 @@
 
 **TeslaMate Chinese Grafana Dashboards** — Simplified Chinese localization for TeslaMate, ready to use out of the box.
 
-简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 40个仪表板 99% 汉化 | 支持 Docker 一键部署
+简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 42个仪表板 99% 汉化 | 支持 Docker 一键部署
 
 ---
 
-> ## ⚠️ 升级到 v1.4.2 必读 — 一行命令必跑
+> ## ⚡ 升级到 v1.5.0 — 分时电价系统（中文版独有）
 >
-> v1.4.2 新增「地图源切换 + 自动 GCJ-02 坐标纠偏」（中文版独有）功能依赖一个 PostgreSQL 函数。**老版本升级不会自动装**，不装的话 9 个含地图的仪表盘会显示 `function lat_for_map does not exist` 报错。
+> **新功能**：
+> - 🆕 「⚡ 分时电价配置」仪表盘 — 在线配置峰平谷电价 + 配置审计 + 24 小时电价分布
+> - 🆕 「🏆 充电桩性价比榜」仪表盘 — 按 ¥/度 排序所有充电点
+> - 🔧 9 个仪表盘 60+ 处 SQL 自动适配分时电价
+> - **没装分时电价的用户无任何感知差异**（所有面板 fallback 原 `cp.cost`）
 >
-> 按你的安装方式选一条：
+> 按你当时怎么装的，选一种：
 >
-> ### 方法 A —— 一键脚本用户（之前用 `simple-deploy.sh` 装的）
+> <a id="upgrade-method-a"></a>
+>
+> ### 方法 A — 一键脚本用户（之前用 `simple-deploy.sh` 装的）
+>
 > ```bash
 > wget -qO- https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash
 > ```
-> 脚本会**自动检测**你的现有安装并转升级模式（拉新镜像 + 装新函数 + 重启 Grafana），**不会改你的配置或重置 ENCRYPTION_KEY**。
 >
-> ### 方法 B —— git clone 用户（之前 `git clone` 仓库装的）
+> 脚本自动检测现有安装 → 切升级模式（拉新镜像 + 装新 SQL 函数 + 重启 Grafana）。**不会重置 ENCRYPTION_KEY 或配置**。
+>
+> <a id="upgrade-method-b"></a>
+>
+> ### 方法 B — git clone 用户（之前 `git clone` 仓库装的）
+>
 > ```bash
+> cd teslamate-chinese-dashboards
 > bash scripts/upgrade.sh
 > ```
-> 自动: git pull → 检测 PG 容器 → 装函数 → 重启 Grafana。
 >
-> ### 方法 C —— 手动派
+> 自动 6 步：git pull → 检测 PG → 装地图函数 → 装分时电价 → 检查 Grafana 插件 → 重启 Grafana。**幂等可重跑**。
+>
+> <a id="upgrade-method-c"></a>
+>
+> ### 方法 C — 手动派（自己写 docker compose 套了我们镜像的）
+>
 > ```bash
-> # 1. 拉最新镜像 / 仓库代码
-> docker compose pull && docker compose up -d     # 一键脚本用户
-> # 或
-> git pull                                         # git clone 用户
+> # 1. 拉新镜像（带 Volkov 插件 + 42 个仪表盘）
+> docker compose pull && docker compose up -d
 >
-> # 2. 装坐标转换函数（按你的安装方式选一条）
-> # git clone 用户（仓库本地有 sql/ 目录）：
-> docker exec -i teslamate-database-1 psql -U teslamate teslamate < sql/install-coord-functions.sql
->
-> # 一键脚本用户（没本地 sql/ 文件，从远程拉）：
-> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-coord-functions.sql | \
->   docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+> # 2. 装坐标函数 + 分时电价系统（远程 curl，不用 git clone）
+> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-coord-functions.sql \
+>   | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+> curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-tou.sql \
+>   | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
 >
 > # 3. 重启 Grafana
 > docker compose restart grafana
 > ```
 >
-> 装失败排查：[TROUBLESHOOTING.md](TROUBLESHOOTING.md) 「装 PostgreSQL 坐标转换函数报错」章节。
+> ### 配分时电价（可选，约 3 分钟）
+>
+> ```bash
+> bash scripts/tou-wizard.sh                 # 5 步交互式向导（git clone 用户）
+> ```
+>
+> 或直接打开「**⚡ 分时电价配置**」仪表盘 →「**🌆 一键导入城市模板**」选你城市，配完点「**🔄 重算所有历史充电**」按钮把历史按分时电价重算。
+>
+> ### 升级出问题？完全可逆
+>
+> TeslaMate 任何表都没动，分时电价数据全在我们新建的旁路表。详见 [TROUBLESHOOTING.md「v1.5.0 分时电价升级排错 / 回滚」](TROUBLESHOOTING.md#tou-rollback) | [Telegram 交流群](https://t.me/+BeOASgmvE_IyNzNl)
+>
 
 ---
 
@@ -123,7 +146,7 @@
 - ✅ **开箱即用** - 无需 Docker Hub 账号，直接挂载使用
 - ✅ **一键安装** - 提供多种安装方式，5分钟完成部署
 - ✅ **持续更新** - 通过 git pull 即可获取最新汉化
-- ✅ **深度汉化** - 40个 Dashboard，含9个全新原创分析图表
+- ✅ **深度汉化** - 42个 Dashboard，含9个全新原创分析图表
 - 🌏 **地图源一键切换（独有）** - 9 个含地图仪表盘顶部加 OSM / 高德 / 高德卫星 / 谷歌 / 谷歌卫星 / Carto 下拉框，秒切，自动 GCJ-02 坐标纠偏（v1.4.2+）
   - 国内用户告别手动改 SQL，海外华人用户也能用谷歌中文路网
 - ✅ **完整适配 TeslaMate 3.0** - 同步官方全部新特性，已验证兼容 Grafana 12.4.0
@@ -132,7 +155,7 @@
 
 | 指标 | 数值 |
 | --- | --- |
-| Dashboard 数量 | 40个 ✅ |
+| Dashboard 数量 | 42个 ✅ |
 | 内部详情页 | 3个（行程/充电详情）|
 | 文件总大小 | ~1.2MB |
 | 面板总数 | 379个 |
@@ -140,7 +163,7 @@
 | 质量等级 | A+ |
 | 最后更新 | 2026-04-28 |
 
-**40个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
+**42个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
 
 ## 📚 使用文档
 
@@ -149,7 +172,7 @@
 | 文档 | 说明 | 适合人群 |
 |------|------|----------|
 | **[新手向导](QUICKSTART.md)** | 从零开始安装，含 FAQ | 完全新手 |
-| **[功能地图](DASHBOARD_MAP.md)** | 40个 Dashboard 分类导航 | 新用户 |
+| **[功能地图](DASHBOARD_MAP.md)** | 42个 Dashboard 分类导航 | 新用户 |
 | **[场景速查手册](SCENE_GUIDE.md)** | 什么时候看什么 Dashboard | 所有用户 |
 | **[数据指标手册](METRICS_GUIDE.md)** | 指标解释、正常范围、异常处理 | 进阶用户 |
 | **[故障排查手册](TROUBLESHOOTING.md)** | 遇到问题按症状查解决方案 | 遇到问题时 |
@@ -892,10 +915,31 @@ MIT License - 与 TeslaMate 项目相同
 
 ## 💰 支持项目
 
-如果你觉得这个项目对你有帮助，欢迎打赏支持，让汉化工作持续更新！
+这个项目我**业余时间** 1 个人在维护：42 个仪表盘汉化 + 9 个原创面板 + v1.4.2 地图源切换 + GCJ-02 坐标纠偏 + **v1.5.0 完整分时电价系统**。
+
+### v1.5.0 分时电价系统折腾了几个月
+
+国内电网普遍峰平谷电价，TeslaMate 默认只能存一个固定单价 — 这个痛点 3 年没人解决。我研究 + 实测了几个月：
+
+- **数据库层**：7 个 PG 函数（`compute_tou_cost` / `effective_cost` / `audit_tou_config` / `apply_tou_pattern` 等）、触发器、视图、UNIQUE 索引、季节判断（含跨年环绕）、charges 表逐秒采样加权算费
+- **旁路表设计**：`charging_processes_tou_cost` 完全独立 — **TeslaMate 主表 0 修改、分时电价计算失败不影响主流程、随时一键卸载**
+- **前端层**：「⚡ 分时电价配置」可视化面板 + 24 小时电价柱图 + 配置审计 + 5 步交互式向导 + 6 城市内置模板 + 充电桩性价比榜
+- **集成层**：scope-aware Python 工具自动包装 9 个仪表盘 60+ 处 SQL，绕开 PG 视图破坏 PK 函数依赖的坑
+- **可逆性**：3 种回滚路径（`--revert` / `TRUNCATE` / 完整 DROP），全部测过
+
+总代码量：1100+ 行 SQL + Python 生成器 + 3 个 shell 工具 + 全套文档。
+
+### 怎么支持
+
+**免费的**（最有用）：
+- ⭐ **给仓库点 Star** — 让更多人看到，对项目排名帮助最大
+- 🐛 **报 Bug / 提建议** — [Issues](https://github.com/wjsall/teslamate-chinese-dashboards/issues) 比你想的更欢迎
+- 💬 **进群分享** — [Telegram 群](https://t.me/+BeOASgmvE_IyNzNl) 帮其他车主装好
+
+**有钱出钱**：
 
 | 微信打赏 | 支付宝打赏 |
 |---------|-----------|
 | ![微信打赏码](https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/images/wechat-donate.jpg) | ![支付宝打赏码](https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/images/alipay-donate.jpg) |
 
-**您的支持是我持续更新的动力！** ❤️
+打赏就是一杯咖啡的事，但对维护者意义很大 ❤️ 谢谢你！

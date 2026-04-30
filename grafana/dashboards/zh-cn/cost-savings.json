@@ -128,7 +128,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND((\n    COALESCE(SUM(d.distance), 0) * $fuel_efficiency / 100.0 * $fuel_price\n    - COALESCE((SELECT SUM(cost) FROM charging_processes WHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date)), 0)\n  )::numeric, 2) AS savings\nFROM drives d\nWHERE d.car_id = $car_id AND $__timeFilter(d.start_date);",
+          "rawSql": "SELECT\n  ROUND((\n    COALESCE(SUM(d.distance), 0) * $fuel_efficiency / 100.0 * $fuel_price\n    - COALESCE((SELECT SUM(effective_cost(id, cost)) FROM charging_processes WHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date)), 0)\n  )::numeric, 2) AS savings\nFROM drives d\nWHERE d.car_id = $car_id AND $__timeFilter(d.start_date);",
           "refId": "A",
           "sql": {
             "columns": [
@@ -286,7 +286,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND(COALESCE(SUM(cost), 0)::numeric, 2) AS charge_cost\nFROM charging_processes\nWHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date);",
+          "rawSql": "SELECT\n  ROUND(COALESCE(SUM(effective_cost(id, cost)), 0)::numeric, 2) AS charge_cost\nFROM charging_processes\nWHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date);",
           "refId": "A",
           "sql": {
             "columns": [
@@ -373,7 +373,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  CASE WHEN fuel_cost > 0 THEN\n    ROUND(((fuel_cost - charge_cost) / fuel_cost * 100)::numeric, 1)\n  ELSE 0 END AS save_pct\nFROM (\n  SELECT\n    COALESCE(SUM(d.distance), 0) * $fuel_efficiency / 100.0 * $fuel_price AS fuel_cost,\n    COALESCE((SELECT SUM(cost) FROM charging_processes WHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date)), 0) AS charge_cost\n  FROM drives d\n  WHERE d.car_id = $car_id AND $__timeFilter(d.start_date)\n) sub;",
+          "rawSql": "SELECT\n  CASE WHEN fuel_cost > 0 THEN\n    ROUND(((fuel_cost - charge_cost) / fuel_cost * 100)::numeric, 1)\n  ELSE 0 END AS save_pct\nFROM (\n  SELECT\n    COALESCE(SUM(d.distance), 0) * $fuel_efficiency / 100.0 * $fuel_price AS fuel_cost,\n    COALESCE((SELECT SUM(effective_cost(id, cost)) FROM charging_processes WHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date)), 0) AS charge_cost\n  FROM drives d\n  WHERE d.car_id = $car_id AND $__timeFilter(d.start_date)\n) sub;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -504,7 +504,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  date_trunc('month', timezone('UTC', start_date), '$__timezone') AS time,\n  ROUND(COALESCE(SUM(cost), 0)::numeric, 2) AS \"实际充电\"\nFROM charging_processes\nWHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date)\nGROUP BY 1\nORDER BY 1;",
+          "rawSql": "SELECT\n  date_trunc('month', timezone('UTC', start_date), '$__timezone') AS time,\n  ROUND(COALESCE(SUM(effective_cost(id, cost)), 0)::numeric, 2) AS \"实际充电\"\nFROM charging_processes\nWHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date)\nGROUP BY 1\nORDER BY 1;",
           "refId": "B"
         }
       ],
@@ -557,7 +557,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = 23 OR EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 0 AND 6 THEN cost ELSE 0 END)::numeric, 2) AS \"深夜谷时(23-07点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 7 AND 8 THEN cost ELSE 0 END)::numeric, 2) AS \"早高峰(07-09点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 9 AND 11 THEN cost ELSE 0 END)::numeric, 2) AS \"上午平时(09-12点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 12 AND 13 THEN cost ELSE 0 END)::numeric, 2) AS \"午间(12-14点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 14 AND 16 THEN cost ELSE 0 END)::numeric, 2) AS \"下午平时(14-17点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 17 AND 19 THEN cost ELSE 0 END)::numeric, 2) AS \"晚高峰(17-20点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 20 AND 22 THEN cost ELSE 0 END)::numeric, 2) AS \"晚间(20-23点)\"\nFROM charging_processes\nWHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date);",
+          "rawSql": "SELECT\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = 23 OR EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 0 AND 6 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"深夜谷时(23-07点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 7 AND 8 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"早高峰(07-09点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 9 AND 11 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"上午平时(09-12点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 12 AND 13 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"午间(12-14点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 14 AND 16 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"下午平时(14-17点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 17 AND 19 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"晚高峰(17-20点)\",\n  ROUND(SUM(CASE WHEN EXTRACT(HOUR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) BETWEEN 20 AND 22 THEN effective_cost(id, cost) ELSE 0 END)::numeric, 2) AS \"晚间(20-23点)\"\nFROM charging_processes\nWHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date);",
           "refId": "A",
           "sql": {
             "columns": [
@@ -752,7 +752,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  CASE WHEN $annual_budget::numeric > 0 THEN\n    ROUND((COALESCE(SUM(cost), 0) / $annual_budget::numeric * 100)::numeric, 1)\n  ELSE 0 END AS budget_pct\nFROM charging_processes\nWHERE car_id = $car_id\n  AND cost IS NOT NULL\n  AND EXTRACT(YEAR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = EXTRACT(YEAR FROM timezone('$__timezone', NOW()));",
+          "rawSql": "SELECT\n  CASE WHEN $annual_budget::numeric > 0 THEN\n    ROUND((COALESCE(SUM(effective_cost(id, cost)), 0) / $annual_budget::numeric * 100)::numeric, 1)\n  ELSE 0 END AS budget_pct\nFROM charging_processes\nWHERE car_id = $car_id\n  AND effective_cost(id, cost) IS NOT NULL\n  AND EXTRACT(YEAR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = EXTRACT(YEAR FROM timezone('$__timezone', NOW()));",
           "refId": "A",
           "sql": {
             "columns": [
@@ -831,7 +831,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  CASE WHEN total_km > 0 THEN ROUND((total_cost / total_km)::numeric, 4) ELSE 0 END AS cost_per_km\nFROM (\n  SELECT\n    COALESCE((SELECT SUM(cost) FROM charging_processes WHERE car_id = $car_id AND cost IS NOT NULL AND $__timeFilter(start_date)), 0) AS total_cost,\n    COALESCE(SUM(distance), 0) AS total_km\n  FROM drives WHERE car_id = $car_id AND $__timeFilter(start_date)\n) sub;",
+          "rawSql": "SELECT\n  CASE WHEN total_km > 0 THEN ROUND((total_cost / total_km)::numeric, 4) ELSE 0 END AS cost_per_km\nFROM (\n  SELECT\n    COALESCE((SELECT SUM(effective_cost(id, cost)) FROM charging_processes WHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL AND $__timeFilter(start_date)), 0) AS total_cost,\n    COALESCE(SUM(distance), 0) AS total_km\n  FROM drives WHERE car_id = $car_id AND $__timeFilter(start_date)\n) sub;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -911,7 +911,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  ROUND((COALESCE(SUM(cost), 0) * 365.0 / 30)::numeric, 2) AS predicted_annual\nFROM charging_processes\nWHERE car_id = $car_id\n  AND cost IS NOT NULL\n  AND (start_date AT TIME ZONE 'UTC') >= NOW() - INTERVAL '30 days';",
+          "rawSql": "SELECT\n  ROUND((COALESCE(SUM(effective_cost(id, cost)), 0) * 365.0 / 30)::numeric, 2) AS predicted_annual\nFROM charging_processes\nWHERE car_id = $car_id\n  AND effective_cost(id, cost) IS NOT NULL\n  AND (start_date AT TIME ZONE 'UTC') >= NOW() - INTERVAL '30 days';",
           "refId": "A",
           "sql": {
             "columns": [

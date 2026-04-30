@@ -1071,7 +1071,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n\tCOUNT(*) AS \"充电次数\"\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n\t",
+          "rawSql": "SELECT\r\n\tCOUNT(*) AS \"充电次数\"\r\nFROM charging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n\t",
           "refId": "充电次数",
           "sql": {
             "columns": [
@@ -1127,7 +1127,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tsum(charge_energy_added) as \"总充电量\"\nFROM\n\tcharging_processes\nWHERE\n\tcar_id = $car_id AND charge_energy_added > 0.01",
+          "rawSql": "SELECT\n\tsum(charge_energy_added) as \"总充电量\"\nFROM charging_processes\nWHERE\n\tcar_id = $car_id AND charge_energy_added > 0.01",
           "refId": "总充电量",
           "sql": {
             "columns": [
@@ -1155,7 +1155,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n\tSUM(greatest(charge_energy_added, charge_energy_used)) AS \"总耗电量\"\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n",
+          "rawSql": "SELECT\r\n\tSUM(greatest(charge_energy_added, charge_energy_used)) AS \"总耗电量\"\r\nFROM charging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n",
           "refId": "总耗电量",
           "sql": {
             "columns": [
@@ -1183,7 +1183,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n\tSUM(charge_energy_added) / SUM(greatest(charge_energy_added, charge_energy_used)) AS \"充电效率\"\r\nFROM\r\n\tcharging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n",
+          "rawSql": "SELECT\r\n\tSUM(charge_energy_added) / SUM(greatest(charge_energy_added, charge_energy_used)) AS \"充电效率\"\r\nFROM charging_processes\r\nWHERE\r\n\tcar_id = $car_id AND charge_energy_added > 0.01\r\n",
           "refId": "充电效率",
           "sql": {
             "columns": [

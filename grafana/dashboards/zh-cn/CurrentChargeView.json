@@ -637,7 +637,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(g.name, CONCAT_WS(', ', COALESCE(addresses.name, CONCAT_WS(' ', addresses.road, addresses.house_number)), addresses.city)) FROM \tcharging_processes c \tLEFT JOIN addresses ON addresses.id = c.address_id \tLEFT JOIN geofences g ON g.id = geofence_id WHERE \tc.id = $charging_processes",
+          "rawSql": "SELECT COALESCE(g.name, CONCAT_WS(', ', COALESCE(addresses.name, CONCAT_WS(' ', addresses.road, addresses.house_number)), addresses.city)) FROM charging_processes c \tLEFT JOIN addresses ON addresses.id = c.address_id \tLEFT JOIN geofences g ON g.id = geofence_id WHERE \tc.id = $charging_processes",
           "refId": "Voltage",
           "select": [
             [

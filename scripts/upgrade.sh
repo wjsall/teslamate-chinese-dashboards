@@ -4,17 +4,23 @@
 # 用法（在仓库根目录运行）:
 #   bash scripts/upgrade.sh
 #
-# 自动完成:
+# 自动完成（幂等，多次跑无副作用）:
 #   1. git pull 拉取最新代码
 #   2. 自动检测运行中的 PostgreSQL 容器名
 #   3. 安装/更新坐标转换函数（lat_for_map / lng_for_map / wgs84_to_gcj02_*）
-#   4. 重启 Grafana 容器，触发仪表盘重载
+#   4. 安装/更新分时电价系统（tou_rates 表 + 7 个函数 + 触发器 + 视图）
+#   5. 检查 Grafana 必装插件（volkovlabs-form-panel）
+#   6. 重启 Grafana 容器，触发仪表盘重载
 #
 # 适用场景:
-#   - 从 v1.4.1 或更早版本升级到 v1.4.2+
-#   - v1.4.2+ 全新安装后第一次启用地图源切换功能
-#   - 任何时候想确保坐标转换函数是最新的
+#   - 从任一旧版本升级到最新（v1.4.x → v1.5.x）
+#   - 全新安装后第一次启用扩展功能
+#   - 任何时候想确保函数 / 插件是最新的
 set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/detect-containers.sh
+source "$SCRIPT_DIR/lib/detect-containers.sh"
 
 GREEN="\033[0;32m"
 RED="\033[0;31m"
@@ -51,12 +57,8 @@ git pull --rebase
 # ============================================================
 # 2. 检测 PostgreSQL 容器名
 # ============================================================
-echo -e "${BLUE}[2/4] 检测 PostgreSQL 容器...${NC}"
-DB_CONTAINER=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'teslamate.*database|teslamate.*postgres' | head -1)
-
-if [ -z "$DB_CONTAINER" ]; then
-    DB_CONTAINER=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE '^database$|^postgres$' | head -1)
-fi
+echo -e "${BLUE}[2/6] 检测 PostgreSQL 容器...${NC}"
+DB_CONTAINER=$(detect_db_container)
 
 if [ -z "$DB_CONTAINER" ]; then
     echo -e "${RED}✗ 找不到运行中的 PostgreSQL 容器${NC}"
@@ -72,21 +74,69 @@ fi
 echo -e "${GREEN}  ✓ 找到容器: ${DB_CONTAINER}${NC}"
 
 # ============================================================
-# 3. 安装坐标转换函数
+# 3. 安装坐标转换函数（地图源切换 + GCJ-02 转换）
 # ============================================================
-echo -e "${BLUE}[3/4] 安装 PostgreSQL 坐标转换函数...${NC}"
+echo -e "${BLUE}[3/6] 安装坐标转换函数（地图）...${NC}"
 if ! docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
-        < sql/install-coord-functions.sql; then
-    echo -e "${RED}✗ 函数安装失败${NC}"
+        < sql/install-coord-functions.sql > /dev/null; then
+    echo -e "${RED}✗ 坐标函数安装失败${NC}"
     echo "  常见原因 + 解决: 见 TROUBLESHOOTING.md「装 PostgreSQL 坐标转换函数报错」章节"
     exit 1
 fi
+echo -e "${GREEN}  ✓ 地图坐标函数已就绪${NC}"
 
 # ============================================================
-# 4. 重启 Grafana
+# 4. 安装分时电价系统
 # ============================================================
-echo -e "${BLUE}[4/4] 重启 Grafana...${NC}"
-GRAFANA_CONTAINER=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'teslamate.*grafana|^grafana$' | head -1)
+echo -e "${BLUE}[4/6] 安装分时电价系统...${NC}"
+TOU_INSTALLED=0
+if [ ! -f "sql/install-tou.sql" ]; then
+    echo -e "${YELLOW}  ⚠ 找不到 sql/install-tou.sql，跳过分时电价安装（地图功能仍可用）${NC}"
+else
+    # 把 stderr 落盘，便于排错；NOTICE 信息走 stdout 丢弃
+    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+            < sql/install-tou.sql > /dev/null 2> /tmp/tou-install.log; then
+        echo -e "${GREEN}  ✓ 分时电价表/函数/触发器/视图已就绪${NC}"
+        echo "    用 'bash scripts/tou-wizard.sh' 配置峰谷电价（可选，没装也不影响主仪表盘）"
+        TOU_INSTALLED=1
+    else
+        echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"
+        cat /tmp/tou-install.log | sed 's/^/    /' | head -20
+        echo ""
+        echo -e "${YELLOW}  地图功能仍可用，但「⚡ 分时电价配置」仪表盘不可用。${NC}"
+        echo -e "${YELLOW}  排错见 TROUBLESHOOTING.md「v1.5.0 分时电价升级排错」章节${NC}"
+        # 不 exit 1：让用户继续看到地图功能升级是 OK 的
+    fi
+fi
+
+# ============================================================
+# 5. 检查 Grafana 必装插件
+# ============================================================
+echo -e "${BLUE}[5/6] 检查 Grafana 插件...${NC}"
+GRAFANA_CONTAINER=$(detect_grafana_container)
+if [ -n "$GRAFANA_CONTAINER" ]; then
+    if docker exec "$GRAFANA_CONTAINER" ls /var/lib/grafana/plugins/volkovlabs-form-panel >/dev/null 2>&1; then
+        echo -e "${GREEN}  ✓ volkovlabs-form-panel 已装${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ 分时电价配置仪表盘需要 volkovlabs-form-panel 插件${NC}"
+        read -p "  是否现在安装？[Y/n]: " -n 1 -r install_plugin
+        echo ""
+        if [[ ! $install_plugin =~ ^[Nn]$ ]]; then
+            docker exec --user root "$GRAFANA_CONTAINER" \
+                grafana-cli plugins install volkovlabs-form-panel >/dev/null 2>&1 \
+                && echo -e "${GREEN}  ✓ 插件已装（重启后生效）${NC}" \
+                || echo -e "${RED}  ✗ 插件安装失败，可手动跑: docker exec ${GRAFANA_CONTAINER} grafana-cli plugins install volkovlabs-form-panel${NC}"
+        else
+            echo "    跳过。「⚡ 分时电价配置」仪表盘会显示空白，但不影响其他面板。"
+        fi
+    fi
+fi
+
+# ============================================================
+# 6. 重启 Grafana
+# ============================================================
+echo -e "${BLUE}[6/6] 重启 Grafana...${NC}"
+# GRAFANA_CONTAINER 已在步骤 5 检测过，直接复用
 if [ -n "$GRAFANA_CONTAINER" ]; then
     docker restart "$GRAFANA_CONTAINER" > /dev/null
     echo -e "${GREEN}  ✓ 已重启 ${GRAFANA_CONTAINER}${NC}"
@@ -105,9 +155,11 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo "下一步:"
 echo "  1. 浏览器 Ctrl+Shift+R（Windows）/ Cmd+Shift+R（Mac）强刷"
-echo "  2. 打开任一含地图的仪表盘:"
-echo "     • 当前驾驶状态  • 当前充电状态  • 驾驶记录追踪"
-echo "     • 充电统计      • 行程统计      • 足迹地图"
-echo "  3. 顶部「地图源」下拉框试试切换 → 高德/谷歌/卫星"
+echo "  2. 地图功能：打开任一含地图的仪表盘 → 顶部「地图源」试试 OSM / 高德 / 谷歌 / 卫星"
+echo "  3. 分时电价（可选）："
+echo "     bash scripts/tou-wizard.sh        # 交互式向导（推荐）"
+echo "     或打开「⚡ 分时电价配置」仪表盘 → 「🌆 一键导入城市模板」"
+echo "  4. 配完想让历史充电也按分时电价算："
+echo "     docker exec ${DB_CONTAINER} psql -U teslamate -d teslamate -c 'SELECT backfill_all_tou()'"
 echo ""
 echo "如有问题: TROUBLESHOOTING.md"

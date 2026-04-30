@@ -1,0 +1,754 @@
+{
+  "title": "🏆 充电桩性价比榜",
+  "uid": "station-ranking",
+  "tags": [
+    "tesla",
+    "tou",
+    "charging",
+    "ranking"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "refresh": "",
+  "editable": true,
+  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT id as __value, CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text FROM cars ORDER BY display_priority ASC, name ASC, vin ASC;",
+        "includeAll": false,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT id as __value, CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text FROM cars ORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "OpenStreetMap",
+          "value": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        },
+        "description": "🌏 地图源切换 — 6 种瓦片一键切换。中国大陆推荐：高德地图。",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "label": "地图源",
+        "name": "map_url",
+        "options": [
+          {
+            "selected": true,
+            "text": "OpenStreetMap",
+            "value": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          },
+          {
+            "selected": false,
+            "text": "高德地图",
+            "value": "https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}"
+          },
+          {
+            "selected": false,
+            "text": "高德卫星",
+            "value": "https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}"
+          },
+          {
+            "selected": false,
+            "text": "谷歌地图",
+            "value": "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          },
+          {
+            "selected": false,
+            "text": "谷歌卫星",
+            "value": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+          },
+          {
+            "selected": false,
+            "text": "Carto 浅色",
+            "value": "https://cartodb-basemaps-c.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png"
+          }
+        ],
+        "query": "OpenStreetMap : https://tile.openstreetmap.org/{z}/{x}/{y}.png,高德地图 : https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z},高德卫星 : https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z},谷歌地图 : https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z},谷歌卫星 : https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z},Carto 浅色 : https://cartodb-basemaps-c.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "options": {
+        "mode": "markdown",
+        "content": "\n# 🏆 充电桩性价比榜\n\n按 **¥/度（实际单价）** 排序所有充电点。家充自动按你配的分时电价计算（配了用分时，没开用原价）。\n\n**怎么看：**\n- **绿色 = 便宜（< ¥0.6/度，多半是家充谷段）**\n- 黄色 = 中等（0.6-1.0）\n- 橙色/红色 = 贵（超充和高峰电）\n- 圆点大小 = 充电次数（越大去得越多）\n"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "📊 总充电次数",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n SELECT COUNT(*) AS \"次\" FROM stations",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 4,
+        "h": 5
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "💰 总充电费用",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n SELECT ROUND(SUM(cost)::numeric, 2) AS \"¥\" FROM stations",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 4,
+        "w": 5,
+        "h": 5
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "🟢 最便宜 3 个桩",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n\nSELECT\n  station AS \"充电点\",\n  ROUND((SUM(cost)/SUM(charge_energy_added))::numeric, 3) AS \"¥/度 (分时)\"\nFROM stations GROUP BY station\nHAVING COUNT(*) >= 2 AND SUM(charge_energy_added) > 0\nORDER BY SUM(cost)/SUM(charge_energy_added) ASC LIMIT 3",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 4,
+        "w": 7,
+        "h": 5
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "🔴 最贵 3 个桩",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n\nSELECT\n  station AS \"充电点\",\n  ROUND((SUM(cost)/SUM(charge_energy_added))::numeric, 3) AS \"¥/度 (分时)\"\nFROM stations GROUP BY station\nHAVING COUNT(*) >= 2 AND SUM(charge_energy_added) > 0\nORDER BY SUM(cost)/SUM(charge_energy_added) DESC LIMIT 3",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "🏆 充电桩排行榜（按 ¥/度 升序，分时 = 按你配的峰平谷算的真实价；原价 = TeslaMate 简单平均）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n\nSELECT\n  ROW_NUMBER() OVER (ORDER BY SUM(cost)/NULLIF(SUM(charge_energy_added),0) ASC) AS \"排名\",\n  station AS \"充电点\",\n  COUNT(*) AS \"次数\",\n  ROUND(SUM(cost)::numeric, 2) AS \"累计费用 ¥\",\n  ROUND(SUM(charge_energy_added)::numeric, 1) AS \"累计电量 kWh\",\n  ROUND((SUM(cost)/NULLIF(SUM(charge_energy_added),0))::numeric, 3) AS \"¥/度 (分时)\",\n  ROUND((SUM(cost_orig)/NULLIF(SUM(charge_energy_added),0))::numeric, 3) AS \"¥/度 (原价)\",\n  ROUND(AVG(duration_min)::numeric, 0) AS \"平均时长 (分)\",\n  ROUND((AVG(charge_energy_added * 60.0 / NULLIF(duration_min, 0)))::numeric, 1) AS \"平均功率 kW\",\n  ROUND((SUM(cost)/NULLIF(COUNT(*),0))::numeric, 2) AS \"次均费用 ¥\",\n  TO_CHAR(MAX(start_date) AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone', 'YYYY-MM-DD') AS \"最近一次\"\nFROM stations\nGROUP BY station\nHAVING COUNT(*) >= 1\nORDER BY SUM(cost)/NULLIF(SUM(charge_energy_added),0) ASC\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "¥/度 (分时)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.6
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1.0
+                    },
+                    {
+                      "color": "red",
+                      "value": 1.5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "排名"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 60
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "充电点"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 250
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 14
+      }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "💎 ¥/度 Top 10 桩（绿=便宜，红=贵）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n\nSELECT\n  station AS \"充电点\",\n  ROUND((SUM(cost)/NULLIF(SUM(charge_energy_added),0))::numeric, 3) AS \"¥/度\"\nFROM stations\nGROUP BY station\nHAVING COUNT(*) >= 2 AND SUM(charge_energy_added) > 0\nORDER BY SUM(cost)/SUM(charge_energy_added) ASC\nLIMIT 10\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "lineWidth": 0
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "orange",
+                "value": 1.0
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          },
+          "unit": "none",
+          "decimals": 3,
+          "min": 0,
+          "displayName": "${__field.name}"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "充电点",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "hidden",
+          "showLegend": false
+        },
+        "barWidth": 0.85,
+        "groupWidth": 0.7
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "📈 最近 30 天 vs 之前的桩单价对比（红 = 涨价，绿 = 降价）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n,\nrecent AS (\n  SELECT station,\n    SUM(cost)/NULLIF(SUM(charge_energy_added),0) AS rate_recent,\n    COUNT(*) AS n_recent\n  FROM stations\n  WHERE start_date > NOW() - INTERVAL '30 days'\n  GROUP BY station\n  HAVING COUNT(*) >= 1\n),\nolder AS (\n  SELECT station,\n    SUM(cost)/NULLIF(SUM(charge_energy_added),0) AS rate_old,\n    COUNT(*) AS n_old\n  FROM stations\n  WHERE start_date <= NOW() - INTERVAL '30 days'\n  GROUP BY station\n  HAVING COUNT(*) >= 1\n)\nSELECT\n  COALESCE(r.station, o.station) AS \"充电点\",\n  ROUND(o.rate_old::numeric, 3) AS \"之前 ¥/度\",\n  ROUND(r.rate_recent::numeric, 3) AS \"近 30 天 ¥/度\",\n  ROUND(((r.rate_recent - o.rate_old) / NULLIF(o.rate_old, 0) * 100)::numeric, 1) AS \"变化 %\",\n  o.n_old AS \"之前次数\",\n  r.n_recent AS \"近 30 天次数\"\nFROM recent r FULL OUTER JOIN older o USING (station)\nWHERE r.station IS NOT NULL AND o.station IS NOT NULL\n  AND ABS(r.rate_recent - o.rate_old) / NULLIF(o.rate_old, 0) > 0.05\nORDER BY ((r.rate_recent - o.rate_old) / NULLIF(o.rate_old, 0)) DESC\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "变化 %"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "transparent",
+                      "value": -5
+                    },
+                    {
+                      "color": "transparent",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "id": 9,
+      "type": "geomap",
+      "title": "🗺️ 充电桩地图（颜色=¥/度，大小=去过的次数）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH stations AS (\n  SELECT\n    cp.id,\n    COALESCE(g.name, a.display_name, '未知地点') AS station,\n    cp.geofence_id,\n    cp.address_id,\n    p.latitude AS lat_raw,\n    p.longitude AS lng_raw,\n    cp.charge_energy_added,\n    effective_cost(cp.id, cp.cost) AS cost,\n    effective_cost(cp.id, cp.cost) AS cost_orig,\n    cp.duration_min,\n    cp.start_date,\n    cp.end_date\n  FROM charging_processes cp\n  LEFT JOIN positions p ON p.id = cp.position_id\n  LEFT JOIN geofences g ON g.id = cp.geofence_id\n  LEFT JOIN addresses a ON a.id = cp.address_id\n  WHERE cp.car_id = $car_id\n    AND cp.charge_energy_added > 1\n    AND effective_cost(cp.id, cp.cost) IS NOT NULL\n    AND cp.duration_min >= 3\n    AND $__timeFilter(cp.start_date)\n)\n\nSELECT\n  station AS \"充电点\",\n  AVG(lat_for_map('${map_url}', lat_raw, lng_raw)) AS \"latitude\",\n  AVG(lng_for_map('${map_url}', lat_raw, lng_raw)) AS \"longitude\",\n  ROUND((SUM(cost)/NULLIF(SUM(charge_energy_added),0))::numeric, 3) AS \"¥/度\",\n  COUNT(*) AS \"充电次数\",\n  ROUND(SUM(cost)::numeric, 2) AS \"累计费用\"\nFROM stations\nWHERE lat_raw IS NOT NULL AND lng_raw IS NOT NULL\nGROUP BY station\nHAVING COUNT(*) >= 1\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "orange",
+                "value": 1.0
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 35,
+          "lon": 105,
+          "zoom": 4
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": false,
+          "showMeasure": false,
+          "showDebug": false
+        },
+        "basemap": {
+          "type": "xyz",
+          "name": "Layer 0",
+          "config": {
+            "url": "${map_url}",
+            "attribution": "${map_url:text} contributors",
+            "minZoom": 3,
+            "maxZoom": 18
+          }
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "充电桩",
+            "config": {
+              "style": {
+                "color": {
+                  "field": "¥/度",
+                  "fixed": "dark-green"
+                },
+                "size": {
+                  "field": "充电次数",
+                  "min": 4,
+                  "max": 20,
+                  "fixed": 6
+                },
+                "opacity": 0.8,
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                }
+              },
+              "showLegend": true
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "tooltip": true
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 22
+      }
+    }
+  ],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "车辆信息",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "battery"
+      ],
+      "targetBlank": false,
+      "title": "电池",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "trip"
+      ],
+      "targetBlank": false,
+      "title": "行驶",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "中文文档",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://github.com/wjsall/teslamate-chinese-dashboards"
+    }
+  ]
+}

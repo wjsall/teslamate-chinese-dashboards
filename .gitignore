@@ -1,3 +1,5 @@
 .DS_Store
 docker-compose.dev.yml
 CLAUDE.md
+__pycache__/
+*.pyc

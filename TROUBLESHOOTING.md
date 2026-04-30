@@ -595,6 +595,66 @@ docker compose up -d
 
 ---
 
+<a id="tou-rollback"></a>
+
+### v1.5.0 分时电价升级排错 / 回滚
+
+#### 仪表盘报 `function effective_cost(...) does not exist`
+
+`install-tou.sql` 没装上。**按你的安装方式重跑升级即可**，详见 [README 方法 B](README.md#upgrade-method-b)（git clone 用户）或 [README 方法 C](README.md#upgrade-method-c)（手动派）。
+
+#### 「⚡ 分时电价配置」仪表盘空白 / 不显示表单
+
+Grafana 缺 `volkovlabs-form-panel` 插件。新镜像启动时自动装（`ENV GF_INSTALL_PLUGINS`），如果你用的旧镜像或自己组的 compose：
+
+```bash
+docker exec --user root teslamate-grafana-1 grafana-cli plugins install volkovlabs-form-panel
+docker compose restart grafana
+```
+
+#### 主仪表盘费用数字突然变了
+
+如果你**配了分时电价**，所有费用面板会自动按 分时电价真实价显示，跟之前 TeslaMate 默认估算的数字会有 1-5% 差异（TeslaMate 默认按充电点配的固定单价 × 度数算，分时电价是按时段逐秒加权）。这是预期行为。
+
+**想恢复原数字**：
+
+```bash
+# 选项 1：清空 分时电价配置（保留函数和旁路表，下次想用还能用）
+docker exec teslamate-database-1 psql -U teslamate -d teslamate \
+  -c "TRUNCATE tou_rates RESTART IDENTITY CASCADE; TRUNCATE charging_processes_tou_cost"
+
+# 选项 2：把仪表盘 SQL 改回原 cost（git clone 用户）
+python3 scripts/wrap-cost-with-tou-view.py --revert
+```
+
+#### 完全卸载分时电价（恢复到 v1.4.x 状态）
+
+**TeslaMate 任何表都没动**，可以彻底拆除。一行调 `uninstall_tou()` PG 函数：
+
+```bash
+docker exec teslamate-database-1 psql -U teslamate -d teslamate \
+  -c "SELECT uninstall_tou(); DROP FUNCTION uninstall_tou();"
+
+# 仪表盘 SQL 也改回去（git clone 用户）
+python3 scripts/wrap-cost-with-tou-view.py --revert
+```
+
+`uninstall_tou()` 用 `pg_proc` 自动找全部 tou_* / _tou_* 函数 + 触发器 + 视图 + 旁路表，不会跟 install-tou.sql 函数列表漂移。
+
+> ⚠ 调用会 **CASCADE 删除所有依赖 `tou_rates` / `charging_processes_tou_cost` 的对象（包括你自己建的视图）**。卸载前先跑 `\d+ tou_rates` 看 referenced by 列表确认没要保的。
+
+#### 分时电价计算不对劲（充电费用看上去不合理）
+
+打开「⚡ 分时电价配置」仪表盘，看「⚠ 配置审计」面板：
+- **时段空缺**：某些小时没配置 → 那段时间充电会按 NULL → 仪表盘 fallback 原 cost
+- **时段重叠**：同一小时被多条记录覆盖 → 系统按 ID 最小的那条算，其他失效
+- **月份空缺**：整个月没落入任何季节 → 那个月充电按 NULL → fallback 原 cost
+
+修法：用「⚡ 一键填一整季节」重新覆盖，或「✏️ 修改单价」/「🗑️ 删除整段」精修。
+改完点底部「**🔄 重算所有历史充电**」按钮重算历史。
+
+---
+
 ### ❌ 升级后数据丢失 / Dashboard 错乱
 
 **不要慌，数据通常在数据库里没问题。**

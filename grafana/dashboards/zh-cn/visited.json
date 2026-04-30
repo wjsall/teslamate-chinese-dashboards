@@ -442,7 +442,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tsum(charge_energy_added) as \"充电总量\",\n\tSUM(greatest(charge_energy_added, charge_energy_used)) AS \"用电总量\",\n\tSUM(charge_energy_added) * 100 / SUM(greatest(charge_energy_added, charge_energy_used)) AS \"充电效率\"\nFROM\n\tcharging_processes\nWHERE\n\tcar_id = $car_id AND $__timeFilter(start_date) AND charge_energy_added > 0.01",
+          "rawSql": "SELECT\n\tsum(charge_energy_added) as \"充电总量\",\n\tSUM(greatest(charge_energy_added, charge_energy_used)) AS \"用电总量\",\n\tSUM(charge_energy_added) * 100 / SUM(greatest(charge_energy_added, charge_energy_used)) AS \"充电效率\"\nFROM charging_processes\nWHERE\n\tcar_id = $car_id AND $__timeFilter(start_date) AND charge_energy_added > 0.01",
           "refId": "A",
           "sql": {
             "columns": [
@@ -556,7 +556,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select sum(cost) as \"充电总费用\" from charging_processes where $__timeFilter(start_date) AND car_id = $car_id;",
+          "rawSql": "select sum(effective_cost(id, cost)) as \"充电总费用\" FROM charging_processes where $__timeFilter(start_date) AND car_id = $car_id;",
           "refId": "A",
           "sql": {
             "columns": [

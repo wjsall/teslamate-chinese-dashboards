@@ -1,0 +1,1669 @@
+{
+  "title": "⚡ 分时电价配置",
+  "uid": "tou-config",
+  "tags": [
+    "tesla",
+    "tou",
+    "config"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "",
+  "editable": true,
+  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "includeAll": false,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT g.id AS __value, g.name AS __text FROM geofences g WHERE g.id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL) ORDER BY g.name",
+        "includeAll": false,
+        "label": "充电点",
+        "name": "geofence_filter",
+        "options": [],
+        "query": "SELECT g.id AS __value, g.name AS __text FROM geofences g WHERE g.id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL) ORDER BY g.name",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "options": {
+        "mode": "markdown",
+        "content": "\n# ⚡ 分时电价配置\n\n**最快 3 步：**\n1. 「**🌆 一键导入城市模板**」选你城市（90% 用户够用）\n2. **不够用** → 用「**⚡ 一键填一整季节**」：只填**谷时段 + 峰时段 + 3 档单价**，平段自动占满剩余\n3. 看「**⏰ 24 小时电价分布**」 + 「**⚠ 配置审计**」核对覆盖\n\n> 时段格式：`22-7`（跨夜）或 `0-7, 23-24`（多段用逗号）。**两档电网**：峰时段留空、峰价填 0。\n"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "barchart",
+      "title": "⏰ 24 小时电价分布（按所选充电点 + 今日）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH hours AS (\n  SELECT generate_series(0, 23) AS h\n),\nactive AS (\n  SELECT hour_start, hour_end, rate, label, valid_from, valid_to\n  FROM tou_rates\n  WHERE apply_to_dc = FALSE\n    AND geofence_id = NULLIF('$geofence_filter', '')::INT\n    AND _tou_in_season((NOW() AT TIME ZONE 'Asia/Shanghai')::DATE, valid_from, valid_to)\n)\nSELECT\n  lpad(h.h::TEXT, 2, '0') || ' 时' AS \"时点\",\n  COALESCE(\n    (SELECT rate\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    0\n  ) AS \"单价\",\n  COALESCE(\n    (SELECT label\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    '未配置'\n  ) AS \"标签\"\nFROM hours h\nORDER BY h.h\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "lineWidth": 0,
+            "axisBorderShow": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.4
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          },
+          "unit": "none",
+          "decimals": 2,
+          "min": 0,
+          "displayName": "${__field.name} ¥/度"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "标签"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "viz": true,
+                  "tooltip": false,
+                  "legend": false
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "时点",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "barWidth": 0.9,
+        "groupWidth": 0.7,
+        "barRadius": 0
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "⚠ 配置审计",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nWITH issues AS (\n  SELECT severity, season, detail FROM audit_tou_config(NULLIF('$geofence_filter', '')::INT)\n)\nSELECT severity AS \"严重程度\", season AS \"季节\", detail AS \"详情\" FROM issues\nUNION ALL\nSELECT '✓ 配置完整', '-', '24 小时全覆盖、无重叠、月份完整'\nWHERE NOT EXISTS (SELECT 1 FROM issues)\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 6
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "📋 当前电价配置",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nSELECT\n  r.id AS \"编号\",\n  COALESCE(g.name, '(全局)') AS \"充电点\",\n  r.hour_start || ':00 - ' || r.hour_end || ':00' AS \"时段\",\n  r.rate AS \"单价 ¥/度\",\n  r.label AS \"标签\",\n  CASE WHEN r.apply_to_dc THEN '快充' ELSE '慢充' END AS \"类型\",\n  CASE WHEN r.valid_from IS NULL AND r.valid_to IS NULL THEN '全年'\n       ELSE COALESCE(to_char(r.valid_from, 'MM/DD'), '?') || ' ~ ' || COALESCE(to_char(r.valid_to, 'MM/DD'), '?') END AS \"季节\"\nFROM tou_rates r\nLEFT JOIN geofences g ON g.id = r.geofence_id\nORDER BY r.geofence_id NULLS FIRST, r.id\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 14,
+        "h": 28
+      }
+    },
+    {
+      "id": 4,
+      "type": "volkovlabs-form-panel",
+      "title": "⚡ 一键填一整季节（只填谷+峰时段，平自动）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 18,
+        "w": 10,
+        "h": 28
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "SELECT id, name FROM geofences ORDER BY name",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "⚡ 一键应用",
+          "icon": "bolt",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "geofence_id",
+            "type": "select",
+            "title": "充电点",
+            "value": null,
+            "optionsSource": "Query",
+            "queryOptions": {
+              "source": "A",
+              "value": "id",
+              "label": "name"
+            },
+            "showIf": "",
+            "section": ""
+          },
+          {
+            "id": "valley_range_1",
+            "type": "string",
+            "title": "谷时段 1（如 22-7 跨夜，或 0-7）",
+            "value": "22-7",
+            "tooltip": "支持跨夜（如 22-7 = 22 点到次日 7 点）"
+          },
+          {
+            "id": "valley_range_2",
+            "type": "string",
+            "title": "谷时段 2（可选，用不到留空）",
+            "value": ""
+          },
+          {
+            "id": "valley_range_3",
+            "type": "string",
+            "title": "谷时段 3（可选）",
+            "value": ""
+          },
+          {
+            "id": "valley_rate",
+            "type": "number",
+            "title": "谷价 ¥/度",
+            "value": 0.24,
+            "min": 0,
+            "step": 0.01
+          },
+          {
+            "id": "peak_range_1",
+            "type": "string",
+            "title": "峰时段 1（如 11-18；两档电网无峰留空）",
+            "value": "11-18"
+          },
+          {
+            "id": "peak_range_2",
+            "type": "string",
+            "title": "峰时段 2（可选，如 20-22）",
+            "value": ""
+          },
+          {
+            "id": "peak_range_3",
+            "type": "string",
+            "title": "峰时段 3（可选，江苏式 3 段尖峰）",
+            "value": ""
+          },
+          {
+            "id": "peak_rate",
+            "type": "number",
+            "title": "峰价 ¥/度（无峰填 0）",
+            "value": 0.86,
+            "min": 0,
+            "step": 0.01
+          },
+          {
+            "id": "mid_rate",
+            "type": "number",
+            "title": "平价 ¥/度（自动占剩余时段）",
+            "value": 0.55,
+            "min": 0,
+            "step": 0.01
+          },
+          {
+            "id": "advanced",
+            "type": "radio",
+            "title": "高级（启用尖/深谷档？）",
+            "value": "no",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "no",
+                "value": "no",
+                "label": "否（标准 3 档：谷/峰/平）"
+              },
+              {
+                "id": "yes",
+                "value": "yes",
+                "label": "是（5 档：+ 尖 + 深谷）"
+              }
+            ]
+          },
+          {
+            "id": "sharp_range_1",
+            "type": "string",
+            "title": "尖时段 1（如夏季 13-15）",
+            "value": "",
+            "showIf": "return context.panel.elements.find(e => e.id === 'advanced')?.value === 'yes';"
+          },
+          {
+            "id": "sharp_range_2",
+            "type": "string",
+            "title": "尖时段 2（可选）",
+            "value": "",
+            "showIf": "return context.panel.elements.find(e => e.id === 'advanced')?.value === 'yes';"
+          },
+          {
+            "id": "sharp_rate",
+            "type": "number",
+            "title": "尖价 ¥/度（无尖填 0）",
+            "value": 0,
+            "min": 0,
+            "step": 0.01,
+            "showIf": "return context.panel.elements.find(e => e.id === 'advanced')?.value === 'yes';"
+          },
+          {
+            "id": "deep_range_1",
+            "type": "string",
+            "title": "深谷时段（如 2-5 凌晨深谷，可选）",
+            "value": "",
+            "showIf": "return context.panel.elements.find(e => e.id === 'advanced')?.value === 'yes';"
+          },
+          {
+            "id": "deep_rate",
+            "type": "number",
+            "title": "深谷价 ¥/度（无深谷填 0）",
+            "value": 0,
+            "min": 0,
+            "step": 0.01,
+            "showIf": "return context.panel.elements.find(e => e.id === 'advanced')?.value === 'yes';"
+          },
+          {
+            "id": "from_month",
+            "type": "select",
+            "title": "季节范围",
+            "value": "",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "",
+                "value": "",
+                "label": "全年生效（无季节差异）"
+              },
+              {
+                "id": "1",
+                "value": "1",
+                "label": "1 月起"
+              },
+              {
+                "id": "2",
+                "value": "2",
+                "label": "2 月起"
+              },
+              {
+                "id": "3",
+                "value": "3",
+                "label": "3 月起"
+              },
+              {
+                "id": "4",
+                "value": "4",
+                "label": "4 月起"
+              },
+              {
+                "id": "5",
+                "value": "5",
+                "label": "5 月起"
+              },
+              {
+                "id": "6",
+                "value": "6",
+                "label": "6 月起"
+              },
+              {
+                "id": "7",
+                "value": "7",
+                "label": "7 月起"
+              },
+              {
+                "id": "8",
+                "value": "8",
+                "label": "8 月起"
+              },
+              {
+                "id": "9",
+                "value": "9",
+                "label": "9 月起"
+              },
+              {
+                "id": "10",
+                "value": "10",
+                "label": "10 月起"
+              },
+              {
+                "id": "11",
+                "value": "11",
+                "label": "11 月起"
+              },
+              {
+                "id": "12",
+                "value": "12",
+                "label": "12 月起"
+              }
+            ]
+          },
+          {
+            "id": "from_day",
+            "type": "select",
+            "title": "起始日（1-31）",
+            "value": "1",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "1",
+                "value": "1",
+                "label": "1 日"
+              },
+              {
+                "id": "2",
+                "value": "2",
+                "label": "2 日"
+              },
+              {
+                "id": "3",
+                "value": "3",
+                "label": "3 日"
+              },
+              {
+                "id": "4",
+                "value": "4",
+                "label": "4 日"
+              },
+              {
+                "id": "5",
+                "value": "5",
+                "label": "5 日"
+              },
+              {
+                "id": "6",
+                "value": "6",
+                "label": "6 日"
+              },
+              {
+                "id": "7",
+                "value": "7",
+                "label": "7 日"
+              },
+              {
+                "id": "8",
+                "value": "8",
+                "label": "8 日"
+              },
+              {
+                "id": "9",
+                "value": "9",
+                "label": "9 日"
+              },
+              {
+                "id": "10",
+                "value": "10",
+                "label": "10 日"
+              },
+              {
+                "id": "11",
+                "value": "11",
+                "label": "11 日"
+              },
+              {
+                "id": "12",
+                "value": "12",
+                "label": "12 日"
+              },
+              {
+                "id": "13",
+                "value": "13",
+                "label": "13 日"
+              },
+              {
+                "id": "14",
+                "value": "14",
+                "label": "14 日"
+              },
+              {
+                "id": "15",
+                "value": "15",
+                "label": "15 日"
+              },
+              {
+                "id": "16",
+                "value": "16",
+                "label": "16 日"
+              },
+              {
+                "id": "17",
+                "value": "17",
+                "label": "17 日"
+              },
+              {
+                "id": "18",
+                "value": "18",
+                "label": "18 日"
+              },
+              {
+                "id": "19",
+                "value": "19",
+                "label": "19 日"
+              },
+              {
+                "id": "20",
+                "value": "20",
+                "label": "20 日"
+              },
+              {
+                "id": "21",
+                "value": "21",
+                "label": "21 日"
+              },
+              {
+                "id": "22",
+                "value": "22",
+                "label": "22 日"
+              },
+              {
+                "id": "23",
+                "value": "23",
+                "label": "23 日"
+              },
+              {
+                "id": "24",
+                "value": "24",
+                "label": "24 日"
+              },
+              {
+                "id": "25",
+                "value": "25",
+                "label": "25 日"
+              },
+              {
+                "id": "26",
+                "value": "26",
+                "label": "26 日"
+              },
+              {
+                "id": "27",
+                "value": "27",
+                "label": "27 日"
+              },
+              {
+                "id": "28",
+                "value": "28",
+                "label": "28 日"
+              },
+              {
+                "id": "29",
+                "value": "29",
+                "label": "29 日"
+              },
+              {
+                "id": "30",
+                "value": "30",
+                "label": "30 日"
+              },
+              {
+                "id": "31",
+                "value": "31",
+                "label": "31 日"
+              }
+            ],
+            "showIf": "return context.panel.elements.find(e => e.id === 'from_month')?.value !== '';"
+          },
+          {
+            "id": "to_month",
+            "type": "select",
+            "title": "结束月",
+            "value": "",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "1",
+                "value": "1",
+                "label": "1 月止"
+              },
+              {
+                "id": "2",
+                "value": "2",
+                "label": "2 月止"
+              },
+              {
+                "id": "3",
+                "value": "3",
+                "label": "3 月止"
+              },
+              {
+                "id": "4",
+                "value": "4",
+                "label": "4 月止"
+              },
+              {
+                "id": "5",
+                "value": "5",
+                "label": "5 月止"
+              },
+              {
+                "id": "6",
+                "value": "6",
+                "label": "6 月止"
+              },
+              {
+                "id": "7",
+                "value": "7",
+                "label": "7 月止"
+              },
+              {
+                "id": "8",
+                "value": "8",
+                "label": "8 月止"
+              },
+              {
+                "id": "9",
+                "value": "9",
+                "label": "9 月止"
+              },
+              {
+                "id": "10",
+                "value": "10",
+                "label": "10 月止"
+              },
+              {
+                "id": "11",
+                "value": "11",
+                "label": "11 月止"
+              },
+              {
+                "id": "12",
+                "value": "12",
+                "label": "12 月止"
+              }
+            ],
+            "showIf": "return context.panel.elements.find(e => e.id === 'from_month')?.value !== '';"
+          },
+          {
+            "id": "to_day",
+            "type": "select",
+            "title": "结束日（1-31）",
+            "value": "31",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "1",
+                "value": "1",
+                "label": "1 日"
+              },
+              {
+                "id": "2",
+                "value": "2",
+                "label": "2 日"
+              },
+              {
+                "id": "3",
+                "value": "3",
+                "label": "3 日"
+              },
+              {
+                "id": "4",
+                "value": "4",
+                "label": "4 日"
+              },
+              {
+                "id": "5",
+                "value": "5",
+                "label": "5 日"
+              },
+              {
+                "id": "6",
+                "value": "6",
+                "label": "6 日"
+              },
+              {
+                "id": "7",
+                "value": "7",
+                "label": "7 日"
+              },
+              {
+                "id": "8",
+                "value": "8",
+                "label": "8 日"
+              },
+              {
+                "id": "9",
+                "value": "9",
+                "label": "9 日"
+              },
+              {
+                "id": "10",
+                "value": "10",
+                "label": "10 日"
+              },
+              {
+                "id": "11",
+                "value": "11",
+                "label": "11 日"
+              },
+              {
+                "id": "12",
+                "value": "12",
+                "label": "12 日"
+              },
+              {
+                "id": "13",
+                "value": "13",
+                "label": "13 日"
+              },
+              {
+                "id": "14",
+                "value": "14",
+                "label": "14 日"
+              },
+              {
+                "id": "15",
+                "value": "15",
+                "label": "15 日"
+              },
+              {
+                "id": "16",
+                "value": "16",
+                "label": "16 日"
+              },
+              {
+                "id": "17",
+                "value": "17",
+                "label": "17 日"
+              },
+              {
+                "id": "18",
+                "value": "18",
+                "label": "18 日"
+              },
+              {
+                "id": "19",
+                "value": "19",
+                "label": "19 日"
+              },
+              {
+                "id": "20",
+                "value": "20",
+                "label": "20 日"
+              },
+              {
+                "id": "21",
+                "value": "21",
+                "label": "21 日"
+              },
+              {
+                "id": "22",
+                "value": "22",
+                "label": "22 日"
+              },
+              {
+                "id": "23",
+                "value": "23",
+                "label": "23 日"
+              },
+              {
+                "id": "24",
+                "value": "24",
+                "label": "24 日"
+              },
+              {
+                "id": "25",
+                "value": "25",
+                "label": "25 日"
+              },
+              {
+                "id": "26",
+                "value": "26",
+                "label": "26 日"
+              },
+              {
+                "id": "27",
+                "value": "27",
+                "label": "27 日"
+              },
+              {
+                "id": "28",
+                "value": "28",
+                "label": "28 日"
+              },
+              {
+                "id": "29",
+                "value": "29",
+                "label": "29 日"
+              },
+              {
+                "id": "30",
+                "value": "30",
+                "label": "30 日"
+              },
+              {
+                "id": "31",
+                "value": "31",
+                "label": "31 日"
+              }
+            ],
+            "showIf": "return context.panel.elements.find(e => e.id === 'from_month')?.value !== '';"
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "\nSELECT apply_tou_simple(\n  NULLIF('${payload.geofence_id}', '')::INT,\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.valley_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_3}', ''), 'undefined')),\n  '${payload.valley_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.peak_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_3}', ''), 'undefined')),\n  '${payload.peak_rate}',\n  '${payload.mid_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.sharp_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.sharp_range_2}', ''), 'undefined')),\n  '${payload.sharp_rate}',\n  COALESCE(NULLIF(NULLIF('${payload.deep_range_1}', ''), 'undefined'), ''),\n  '${payload.deep_rate}',\n  '${payload.from_month}', '${payload.from_day}',\n  '${payload.to_month}',   '${payload.to_day}'\n) AS inserted\n"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存该项？",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 24 小时全覆盖。刷新看左侧表格、上方状态条、审计面板"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "volkovlabs-form-panel",
+      "title": "🌆 一键导入城市模板",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "SELECT id, name FROM geofences ORDER BY name",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "🌆 应用模板",
+          "icon": "apps",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "city",
+            "type": "select",
+            "title": "选城市",
+            "value": "beijing",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "beijing",
+                "value": "beijing",
+                "label": "北京"
+              },
+              {
+                "id": "shanghai",
+                "value": "shanghai",
+                "label": "上海"
+              },
+              {
+                "id": "shenzhen",
+                "value": "shenzhen",
+                "label": "深圳"
+              },
+              {
+                "id": "guangzhou",
+                "value": "guangzhou",
+                "label": "广州"
+              },
+              {
+                "id": "zhejiang",
+                "value": "zhejiang",
+                "label": "浙江/杭州"
+              },
+              {
+                "id": "jiangsu",
+                "value": "jiangsu",
+                "label": "江苏/南京"
+              }
+            ]
+          },
+          {
+            "id": "geofence_id",
+            "type": "select",
+            "title": "应用到充电点",
+            "value": null,
+            "optionsSource": "Query",
+            "queryOptions": {
+              "source": "A",
+              "value": "id",
+              "label": "name"
+            },
+            "showIf": "",
+            "section": ""
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "SELECT apply_city_template('${payload.city}', NULLIF('${payload.geofence_id}', '')::INT) AS inserted"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存该项？",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 模板已应用"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "volkovlabs-form-panel",
+      "title": "✏️ 修改单价",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nSELECT\n  r.id,\n  COALESCE(g.name, '全局') || ' ' || r.hour_start || '-' || r.hour_end || ' ' || r.label || ' ¥' || r.rate AS display_name\nFROM tou_rates r\nLEFT JOIN geofences g ON g.id = r.geofence_id\nORDER BY r.geofence_id NULLS FIRST, r.id\n",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "✏️ 更新单价",
+          "icon": "edit",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "rate_id",
+            "type": "select",
+            "title": "选要操作的时段",
+            "value": null,
+            "optionsSource": "Query",
+            "queryOptions": {
+              "source": "A",
+              "value": "id",
+              "label": "display_name"
+            }
+          },
+          {
+            "id": "new_rate",
+            "type": "number",
+            "title": "新的单价 ¥/度",
+            "value": 0.3,
+            "min": 0,
+            "step": 0.01
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "UPDATE tou_rates SET rate = NULLIF('${payload.new_rate}', '')::NUMERIC WHERE id = NULLIF('${payload.rate_id}', '')::INT"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存该项？",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 单价已更新"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "volkovlabs-form-panel",
+      "title": "🗑️ 删除整段",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nSELECT\n  r.id,\n  COALESCE(g.name, '全局') || ' ' || r.hour_start || '-' || r.hour_end || ' ' || r.label || ' ¥' || r.rate AS display_name\nFROM tou_rates r\nLEFT JOIN geofences g ON g.id = r.geofence_id\nORDER BY r.geofence_id NULLS FIRST, r.id\n",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "🗑️ 删除",
+          "icon": "trash-alt",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "rate_id",
+            "type": "select",
+            "title": "选要操作的时段",
+            "value": null,
+            "optionsSource": "Query",
+            "queryOptions": {
+              "source": "A",
+              "value": "id",
+              "label": "display_name"
+            }
+          },
+          {
+            "id": "confirm",
+            "type": "radio",
+            "title": "确认删除该时段？",
+            "value": "no",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "no",
+                "value": "no",
+                "label": "取消"
+              },
+              {
+                "id": "yes",
+                "value": "yes",
+                "label": "✓ 确认删除"
+              }
+            ]
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "DELETE FROM tou_rates WHERE id = NULLIF('${payload.rate_id}', '')::INT AND '${payload.confirm}' = 'yes'"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存该项？",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 已删除（如未删除请确认你选了「✓ 确认删除」）"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "volkovlabs-form-panel",
+      "title": "🔄 重算所有历史充电（按当前 分时电价配置）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "SELECT 1",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "🔄 一键重算",
+          "icon": "sync",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "confirm",
+            "type": "radio",
+            "title": "改完 分时电价配置后，要把历史充电按新价重新计算吗？",
+            "value": "no",
+            "optionsSource": "Custom",
+            "options": [
+              {
+                "id": "no",
+                "value": "no",
+                "label": "暂不重算"
+              },
+              {
+                "id": "yes",
+                "value": "yes",
+                "label": "✓ 立即重算所有历史"
+              }
+            ]
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "\nSELECT\n  CASE WHEN '${payload.confirm}' = 'yes'\n    THEN (SELECT processed FROM backfill_all_tou())\n    ELSE 0 END AS done\n"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存该项？",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 历史已按新 分时电价重算！刷新「最近 10 笔对账」面板和外部仪表盘看效果"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "💰 最近 10 笔家充电费对账",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "\nSELECT\n  cp.id AS \"充电编号\",\n  (cp.start_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')::timestamp(0) AS \"本地时间\",\n  ROUND(cp.charge_energy_added::numeric, 2) AS \"充电度数\",\n  cp.cost AS \"原费用 ¥\",\n  compute_tou_cost(cp.id) AS \"分时电价费用 ¥\",\n  ROUND((compute_tou_cost(cp.id) - cp.cost)::numeric, 2) AS \"差额 ¥\",\n  COALESCE(g.name, '(无)') AS \"充电点\"\nFROM charging_processes cp\nLEFT JOIN geofences g ON g.id = cp.geofence_id\nWHERE cp.car_id = $car_id\n  AND cp.geofence_id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL)\nORDER BY cp.start_date DESC\nLIMIT 10\n",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 24,
+        "h": 10
+      }
+    }
+  ],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "车辆信息",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "battery"
+      ],
+      "targetBlank": false,
+      "title": "电池",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "trip"
+      ],
+      "targetBlank": false,
+      "title": "行驶",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "中文文档",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://github.com/wjsall/teslamate-chinese-dashboards"
+    }
+  ]
+}

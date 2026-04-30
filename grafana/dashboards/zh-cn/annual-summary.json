@@ -357,7 +357,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost), 0)::numeric, 2) AS total_cost\nFROM charging_processes\nWHERE car_id = $car_id\n  AND cost IS NOT NULL\n  AND EXTRACT(YEAR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = $year::int;",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(effective_cost(id, cost)), 0)::numeric, 2) AS total_cost\nFROM charging_processes\nWHERE car_id = $car_id\n  AND effective_cost(id, cost) IS NOT NULL\n  AND EXTRACT(YEAR FROM (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')) = $year::int;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -852,7 +852,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH t AS (\n  SELECT (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS local_date, cost\n  FROM charging_processes\n  WHERE car_id = $car_id AND cost IS NOT NULL\n)\nSELECT\n  make_date(2000, EXTRACT(MONTH FROM local_date)::int, 1) AS time,\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) THEN cost END), 0)::numeric, 2) AS \"今年\",\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 1 THEN cost END), 0)::numeric, 2) AS \"去年\",\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 2 THEN cost END), 0)::numeric, 2) AS \"前年\"\nFROM t\nWHERE EXTRACT(YEAR FROM local_date) >= EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 2\nGROUP BY 1\nORDER BY 1;",
+          "rawSql": "WITH t AS (\n  SELECT (start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS local_date, effective_cost(id, cost) AS cost\n  FROM charging_processes\n  WHERE car_id = $car_id AND effective_cost(id, cost) IS NOT NULL\n)\nSELECT\n  make_date(2000, EXTRACT(MONTH FROM local_date)::int, 1) AS time,\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) THEN cost END), 0)::numeric, 2) AS \"今年\",\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 1 THEN cost END), 0)::numeric, 2) AS \"去年\",\n  ROUND(COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM local_date) = EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 2 THEN cost END), 0)::numeric, 2) AS \"前年\"\nFROM t\nWHERE EXTRACT(YEAR FROM local_date) >= EXTRACT(YEAR FROM timezone('$__timezone', NOW())) - 2\nGROUP BY 1\nORDER BY 1;",
           "refId": "A"
         }
       ],
