@@ -12,7 +12,7 @@ set -euo pipefail
 
 # ── 配置 ────────────────────────────────────────────────────────────
 NEW_IMAGE="bswlhbhmt816/teslamate-chinese-dashboards:latest"
-# REPO_REF 默认 main（跟 :latest 镜像同步）。要锁版本传 REPO_REF=v1.6.0 或 commit SHA
+# REPO_REF 默认 main（跟 :latest 镜像同步）。要锁版本传 REPO_REF=v1.6.1 或 commit SHA
 REPO_REF="${REPO_REF:-main}"
 OFFICIAL_IMAGE_RE='teslamate/grafana(:[a-zA-Z0-9._-]*)?'
 COMPOSE_FILE="${COMPOSE_FILE:-}"

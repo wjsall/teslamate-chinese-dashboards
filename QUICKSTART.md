@@ -562,17 +562,23 @@ docker compose pull && docker compose up -d     # 一键脚本用户
 # 或
 git pull                                         # git clone 用户
 
-# 2. 装坐标转换函数
+# 2. 装 SQL 三件套（坐标函数 + 分时电价 + 性能索引）
 # git clone 用户（仓库本地有 sql/ 目录）：
-docker exec -i teslamate-database-1 psql -U teslamate teslamate < sql/install-coord-functions.sql
+for f in install-coord-functions install-tou install-indexes; do
+  docker exec -i teslamate-database-1 psql -U teslamate -d teslamate < sql/${f}.sql
+done
 
-# 一键脚本用户（没有本地 sql/，用 curl 拉远程）：
-curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.5.0/sql/install-coord-functions.sql | \
-  docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+# 一键脚本用户（没有本地 sql/，用 curl 拉远程；钉 main 总能拿到最新）：
+for f in install-coord-functions install-tou install-indexes; do
+  curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/${f}.sql" | \
+    docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+done
 
 # 3. 重启 Grafana
 docker compose restart grafana
 ```
+
+> **Watchtower 自动升镜像的用户**：每次升级后**只需重跑这一段**就能拿到最新 SQL 改动（函数 / 索引 / TOU）。脚本是 `IF NOT EXISTS / CREATE OR REPLACE`，重跑零风险。
 
 #### 容器名不一定叫 `teslamate-database-1`
 
@@ -682,7 +688,7 @@ lng_for_map(map_url, lat, lng)
 bash scripts/upgrade.sh
 ```
 
-upgrade.sh 自动 6 步（地图 + 分时电价 + 插件 + 重启）。如果你是新装用户，跳过这步直接到第 2 步。
+upgrade.sh 自动 7 步（地图 + 分时电价 + 性能索引 + 插件 + 重启）。如果你是新装用户，跳过这步直接到第 2 步。
 
 #### 2. 配分时电价（5 步交互式向导）
 
