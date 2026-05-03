@@ -352,6 +352,8 @@ panels = [
 3. 看「**⏰ 24 小时电价分布**」 + 「**⚠ 配置审计**」核对覆盖
 
 > 时段格式：`22-7`（跨夜）或 `0-7, 23-24`（多段用逗号）。**两档电网**：峰时段留空、峰价填 0。
+
+> ⚡ **范围说明**：本配置只作用于**家充（交流慢充）**。**直流快充（超充 / 第三方快充）按桩侧上报金额计费**，不参与本表的分时重算 —— 因为快充价格随桩、随时段、随会员浮动，桩侧上报已是真实金额，覆盖反而会算错。
 """, {"x": 0, "y": 0, "w": 24, "h": 4}),
 
     # ⏰ 24 小时电价柱图：每小时 1 根柱，柱高=单价，颜色按阈值 0/0.4/0.7/1
@@ -581,7 +583,12 @@ dashboard = {
     ],
 }
 
-out = Path("grafana/dashboards/zh-cn/tou-config.json")
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2))
-print(f"✓ 写入 {out} ({out.stat().st_size} bytes)")
+def main():
+    out = Path("grafana/dashboards/zh-cn/tou-config.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n")
+    print(f"✓ 写入 {out} ({out.stat().st_size} bytes)")
+
+
+if __name__ == "__main__":
+    main()

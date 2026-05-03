@@ -588,17 +588,8 @@ BEGIN
     RAISE EXCEPTION '档位地图必须正好 24 字符（每位一小时），实际：% 字符', LENGTH(pat);
   END IF;
 
-  -- 替换该 geofence 同季节范围的 AC 时段
-  IF v_from IS NULL AND v_to IS NULL THEN
-    DELETE FROM tou_rates
-    WHERE geofence_id = p_geofence_id AND apply_to_dc = FALSE
-      AND valid_from IS NULL AND valid_to IS NULL;
-  ELSE
-    DELETE FROM tou_rates
-    WHERE geofence_id = p_geofence_id AND apply_to_dc = FALSE
-      AND valid_from IS NOT DISTINCT FROM v_from
-      AND valid_to   IS NOT DISTINCT FROM v_to;
-  END IF;
+  -- 替换该 geofence 同季节范围的 AC 时段（_tou_delete_season 用 IS NOT DISTINCT FROM 处理 NULL）
+  PERFORM _tou_delete_season(p_geofence_id, v_from, v_to);
 
   -- 合并相邻同档 → segments，批量插入
   -- 注：不做跨午夜合并（如串首尾都是 G），同档分两段写入不影响 compute_tou_cost 和审计

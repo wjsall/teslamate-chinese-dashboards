@@ -107,8 +107,11 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         [ -z "$GRAFANA_CONTAINER" ] && GRAFANA_CONTAINER=$(docker ps --format '{{.Names}}' | grep -iE 'teslamate.*grafana' | head -1)
         [ -n "$GRAFANA_CONTAINER" ] && docker restart "$GRAFANA_CONTAINER" >/dev/null
     else
-        echo "  ⚠ 数据库 60 秒内未就绪，跳过函数更新"
-        echo "    服务起来后手动运行此脚本可重试"
+        echo ""
+        echo "  ❌ 数据库 60 秒内未就绪，SQL 函数没装上"
+        echo "     等服务起来后**重跑此脚本**（自动进入升级模式重试）："
+        echo "     wget -qO- https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash"
+        exit 1
     fi
     echo ""
     echo "============================================="

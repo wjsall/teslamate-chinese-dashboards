@@ -11,7 +11,11 @@
   2. 裸 cost      →  effective_cost(id, cost)
      仅当 SQL 里 charging_processes 没用别名（FROM charging_processes WHERE...）
   3. cost_per_kwh / cost_mileage / cost_savings 等扩展列名不动（用 \\b 保护）
-  4. WHERE cost IS NULL / cost = 0 等过滤上下文不动（cost 仅在表达式/SELECT/聚合里替换）
+  4. WHERE 子句里的 cost 也会被替换 —— 这是有意为之：
+     `effective_cost = COALESCE(tou_cost, cost)`，所以
+     - 没装分时电价的用户：effective_cost ≡ cost，过滤语义等价
+     - 装了分时电价的用户：原本 cost=NULL（没填）但有 TOU 规则的家充，
+       会被 effective_cost 算出值后纳入统计（用户预期行为）
 
 回滚：跑 --revert，会把 effective_cost(...) 还原成原 cost 引用。
 
@@ -29,7 +33,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARDS = REPO_ROOT / "grafana" / "dashboards" / "zh-cn"
 
-SKIP_FILES = {"tou-config.json"}
+# 跳过 build-*.py 生成的原创仪表盘 —— 它们的 SQL 已经显式写好 effective_cost 调用，
+# 再 wrap 一遍会污染 alias（如把 `cp.cost AS cost_orig` 错改成 `effective_cost(...) AS cost_orig`，
+# station-ranking 用 cost_orig 跟 cost 对比"原价 vs 分时电价"，alias 必须保留原值）
+SKIP_FILES = {
+    "tou-config.json",
+    "station-ranking.json",
+    "weather-efficiency.json",
+    "annual-summary.json",
+    "cost-savings.json",
+}
 
 
 def detect_format(text: str):

@@ -102,7 +102,7 @@ else
         TOU_INSTALLED=1
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"
-        cat /tmp/tou-install.log | sed 's/^/    /' | head -20
+        sed 's/^/    /' /tmp/tou-install.log | head -20
         echo ""
         echo -e "${YELLOW}  地图功能仍可用，但「⚡ 分时电价配置」仪表盘不可用。${NC}"
         echo -e "${YELLOW}  排错见 TROUBLESHOOTING.md「v1.5.0 分时电价升级排错」章节${NC}"

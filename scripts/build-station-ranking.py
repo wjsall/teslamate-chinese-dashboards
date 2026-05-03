@@ -401,7 +401,12 @@ dashboard = {
     ]
 }
 
-out = Path("grafana/dashboards/zh-cn/station-ranking.json")
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2))
-print(f"✓ 写入 {out} ({out.stat().st_size} bytes)")
+def main():
+    out = Path("grafana/dashboards/zh-cn/station-ranking.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n")
+    print(f"✓ 写入 {out} ({out.stat().st_size} bytes)")
+
+
+if __name__ == "__main__":
+    main()

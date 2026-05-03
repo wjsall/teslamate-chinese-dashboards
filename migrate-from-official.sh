@@ -228,8 +228,9 @@ install -m 600 "$COMPOSE_FILE" "$BACKUP_FILE" 2>/dev/null \
     || { cp "$COMPOSE_FILE" "$BACKUP_FILE"; chmod 600 "$BACKUP_FILE"; }
 echo "✓ 已备份到 $BACKUP_FILE（mode 600）"
 
-# 8. sed 改 image — 用 \x01 当分隔符避免 NEW_IMAGE/路径里的 / 冲突
-sed -i.tmp -E "s$(printf '\x01')^([[:space:]]+image:[[:space:]]*)${OFFICIAL_IMAGE_RE}$(printf '\x01')\1${NEW_IMAGE}$(printf '\x01')" "$COMPOSE_FILE"
+# 8. sed 改 image — 用 | 当分隔符避免 NEW_IMAGE/路径里的 / 冲突
+# （image: 行不含 |；BSD/GNU sed 都接受 | 当分隔符，比 \x01 兼容性好）
+sed -i.tmp -E "s|^([[:space:]]+image:[[:space:]]*)${OFFICIAL_IMAGE_RE}|\1${NEW_IMAGE}|" "$COMPOSE_FILE"
 rm -f "${COMPOSE_FILE}.tmp"
 echo "✓ image 已替换"
 

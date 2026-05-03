@@ -66,19 +66,15 @@ echo -e "${BOLD}[1/4] 你在哪个城市/区域？${NC}"
 echo ""
 
 # 城市列表与 install-tou.sql 的 apply_city_template() 函数 CASE 分支对应
-declare -a cities=(beijing shanghai shenzhen guangzhou zhejiang jiangsu)
-declare -a displays=("北京" "上海" "深圳" "广州" "浙江（杭州）" "江苏（南京，含夏冬尖峰）")
-i=1
-for idx in "${!cities[@]}"; do
-    printf "  ${CYAN}%d)${NC} %s\n" "$i" "${displays[$idx]}"
-    # 把数组从 0 开始改成从 1 开始（用户输入习惯）
-    cities_1[i]="${cities[$idx]}"
-    i=$((i + 1))
+# 用 _ 占位 0 号槽，让用户输入的 1-based 序号直接当下标用（避免 ${cities[@]} 紧凑化下标的坑）
+declare -a cities=(_ beijing shanghai shenzhen guangzhou zhejiang jiangsu)
+declare -a displays=(_ "北京" "上海" "深圳" "广州" "浙江（杭州）" "江苏（南京，含夏冬尖峰）")
+for i in $(seq 1 $((${#cities[@]} - 1))); do
+    printf "  ${CYAN}%d)${NC} %s\n" "$i" "${displays[$i]}"
 done
-cities=("${cities_1[@]}")
 echo "  ${CYAN}c)${NC} 自定义（手动填时段+单价）"
 echo ""
-read -p "> 选择 [1-$((i-1)) 或 c]: " city_choice
+read -p "> 选择 [1-$((${#cities[@]} - 1)) 或 c]: " city_choice
 
 if [ "$city_choice" = "c" ] || [ "$city_choice" = "C" ]; then
     CUSTOM=1
