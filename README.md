@@ -6,6 +6,8 @@
 
 ---
 
+<a id="upgrade-v16"></a>
+
 > ## ⚡ 升级到 v1.6.x — 分时电价 + 性能索引（中文版独有）
 >
 > **v1.5.0 起的中文版独有功能**：
@@ -20,6 +22,7 @@
 >
 > | 你之前怎么装的？ | 用哪个 |
 > |---|---|
+> | **没装过**（全新用户） | 跳到下方 [快速开始](#-快速开始) |
 > | **官方源**（grafana 是 `teslamate/grafana`） | [方法 D](#upgrade-method-d) |
 > | 跟 jheredianet 教程装的（手动 import dashboard JSON） | [方法 D](#upgrade-method-d) — 但**先 export 你改过的 dashboard JSON 备份**，迁移会用我们这一套替换 |
 > | 用了我们的 `simple-deploy.sh` | [方法 A](#upgrade-method-a) |
@@ -52,7 +55,7 @@
 > ### 方法 C — 手动派（自己写 docker compose 套了我们镜像的）
 >
 > ```bash
-> # 1. 拉新镜像（带 Volkov 插件 + 43 个仪表盘）
+> # 1. 拉新镜像（带 volkovlabs-form-panel 插件 + 43 个仪表盘 — 该插件给「⚡ 分时电价配置」面板提供按钮交互）
 > docker compose pull && docker compose up -d
 >
 > # 2. 装 SQL 三件套（坐标函数 + 分时电价 + 性能索引，远程 curl 不用 git clone）
@@ -109,13 +112,13 @@
 
 ## 📸 效果预览
 
-### 🌡️ v1.6.0 新增：天气-能耗关联（中文版独有）
+### 🌡️ v1.6.0 新增：天气-能耗关联
 
 国内特斯拉车主 #1 痛点「冬天到底掉多少电」量化版 — 温度桶能耗曲线柱色冷蓝→热红，一眼看出「16°C 最省 / 38°C 最费」的 U 型规律 + 月度双轴 + 季节对比。
 
 ![天气-能耗关联](screenshots/weather-efficiency.png)
 
-### ⚡ v1.5.0 重磅功能：分时电价系统 + 充电桩性价比榜（中文版独有）
+### ⚡ v1.5.0 重磅功能：分时电价系统 + 充电桩性价比榜
 
 **「⚡ 分时电价配置」** — 24 小时电价柱图自动配色（绿=谷 / 黄=平 / 橙=峰）+ 配置审计 + 5 步交互式向导
 ![分时电价配置](screenshots/tou-config.png)
@@ -123,7 +126,7 @@
 **「🏆 充电桩性价比榜」** — 按 ¥/度 排序所有充电点（家充走分时电价、第三方走原价）+ 30 天涨/降价对比 + 充电桩地图
 ![充电桩性价比榜](screenshots/station-ranking.png)
 
-### 🌏 v1.4.2 重磅功能：地图源一键切换 + 自动 GCJ-02 坐标纠偏（中文版独有）
+### 🌏 v1.4.2 重磅功能：地图源一键切换 + 自动 GCJ-02 坐标纠偏
 
 仪表盘顶部下拉框秒切 6 种瓦片源（OSM / 高德 / 高德卫星 / 谷歌 / 谷歌卫星 / Carto）。选高德或谷歌路网时 PostgreSQL 函数自动做 WGS-84 → GCJ-02 转换，车辆轨迹精准贴合道路。
 
@@ -197,10 +200,9 @@
 | Dashboard 数量 | 43个 ✅ |
 | 内部详情页 | 3个（行程/充电详情）|
 | 文件总大小 | ~1.2MB |
-| 面板总数 | 379个 |
 | 汉化完成度 | 99%+ |
 | 质量等级 | A+ |
-| 最后更新 | 2026-04-28 |
+| 最后更新 | 2026-05-02 |
 
 **43 个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
 
@@ -226,7 +228,7 @@
 - ✅ **充电统计 (Charging Stats)** - 充电数据汇总分析
 - ✅ **行程统计 (Drive Stats)** - 行驶数据汇总分析
 
-### 充电相关 (12个)
+### 充电相关 (14个)
 - ✅ **当前充电状态 (Current Charge View)** - 实时充电监控
 - ✅ **充电记录 (Charges)** - 历史充电记录查询
 - ✅ **充电费用统计 (Charging Cost Stats)** - 充电成本分析
@@ -239,8 +241,10 @@
 - ✅ **续航曲线图 (Projected Range)** - 预计续航分析
 - 🆕 **充电健康管理** - 充电习惯评分、快充占比、SOC分布分析
 - 🆕 **哨兵模式耗电分析** - 哨兵开启时长、耗电估算、地点分布
+- 🆕 **⚡ 分时电价配置 (TOU Config)** - 在线配置峰平谷电价 + 配置审计 + 24 小时电价分布（v1.5.0）
+- 🆕 **🏆 充电桩性价比榜 (Station Ranking)** - 按 ¥/度 排序所有充电点（v1.5.0）
 
-### 驾驶相关 (11个)
+### 驾驶相关 (12个)
 - ✅ **当前驾驶状态 (Current Drive View)** - 实时驾驶监控
 - ✅ **行程列表 (Drives)** - 行程记录查询
 - ✅ **驾驶记录追踪 (Tracking Drives)** - GPS轨迹追踪
@@ -252,6 +256,7 @@
 - 🆕 **年度驾驶报告** - 年度里程/费用/亮点，常去地点TOP10
 - 🆕 **动能回收分析** - 各固件版本回收率/功率对比、每日趋势、速度区间分析
 - 🆕 **驾驶评分** - 效率/平稳/速度/回收四维度综合评分、驾驶风格判定、行程明细
+- 🆕 **🌡️ 天气-能耗关联 (Weather Efficiency)** - 温度桶能耗曲线 + 季节对比（v1.6.0）
 
 ### 车辆状态 (6个)
 - ✅ **最近车辆状态 (Current State)** - 车辆最新状态
@@ -276,12 +281,12 @@
 
 | 类别 | 数量 | 占比 | 主要功能 |
 |------|------|------|----------|
-| 核心功能 | 4 | 10% | 概览、状态、统计汇总 |
-| 充电相关 | 12 | 30% | 充电监控、成本、电池健康、续航退化、哨兵耗电 |
-| 驾驶相关 | 11 | 28% | 行程记录、轨迹、规律分析、年度报告、动能回收、驾驶评分 |
-| 车辆状态 | 6 | 15% | 实时状态、胎压、能效 |
-| 其他功能 | 7 | 17% | 地图、时间线、省钱分析、多车对比 |
-| **总计** | **40** | **100%** | **全方位车辆数据分析** |
+| 核心功能 | 4 | 9% | 概览、状态、统计汇总 |
+| 充电相关 | 14 | 33% | 充电监控、成本、电池健康、续航退化、哨兵耗电、分时电价、性价比榜 |
+| 驾驶相关 | 12 | 28% | 行程记录、轨迹、规律分析、年度报告、动能回收、驾驶评分、天气能耗 |
+| 车辆状态 | 6 | 14% | 实时状态、胎压、能效 |
+| 其他功能 | 7 | 16% | 地图、时间线、省钱分析、多车对比 |
+| **总计** | **43** | **100%** | **全方位车辆数据分析** |
 
 ## 🚀 快速开始
 
@@ -292,7 +297,8 @@
 ```yaml
 services:
   grafana:
-    image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest    # 默认 Docker Hub（国内访问稳定）
+    # image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest  # 备选 GitHub Container Registry
     environment:
       - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -406,103 +412,28 @@ open http://localhost:3000
 
 ### 方法四：基于原版 TeslaMate 修改（推荐已有用户）
 
-如果你已经在使用原版 TeslaMate，只需修改 Grafana 镜像即可：
-
-**原版 docker-compose.yml：**
-```yaml
-services:
-  teslamate:
-    image: teslamate/teslamate:latest
-    restart: always
-    environment:
-      - ENCRYPTION_KEY=secretkey #replace with a secure key to encrypt your Tesla API tokens
-      - DATABASE_USER=teslamate
-      - DATABASE_PASS=password #insert your secure database password!
-      - DATABASE_NAME=teslamate
-      - DATABASE_HOST=database
-      - MQTT_HOST=mosquitto
-    ports:
-      - 4000:4000
-    volumes:
-      - ./import:/opt/app/import
-    cap_drop:
-      - all
-
-  database:
-    image: postgres:18-trixie
-    restart: always
-    environment:
-      - POSTGRES_USER=teslamate
-      - POSTGRES_PASSWORD=password #insert your secure database password!
-      - POSTGRES_DB=teslamate
-    volumes:
-      - teslamate-db:/var/lib/postgresql
-
-  grafana:
-    image: teslamate/grafana:latest  # ← 修改这一行
-    restart: always
-    environment:
-      - DATABASE_USER=teslamate
-      - DATABASE_PASS=password #insert your secure database password!
-      - DATABASE_NAME=teslamate
-      - DATABASE_HOST=database
-    ports:
-      - 3000:3000
-    volumes:
-      - teslamate-grafana-data:/var/lib/grafana
-
-  mosquitto:
-    image: eclipse-mosquitto:2
-    restart: always
-    command: mosquitto -c /mosquitto-no-auth.conf
-    volumes:
-      - mosquitto-conf:/mosquitto/config
-      - mosquitto-data:/mosquitto/data
-
-volumes:
-  teslamate-db:
-  teslamate-grafana-data:
-  mosquitto-conf:
-  mosquitto-data:
-```
-
-**修改方案：**
-
-将 `grafana` 部分的 `image: teslamate/grafana:latest` 替换为：
+如果你已经在使用原版 TeslaMate，只改 Grafana 镜像 + 加一行中文环境变量：
 
 ```yaml
+# 原 docker-compose.yml 的 grafana service 改两处：
   grafana:
-    image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest  # ← 汉化版镜像
-    restart: always
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest    # ← 改 image（原 teslamate/grafana:latest）
     environment:
       - DATABASE_USER=teslamate
       - DATABASE_PASS=password
       - DATABASE_NAME=teslamate
       - DATABASE_HOST=database
-      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans  # ← 添加中文语言设置
-    ports:
-      - 3000:3000
-    volumes:
-      - teslamate-grafana-data:/var/lib/grafana
+      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans                       # ← 加这一行
+    # ports / volumes / restart 保持原样
 ```
 
-然后按以下步骤切换：
+**切换步骤**：
 
-> ⚠️ **重要：切换前必须清除旧数据卷**
->
-> 原版 Grafana 首次启动时已将英文 Dashboard 写入数据卷，直接换镜像**不会自动覆盖**，界面仍会显示英文。
-> 必须先删除旧数据卷，让汉化版镜像重新初始化。
->
-> **车辆行驶数据不受影响**（存储在独立的 `teslamate-db` 数据卷中）。
+> ⚠️ **必须清除旧 Grafana 数据卷**：原版启动时把英文 dashboard 写进数据卷，换镜像不会自动覆盖。**车辆行驶数据不受影响**（存在独立的 `teslamate-db` 卷）。
 
 ```bash
-# 1. 停止 Grafana 容器
 docker compose stop grafana
-
-# 2. 删除旧 Grafana 数据卷（清除英文 Dashboard 缓存）
 docker volume rm teslamate_teslamate-grafana-data
-
-# 3. 拉取汉化版镜像并启动
 docker compose pull grafana
 docker compose up -d grafana
 ```
@@ -642,8 +573,8 @@ docker compose restart grafana
 ## 📦 版本信息
 
 ### 当前版本
-- **版本号**: v1.4.2
-- **发布日期**: 2026-04-28
+- **版本号**: v1.6.1
+- **发布日期**: 2026-05-02
 - **Dashboard 数量**: 43个（含12 个原创分析仪表盘 + 3个内部详情页）
 - **汉化完成度**: 99%
 
@@ -651,7 +582,7 @@ docker compose restart grafana
 - ✅ **TeslaMate 3.0**（完整适配，同步官方所有新特性）
 - ✅ TeslaMate v1.28.0+
 - ✅ **推荐 Grafana 12.x / 12.4.0**（基于 teslamate/grafana:latest，部分新仪表盘使用 schemaVersion 41）
-- ⚠️ Grafana 10.x/11.x 可显示大部分仪表盘（27/40 使用 v41，13 个使用 v36-39 兼容旧版）
+- ⚠️ Grafana 10.x/11.x 可显示大部分仪表盘（30/43 使用 v41，13/43 使用 v36-39 兼容旧版）
 - ✅ Docker 20.10+
 - ✅ Docker Compose 2.0+
 
@@ -803,7 +734,7 @@ teslamate-chinese-dashboards/
 │       │   ├── overview.json
 │       │   ├── states.json
 │       │   ├── charging-stats.json
-│       │   └── ... (共42个)
+│       │   └── ... (共43个)
 │       └── internal/           # 3个内部详情页 → 挂载到 /dashboards_internal/
 │           ├── home.json
 │           ├── drive-details.json
@@ -845,6 +776,8 @@ teslamate-chinese-dashboards/
 | `TZ` | 时区设置（中国用户建议设置） | 系统默认 |
 | `TESLA_API_HOST` | Tesla API 地址（**中国大陆专用**） | 见下方 |
 | `TESLA_WSS_HOST` | Tesla 流式数据地址（**中国大陆专用**） | 见下方 |
+
+<a id="cn-region"></a>
 
 ### 🇨🇳 中国大陆用户专项配置
 
@@ -954,31 +887,10 @@ MIT License - 与 TeslaMate 项目相同
 
 ## 💰 支持项目
 
-这个项目我**业余时间** 1 个人在维护：43 个仪表盘汉化 + 12 个原创面板 + v1.4.2 地图源切换 + GCJ-02 坐标纠偏 + **v1.5.0 完整分时电价系统**。
-
-### v1.5.0 分时电价系统折腾了几个月
-
-国内电网普遍峰平谷电价，TeslaMate 默认只能存一个固定单价 — 这个痛点 3 年没人解决。我研究 + 实测了几个月：
-
-- **数据库层**：7 个 PG 函数（`compute_tou_cost` / `effective_cost` / `audit_tou_config` / `apply_tou_pattern` 等）、触发器、视图、UNIQUE 索引、季节判断（含跨年环绕）、charges 表逐秒采样加权算费
-- **旁路表设计**：`charging_processes_tou_cost` 完全独立 — **TeslaMate 主表 0 修改、分时电价计算失败不影响主流程、随时一键卸载**
-- **前端层**：「⚡ 分时电价配置」可视化面板 + 24 小时电价柱图 + 配置审计 + 5 步交互式向导 + 6 城市内置模板 + 充电桩性价比榜
-- **集成层**：scope-aware Python 工具自动包装 9 个仪表盘 60+ 处 SQL，绕开 PG 视图破坏 PK 函数依赖的坑
-- **可逆性**：3 种回滚路径（`--revert` / `TRUNCATE` / 完整 DROP），全部测过
-
-总代码量：1100+ 行 SQL + Python 生成器 + 3 个 shell 工具 + 全套文档。
-
-### 怎么支持
-
-**免费的**（最有用）：
-- ⭐ **给仓库点 Star** — 让更多人看到，对项目排名帮助最大
-- 🐛 **报 Bug / 提建议** — [Issues](https://github.com/wjsall/teslamate-chinese-dashboards/issues) 比你想的更欢迎
-- 💬 **进群分享** — [Telegram 群](https://t.me/+BeOASgmvE_IyNzNl) 帮其他车主装好
-
-**有钱出钱**：
+业余时间 1 个人维护。最有用的支持是 ⭐ Star、[报 Bug / 提建议](https://github.com/wjsall/teslamate-chinese-dashboards/issues)、加 [Telegram 群](https://t.me/+BeOASgmvE_IyNzNl) 帮其他车主装好。
 
 | 微信打赏 | 支付宝打赏 |
 |---------|-----------|
 | ![微信打赏码](https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/images/wechat-donate.jpg) | ![支付宝打赏码](https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/images/alipay-donate.jpg) |
 
-打赏就是一杯咖啡的事，但对维护者意义很大 ❤️ 谢谢你！
+谢谢你 ❤️

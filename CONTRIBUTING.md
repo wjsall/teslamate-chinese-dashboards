@@ -37,22 +37,20 @@
    - 修改 `title` 字段
    - 保持 JSON 格式正确
 
-4. **提交修改**
+4. **新建分支提交（不要直接 push 到 fork 的 main，方便后续维护）**
    ```bash
-   git add .
-   git commit -m "fix: 改进 XX Dashboard 的翻译
-   
-   - 修改了 XX 面板的标题
-   - 原翻译: XXX
-   - 新翻译: XXX"
-   
-   git push origin main
+   # 在你 fork 的本地仓库：
+   git checkout -b fix/xx-dashboard-translation
+   git add grafana/dashboards/zh-cn/<your-edited>.json
+   git commit -m "fix: improve XX dashboard translation"
+   git push origin fix/xx-dashboard-translation
    ```
 
 5. **创建 Pull Request**
-   - 访问您的 Fork 页面
-   - 点击 "Contribute" → "Open pull request"
-   - 填写 PR 描述
+   - 访问你的 Fork 页面 → 自动出现「Compare & pull request」按钮
+   - Base repository 选 `wjsall/teslamate-chinese-dashboards` `main`
+   - Head 选你刚 push 的分支
+   - 填写 PR 描述（原翻译 → 新翻译，为什么改）
 
 ### 3. 翻译规范
 
@@ -92,16 +90,18 @@
 
 #### 本地测试
 
-```bash
-# 1. 启动 Grafana
-docker run -d \
-  -p 3000:3000 \
-  -v $(pwd)/grafana/dashboards/zh-cn:/etc/grafana/provisioning/dashboards/zh:ro \
-  -e GF_USERS_DEFAULT_LANGUAGE=zh-Hans \
-  ghcr.io/wjsall/teslamate-chinese-dashboards:latest
+推荐用 `docker compose` 跑完整 stack 测：
 
-# 2. 访问 http://localhost:3000
-# 3. 检查修改后的 Dashboard
+```bash
+# 仓库根目录跑（已含 docker-compose.yml）
+docker compose up -d
+# 访问 http://localhost:3000，找到你改的 dashboard 验证翻译
+```
+
+如果只想验证 JSON 语法：
+
+```bash
+jq . grafana/dashboards/zh-cn/<your-edited>.json > /dev/null && echo "JSON OK"
 ```
 
 #### 验证清单

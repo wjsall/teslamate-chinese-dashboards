@@ -215,10 +215,8 @@ docker compose restart grafana
 - 调整时间范围（右上角时钟图标）
 
 **常见原因 2：数据源 UID 不匹配**
-```bash
-# 检查数据源 UID
-docker compose exec grafana grafana-cli admin data-migration
-```
+
+打开 Grafana → 左侧 **Connections → Data sources** → 看名字是否为 `TeslaMate`（区分大小写）。如果不是，点开数据源把 `UID` 改成 `TeslaMate`，所有面板的 SQL 查询都用这个固定 UID 引用。
 
 **常见原因 3：数据库连接超时**
 ```bash
@@ -240,9 +238,9 @@ docker compose logs grafana | grep -i "error\|failed"
 
 #### 1. 国内用户：是否配置了 Tesla 中国区 API？
 
-中国账号必须用 `auth.tesla.cn`（不是 `auth.tesla.com`）。检查 `~/teslamate-chinese/docker-compose.yml`：
+中国账号必须用 `auth.tesla.cn`（不是 `auth.tesla.com`）。检查 `~/teslamate-chinese-dashboards/docker-compose.yml`：
 ```bash
-grep -E "TESLA_API_HOST|TESLA_WSS_HOST" ~/teslamate-chinese/docker-compose.yml
+grep -E "TESLA_API_HOST|TESLA_WSS_HOST" ~/teslamate-chinese-dashboards/docker-compose.yml
 ```
 应该看到：
 ```
@@ -310,36 +308,11 @@ docker compose restart teslamate grafana
 
 ### ❌ 「自定义新车电池容量」「自定义新车最大续航里程」每次刷新重置为 0
 
-**症状**：在「电池健康」仪表盘里输入了自定义值，关闭浏览器或刷新后又变回 `0`。
+Grafana textbox 变量只活在 URL 里，刷新就丢。两个方法选一个：
 
-**原因**：这是 Grafana **textbox 类型变量**的设计行为，输入值只保存在当前 URL 中，不会持久化到数据库或本地存储。
+**方法 1（推荐）：URL 书签** —— 在仪表盘填好值后，浏览器地址栏会出现 `?var-custom_kwh_new=82&var-custom_max_range=600`，把整个 URL 存书签，以后直接从书签打开。
 
-**解决方法 1（推荐）：URL 书签**
-
-1. 在仪表盘里输入你的实际值（例如 `82` 度、`600` km）
-2. 等 1-2 秒，浏览器地址栏 URL 末尾会出现：
-   ```
-   ?var-custom_kwh_new=82&var-custom_max_range=600
-   ```
-3. 把这个完整 URL 加到浏览器书签
-4. 以后从书签打开，数值自动预填
-
-**解决方法 2：修改 JSON 默认值（仅自用场景）**
-
-编辑 `grafana/dashboards/zh-cn/battery-health.json`，找到 `custom_kwh_new` 和 `custom_max_range` 两个变量，把以下三处 `"0"` 改成你的值：
-
-```json
-{
-  "name": "custom_kwh_new",
-  "current": {"text": "82", "value": "82"},
-  "query": "82",
-  "options": [{"selected": true, "text": "82", "value": "82"}]
-}
-```
-
-保存后重启 Grafana 容器或等 10 秒自动 reload。
-
-**为什么不做成默认就保存？** 不同车型/电池容量/购车里程都不同，没有对所有用户都正确的默认值，所以保留可调输入框。
+**方法 2（仅自用）：改 JSON 默认值** —— 编辑 `grafana/dashboards/zh-cn/battery-health.json`，把 `custom_kwh_new` / `custom_max_range` 两个变量的 `current` / `query` / `options` 里 `"0"` 全改成你的实际值（如 `"82"`）。保存后等 10 秒 Grafana 自动 reload。
 
 ---
 
@@ -358,8 +331,14 @@ docker compose logs -f teslamate
 
 **Step 3：检查网络连通性**
 ```bash
-# 测试能否访问 Tesla 服务器
-docker compose exec teslamate curl -s https://fleet-api.prd.na.vn.cloud.tesla.com
+# 在宿主机直接测（teslamate 容器没装 curl）
+# 国内账号
+curl -fsI https://auth.tesla.cn
+curl -fsI https://owner-api.vn.cloud.tesla.cn
+
+# 国际账号
+curl -fsI https://auth.tesla.com
+curl -fsI https://owner-api.teslamotors.com
 ```
 
 **Step 4：检查 MQTT 连接**
@@ -588,7 +567,7 @@ bash scripts/upgrade.sh
 ⚠️ **如果你从 v1.4.1 或更早版本升级到 v1.4.2+，单跑这条会让 9 个含地图的仪表盘报错** `function lat_for_map does not exist`。请用上面 A 或 B。
 
 ```bash
-cd ~/teslamate-chinese  # 进入安装目录
+cd ~/teslamate-chinese-dashboards  # 进入安装目录
 docker compose pull
 docker compose up -d
 ```
@@ -676,7 +655,7 @@ docker compose restart grafana
 
 **备份：**
 ```bash
-cd ~/teslamate-chinese
+cd ~/teslamate-chinese-dashboards
 docker compose exec database pg_dump -U teslamate teslamate > backup_$(date +%Y%m%d_%H%M).sql
 ```
 
@@ -699,7 +678,7 @@ docker compose start teslamate
 ### 重置（保留数据）
 
 ```bash
-cd ~/teslamate-chinese
+cd ~/teslamate-chinese-dashboards
 docker compose down          # 停止并删除容器
 docker compose up -d         # 重新创建并启动
 ```
@@ -711,7 +690,7 @@ docker compose up -d         # 重新创建并启动
 > ⚠️ **不可恢复！** 执行前请先备份数据库！
 
 ```bash
-cd ~/teslamate-chinese
+cd ~/teslamate-chinese-dashboards
 docker compose down -v       # 停止并删除容器和卷（数据会丢失！）
 docker compose up -d         # 重新开始
 ```

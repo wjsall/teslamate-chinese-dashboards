@@ -144,7 +144,7 @@ bash simple-deploy.sh
 ```
 
 脚本会自动：
-- 创建 `~/teslamate-chinese/` 工作目录
+- 创建 `~/teslamate-chinese-dashboards/` 工作目录
 - 生成 `docker-compose.yml` 配置文件
 - **生成随机的 ENCRYPTION_KEY**（用来加密 Tesla Token 的密钥）
 - 启动所有服务（TeslaMate / PostgreSQL / Grafana / MQTT，共 4 个容器）
@@ -152,12 +152,12 @@ bash simple-deploy.sh
 
 ### ⚠️ 装完立即做：备份你的 ENCRYPTION_KEY
 
-脚本自动生成的密钥写在 `~/teslamate-chinese/docker-compose.yml` 里。**这个密钥用来加密你的特斯拉 Token，一旦丢了或被改，TeslaMate 就解不开 Token 永远卡死，必须重新授权。**
+脚本自动生成的密钥写在 `~/teslamate-chinese-dashboards/docker-compose.yml` 里。**这个密钥用来加密你的特斯拉 Token，一旦丢了或被改，TeslaMate 就解不开 Token 永远卡死，必须重新授权。**
 
 立刻执行（找出来 → 备份）：
 
 ```bash
-grep ENCRYPTION_KEY ~/teslamate-chinese/docker-compose.yml
+grep ENCRYPTION_KEY ~/teslamate-chinese-dashboards/docker-compose.yml
 ```
 
 输出大概长这样：
@@ -175,7 +175,7 @@ grep ENCRYPTION_KEY ~/teslamate-chinese/docker-compose.yml
 > {"registry-mirrors": ["https://dockerproxy.cn"]}
 > EOF
 > sudo systemctl daemon-reload && sudo systemctl restart docker
-> # 然后回到 ~/teslamate-chinese/，重新跑：docker compose pull && docker compose up -d
+> # 然后回到 ~/teslamate-chinese-dashboards/，重新跑：docker compose pull && docker compose up -d
 > ```
 
 ---
@@ -237,7 +237,8 @@ services:
       - POSTGRES_DB=teslamate
 
   grafana:
-    image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest    # 默认 Docker Hub（国内访问稳定）
+    # image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest  # 备选 GHCR
     restart: always
     ports:
       - 3000:3000
@@ -418,7 +419,7 @@ docker compose up -d
 如果以下 6 项都打勾，说明装得没问题：
 
 ```bash
-cd ~/teslamate-chinese     # 方法 A 用户；方法 B 改成你的目录
+cd ~/teslamate-chinese-dashboards     # 方法 A 用户；方法 B 改成你的目录
 docker compose ps
 ```
 
@@ -485,22 +486,10 @@ A: 刚安装后数据需要几分钟到几小时才会出现，取决于 Tesla A
 A: 不会。所有数据都存在 PostgreSQL 数据库中，容器重启不影响数据。
 
 **Q: 安装在国内服务器上会有问题吗？**
-A: **国内用户需要额外配置 Tesla 中国区 API 地址**，否则无法获取车辆数据。在 `docker-compose.yml` 的 `teslamate` 服务中添加：
-```yaml
-environment:
-  - TZ=Asia/Shanghai
-  - TESLA_API_HOST=https://owner-api.vn.cloud.tesla.cn
-  - TESLA_WSS_HOST=wss://streaming.vn.cloud.tesla.cn
-```
-此外，ghcr.io 镜像拉取可能需要代理，详见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+A: 国内用户需要配置 Tesla 中国区 API 地址。详见 README [中国大陆专项配置](README.md#cn-region) 章节（`TESLA_API_HOST` / `TESLA_WSS_HOST` 设置 + 镜像加速）。
 
 **Q: 怎么更新到新版本？**
-A: 一条命令搞定：
-```bash
-cd ~/teslamate-chinese  # 或你的安装目录
-docker compose pull grafana
-docker compose up -d grafana
-```
+A: 详见 [README → ⚡ 升级到 v1.6.x](README.md#upgrade-v16) 的方法 A/B/C/D（按你之前怎么装的选）。
 
 **Q: 如何备份数据？**
 A: 备份 PostgreSQL 数据库：
@@ -519,7 +508,7 @@ docker compose restart grafana
 
 ---
 
-## 🌏 地图源切换 + 自动 GCJ-02 坐标纠偏（v1.4.2+ 中文版独有）
+## 🌏 地图源切换 + 自动 GCJ-02 坐标纠偏（v1.4.2+）
 
 > **国内 TeslaMate 用户痛点 3 年终结。**
 >
@@ -527,75 +516,19 @@ docker compose restart grafana
 >
 > 本项目 v1.4.2 把这一切变成两步操作。**海外用户也别走开 —— 谷歌中文路网在中国大陆区域同样是 GCJ-02，本方案一并自动处理。**
 
-### 一步：装一次 PostgreSQL 坐标转换函数
+### 一步：装一次 PostgreSQL SQL 三件套（坐标函数 + 分时电价 + 性能索引）
 
-#### 🆕 v1.4.2+ 新装用户 —— 跳过本节
+**新装用户（v1.4.2+ 一键脚本装的）跳过本节** —— 一键脚本已自动装好。
 
-如果你刚才用「一键脚本」装的（v1.4.2+ 的脚本），**坐标转换函数已经自动装好了**。直接跳到「二步：在仪表盘上切换地图源」即可。
+**老版本升级 / 手动验证**：升级路径已统一在 README 顶部，按方法 A/B/C/D 任选一条跑：
 
-#### ⬆️ 老版本升级 / 手动验证安装
+→ 详见 **[README → ⚡ 升级到 v1.6.x](README.md#upgrade-v16)**
 
-按你之前的安装方式选一条：
+装成功标志：执行返回 `坐标转换函数安装成功 (天安门测试通过): (39.91522, 116.40407)` 自检通过提示。一次性安装，后续所有仪表盘自动生效。
 
-##### A. 一键脚本用户（之前用 simple-deploy.sh 装的）
+容器名不一定叫 `teslamate-database-1`，先 `docker ps --format '{{.Names}}' | grep -i database` 确认。
 
-直接重跑一键脚本，**它会自动检测你的现有安装并转升级模式**（不会改 ENCRYPTION_KEY 也不会丢数据）：
-
-```bash
-wget -qO- https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash
-```
-
-##### B. git clone 用户（之前 `git clone` 仓库装的）
-
-```bash
-cd ~/teslamate-chinese-dashboards     # 你的克隆目录
-bash scripts/upgrade.sh
-```
-
-脚本会做：① git pull 拉新代码 → ② 检测 PG 容器 → ③ 装函数 → ④ 重启 Grafana。
-
-##### C. 手动派（不想用脚本）
-
-```bash
-# 1. 拉最新镜像 / 仓库代码
-docker compose pull && docker compose up -d     # 一键脚本用户
-# 或
-git pull                                         # git clone 用户
-
-# 2. 装 SQL 三件套（坐标函数 + 分时电价 + 性能索引）
-# git clone 用户（仓库本地有 sql/ 目录）：
-for f in install-coord-functions install-tou install-indexes; do
-  docker exec -i teslamate-database-1 psql -U teslamate -d teslamate < sql/${f}.sql
-done
-
-# 一键脚本用户（没有本地 sql/，用 curl 拉远程；钉 main 总能拿到最新）：
-for f in install-coord-functions install-tou install-indexes; do
-  curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/${f}.sql" | \
-    docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
-done
-
-# 3. 重启 Grafana
-docker compose restart grafana
-```
-
-> **Watchtower 自动升镜像的用户**：每次升级后**只需重跑这一段**就能拿到最新 SQL 改动（函数 / 索引 / TOU）。脚本是 `IF NOT EXISTS / CREATE OR REPLACE`，重跑零风险。
-
-#### 容器名不一定叫 `teslamate-database-1`
-
-⚠️ 上面命令里的 `teslamate-database-1` 是默认容器名（v1.4.2+ 一键脚本和目录叫 `teslamate-chinese-dashboards` 的 docker-compose.yml 都会生成这个名字）。如果你改过项目目录名或在更早版本装的，先确认：
-
-```bash
-docker ps --format '{{.Names}}' | grep -i database
-```
-
-把输出的真实容器名替换到命令里。
-
-#### 装成功的标志
-
-执行成功会看到 `坐标转换函数安装成功 (天安门测试通过): (39.91522, 116.40407)` 自检通过提示。这是一次性安装，后续所有仪表盘自动生效。
-
-> 卸载（如需）：函数文件顶部注释里有 DROP 语句。
-> 装失败排查：见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 「装 PostgreSQL 坐标转换函数报错」章节。
+装失败排查见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 「装 PostgreSQL 坐标转换函数报错」章节。
 
 ### 二步：在仪表盘上切换地图源
 
@@ -665,7 +598,7 @@ lng_for_map(map_url, lat, lng)
 
 <a id="tou-pricing"></a>
 
-## ⚡ 分时电价配置（v1.5.0+ 中文版独有）
+## ⚡ 分时电价配置（v1.5.0+）
 
 国内电网普遍有峰平谷电价。TeslaMate 默认只能存一个固定单价，没法反映真实的家充成本。v1.5.0 加了完整的 分时电价系统：在线配置时段单价、自动算每笔充电的真实费用、所有费用面板透明替换。
 
@@ -680,15 +613,15 @@ lng_for_map(map_url, lat, lng)
 
 ### 3 步配好
 
-#### 1. 升级（v1.4.x → v1.5.0）
+> **先决条件**：你的 TeslaMate 已经升到 v1.5.0+（v1.6.1 当前最新）。还在 v1.4.x 的用户先按 [README → ⚡ 升级到 v1.6.x](README.md#upgrade-v16) 升级；新装用户跳过下面 step 1 直接看 step 2。
 
-跟 v1.4.2 升级一样：
+#### 1. 升级（仅 v1.4.x 老用户）
 
 ```bash
 bash scripts/upgrade.sh
 ```
 
-upgrade.sh 自动 7 步（地图 + 分时电价 + 性能索引 + 插件 + 重启）。如果你是新装用户，跳过这步直接到第 2 步。
+upgrade.sh 自动 7 步（git pull → 检测 PG → 装地图函数 → 装分时电价 → 装性能索引 → 检查 Grafana 插件 → 重启 Grafana）。
 
 #### 2. 配分时电价（5 步交互式向导）
 
