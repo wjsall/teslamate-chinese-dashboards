@@ -584,11 +584,26 @@ docker compose up -d
 
 #### 「⚡ 分时电价配置」仪表盘空白 / 不显示表单
 
-Grafana 缺 `volkovlabs-form-panel` 插件。新镜像启动时自动装（`ENV GF_INSTALL_PLUGINS`），如果你用的旧镜像或自己组的 compose：
+Grafana 缺 `volkovlabs-form-panel` 插件。**v1.6.3+ 镜像 build-time 装好**，如果你用的：
+
+- **v1.5.0 - v1.6.2 镜像**：因上游 Grafana 装插件机制变更导致插件没装上（详见 [issue #13](https://github.com/wjsall/teslamate-chinese-dashboards/issues/13)）。**升级到 v1.6.3+ 镜像即修**
+- **自己组 compose 没用我们镜像**：手动装
 
 ```bash
-docker exec --user root teslamate-grafana-1 grafana-cli plugins install volkovlabs-form-panel
+# 升级到新镜像（推荐）
+docker compose pull grafana
+docker compose up -d --force-recreate grafana
+
+# 或手动装（v1.5.0-v1.6.2 用户 + 自组 compose 都适用）
+docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2
 docker compose restart grafana
+```
+
+**验证装好**：
+
+```bash
+docker exec teslamate-grafana-1 grafana cli plugins ls | grep volkovlabs-form-panel
+# 期望输出：volkovlabs-form-panel @ 6.3.2
 ```
 
 #### 主仪表盘费用数字突然变了

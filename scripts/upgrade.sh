@@ -139,9 +139,9 @@ if [ -n "$GRAFANA_CONTAINER" ]; then
         echo ""
         if [[ ! $install_plugin =~ ^[Nn]$ ]]; then
             docker exec --user root "$GRAFANA_CONTAINER" \
-                grafana-cli plugins install volkovlabs-form-panel >/dev/null 2>&1 \
+                grafana cli plugins install volkovlabs-form-panel 6.3.2 >/dev/null 2>&1 \
                 && echo -e "${GREEN}  ✓ 插件已装（重启后生效）${NC}" \
-                || echo -e "${RED}  ✗ 插件安装失败，可手动跑: docker exec ${GRAFANA_CONTAINER} grafana-cli plugins install volkovlabs-form-panel${NC}"
+                || echo -e "${RED}  ✗ 插件安装失败，可手动跑: docker exec ${GRAFANA_CONTAINER} grafana cli plugins install volkovlabs-form-panel 6.3.2${NC}"
         else
             echo "    跳过。「⚡ 分时电价配置」仪表盘会显示空白，但不影响其他面板。"
         fi

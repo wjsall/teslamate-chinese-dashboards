@@ -4,7 +4,7 @@ FROM teslamate/grafana:latest
 # 标签信息
 LABEL maintainer="wjsall"
 LABEL description="TeslaMate Grafana with Chinese Dashboards"
-LABEL version="1.6.1"
+LABEL version="1.6.3"
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans
@@ -14,20 +14,20 @@ ENV GF_USERS_DEFAULT_LOCALE=zh-Hans
 ENV DATABASE_PORT=5432
 ENV DATABASE_SSL_MODE=disable
 
-# 预装「⚡ 分时电价配置」仪表盘所需插件（v1.5.0 起）
-# 用 GF_INSTALL_PLUGINS 让 Grafana 启动时自动装，比 RUN grafana-cli 镜像更小
-# pin 主版本号防止上游 breaking change；升级前请先在测试环境验证
+# build-time 安装「⚡ 分时电价配置」面板所需插件
+# v1.6.3 起改用 build-time grafana cli（不用 ENV）— 详见 v1.6.3 CHANGELOG 和 issue #13
 # 第三方依赖：https://github.com/VolkovLabs/volkovlabs-form-panel （Apache 2.0，签名验证）
-ENV GF_INSTALL_PLUGINS="volkovlabs-form-panel 6.3.2"
-
-# 清除基础镜像自带的所有数据源配置（避免 TeslaMate.yml 等旧文件与新配置同时加载导致 ×2 报错）
-# 再写入唯一的数据源配置文件
-# 同时覆盖 Dashboard 路径配置（/dashboards 和 /dashboards_internal）
+# chown 472:0 = grafana user (uid 472, root group 0) — 与上游 teslamate/grafana 的 GF_UID/GF_GID 一致，
+# 不同于 NAS 仪表盘文件场景的 472:472（CLAUDE.md 第六节）
 USER root
 RUN rm -f /etc/grafana/provisioning/datasources/*.yml \
           /etc/grafana/provisioning/datasources/*.yaml \
           /etc/grafana/provisioning/dashboards/*.yml \
-          /etc/grafana/provisioning/dashboards/*.yaml
+          /etc/grafana/provisioning/dashboards/*.yaml \
+ && grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2 \
+ && chown -R 472:0 /var/lib/grafana/plugins
+
+# 写入唯一的数据源配置 + 覆盖基础镜像 dashboard provisioning（避免 ×2 报错）
 COPY grafana/provisioning/datasources/datasource.yml \
      /etc/grafana/provisioning/datasources/datasource.yml
 COPY dashboards.yml \
