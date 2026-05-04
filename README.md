@@ -294,146 +294,47 @@
 
 ## 🚀 快速开始
 
-### 方法一：使用预构建镜像（推荐 ⭐）
+按你的场景三选一：
 
-无需克隆项目，直接使用预构建镜像：
+| 你的情况 | 用方法 |
+|---|---|
+| **从零开始装**（没装过 TeslaMate） | 方法一 |
+| **已经在用原版英文 TeslaMate**（想换中文） | 方法二 |
+| **想自己写 docker-compose.yml + 挂仪表盘** | 方法三 |
 
-```yaml
-services:
-  grafana:
-    image: bswlhbhmt816/teslamate-chinese-dashboards:latest    # 默认 Docker Hub（国内访问稳定）
-    # image: ghcr.io/wjsall/teslamate-chinese-dashboards:latest  # 备选 GitHub Container Registry
-    environment:
-      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      # ... 其他配置
-```
+### 方法一：一键脚本（推荐 ⭐）
 
-镜像地址：`ghcr.io/wjsall/teslamate-chinese-dashboards:latest`
-
-特点：
-- ✅ 完全免费，无需注册
-- ✅ 自动同步最新汉化
-- ✅ 开箱即用
-
-#### 🇨🇳 中国大陆用户：镜像拉取失败解决方案
-
-`ghcr.io`（GitHub Container Registry）在中国大陆访问不稳定，常见报错为 `connection refused`、`timeout` 或 `401`。有以下几种解决方案：
-
-**方案 A：配置 Docker 镜像代理（推荐）**
-
-在 `/etc/docker/daemon.json` 中添加代理地址（选择一个可用的）：
-
-```json
-{
-  "registry-mirrors": [
-    "https://dockerproxy.cn",
-    "https://docker.1ms.run",
-    "https://hub-mirror.c.163.com"
-  ]
-}
-```
-
-然后重启 Docker：
+适合**全新部署**的用户。脚本自动装 TeslaMate + PostgreSQL + Grafana 中文版 + Mosquitto，随机生成 ENCRYPTION_KEY 和数据库密码。
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl restart docker
-```
-
-**方案 B：本地构建镜像（无需网络代理）**
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/wjsall/teslamate-chinese-dashboards.git
-cd teslamate-chinese-dashboards
-
-# 2. 在本地构建镜像（FROM teslamate/grafana:latest 可通过镜像代理加速）
-docker build -t teslamate-grafana-zh .
-
-# 3. 修改 docker-compose.yml 的 grafana.image 为 teslamate-grafana-zh
-# 4. 启动
-docker compose up -d
-```
-
-**方案 C：使用 Docker Hub 镜像（推荐中国用户）**
-
-我们已同步推送到 Docker Hub，直接替换镜像地址即可：
-
-```yaml
-services:
-  grafana:
-    image: bswlhbhmt816/teslamate-chinese-dashboards:latest
-```
-
-或者手动拉取：
-
-```bash
-docker pull bswlhbhmt816/teslamate-chinese-dashboards:latest
-```
-
-Docker Hub 在中国大陆访问更稳定，如仍无法拉取可配合镜像代理使用。
-
-**验证安装:**
-```bash
-# 1. 启动服务
-docker compose up -d
-
-# 2. 检查 Grafana 日志
-docker compose logs grafana
-
-# 3. 访问 Grafana
-open http://localhost:3000
-
-# 4. 验证 Dashboard
-# 登录后应该看到 43 个中文 Dashboard
-```
-
-### 方法二：一键安装脚本
-
-```bash
-# 在服务器上执行
 curl -fsSLO https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh
 bash simple-deploy.sh
 ```
 
-访问：
-- TeslaMate: http://服务器IP:4000
-- Grafana: http://服务器IP:3000
+跑完后看终端输出：
 
-### 方法三：Docker Compose Plugin（新版Docker）
+- TeslaMate: `http://服务器IP:4000`（OAuth 授权 Tesla 账号）
+- Grafana:   `http://服务器IP:3000`（默认 admin/admin，登录后立即改密码）
+- ENCRYPTION_KEY + DATABASE_PASS（**抄到密码管理器**，丢了未来迁移失败）
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/wjsall/teslamate-chinese-dashboards.git
-cd teslamate-chinese-dashboards
+### 方法二：替换已有原版 TeslaMate 的 Grafana 镜像
 
-# 2. 启动
-docker compose up -d
-
-# 3. 访问 Grafana
-open http://localhost:3000
-```
-
-### 方法四：基于原版 TeslaMate 修改（推荐已有用户）
-
-如果你已经在使用原版 TeslaMate，只改 Grafana 镜像 + 加一行中文环境变量：
+适合**已经在用原版英文 TeslaMate** 想换中文版的用户。改两处 + 清旧卷：
 
 ```yaml
 # 原 docker-compose.yml 的 grafana service 改两处：
   grafana:
-    image: bswlhbhmt816/teslamate-chinese-dashboards:latest    # ← 改 image（原 teslamate/grafana:latest）
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest   # ← 改 image（原 teslamate/grafana:latest）
     environment:
       - DATABASE_USER=teslamate
       - DATABASE_PASS=password
       - DATABASE_NAME=teslamate
       - DATABASE_HOST=database
-      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans                       # ← 加这一行
+      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans                      # ← 加这一行
     # ports / volumes / restart 保持原样
 ```
 
-**切换步骤**：
-
-> ⚠️ **必须清除旧 Grafana 数据卷**：原版启动时把英文 dashboard 写进数据卷，换镜像不会自动覆盖。**车辆行驶数据不受影响**（存在独立的 `teslamate-db` 卷）。
+> ⚠️ **必须清除旧 Grafana 数据卷**（不影响行车记录数据，那存在独立的 `teslamate-db` 卷）：
 
 ```bash
 docker compose stop grafana
@@ -442,32 +343,52 @@ docker compose pull grafana
 docker compose up -d grafana
 ```
 
-### 方法五：手动挂载 Dashboard（高级用户）
+### 方法三：手动挂载 Dashboard 文件（进阶）
 
-> ⚠️ **版本要求**：部分仪表板使用 `schemaVersion 41`，需要 **Grafana 12+**（即 TeslaMate Grafana 镜像 3.0.0+）。旧版 Grafana 可能出现面板渲染异常。
+适合需要**完全控制 docker-compose.yml** 的用户（自定义部署 / 老版 Grafana 升级路径）。
 
-在你的 `docker-compose.yml` 中添加：
+> ⚠️ **版本要求**：部分仪表板用 `schemaVersion 41`，需要 **Grafana 12+**（TeslaMate Grafana 镜像 3.0.0+）。
 
 ```yaml
 services:
   grafana:
     image: teslamate/grafana:latest
     volumes:
-      # 挂载中文Dashboard（主要仪表板）
       - ./teslamate-chinese-dashboards/grafana/dashboards/zh-cn:/dashboards:ro
-      # 挂载内部详情页（行程详情/充电详情）⚠️ 路径必须是 /dashboards_internal/
       - ./teslamate-chinese-dashboards/grafana/dashboards/internal:/dashboards_internal:ro
     environment:
       - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
 ```
 
-然后：
 ```bash
 git clone https://github.com/wjsall/teslamate-chinese-dashboards.git
 docker compose restart grafana
 ```
 
-> ⚠️ **注意**：`internal/` 必须挂载到 `/dashboards_internal/`（带下划线），否则行程详情、充电详情页仍显示英文。
+> ⚠️ `internal/` 必须挂载到 `/dashboards_internal/`（带下划线），否则行程详情/充电详情仍显示英文。
+
+### 🇨🇳 中国大陆用户：镜像拉取失败
+
+`ghcr.io` 在大陆经常超时。本项目镜像**双源同步**：
+
+- ✅ Docker Hub：`bswlhbhmt816/teslamate-chinese-dashboards:latest`（国内更稳）
+- ⚠️ ghcr.io：`ghcr.io/wjsall/teslamate-chinese-dashboards:latest`（备用）
+
+**默认就用 Docker Hub**（方法一脚本已默认选 Docker Hub，方法二/三里手动指定）。
+
+如果 Docker Hub 也慢，配镜像代理：
+
+```bash
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+EOF
+sudo systemctl restart docker
+```
 
 ## 🔄 更新方法
 
