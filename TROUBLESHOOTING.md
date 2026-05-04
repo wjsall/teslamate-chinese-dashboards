@@ -584,27 +584,45 @@ docker compose up -d
 
 #### 「⚡ 分时电价配置」仪表盘空白 / 不显示表单
 
-Grafana 缺 `volkovlabs-form-panel` 插件。**v1.6.3+ 镜像 build-time 装好**，如果你用的：
+Grafana 缺 `volkovlabs-form-panel` 插件。**v1.6.3+ 镜像 build-time 已装**，但**升级用户需要额外做一步 runtime 装**（Docker 数据卷会盖住镜像里新装的插件）。详见 [issue #13](https://github.com/wjsall/teslamate-chinese-dashboards/issues/13)。
 
-- **v1.5.0 - v1.6.2 镜像**：因上游 Grafana 装插件机制变更导致插件没装上（详见 [issue #13](https://github.com/wjsall/teslamate-chinese-dashboards/issues/13)）。**升级到 v1.6.3+ 镜像即修**
-- **自己组 compose 没用我们镜像**：手动装
-
-```bash
-# 升级到新镜像（推荐）
-docker compose pull grafana
-docker compose up -d --force-recreate grafana
-
-# 或手动装（v1.5.0-v1.6.2 用户 + 自组 compose 都适用）
-docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2
-docker compose restart grafana
-```
-
-**验证装好**：
+##### 修法（**所有受影响用户都跑这条**）
 
 ```bash
-docker exec teslamate-grafana-1 grafana cli plugins ls | grep volkovlabs-form-panel
-# 期望输出：volkovlabs-form-panel @ 6.3.2
+docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2 \
+ && docker compose restart grafana \
+ && sleep 10 \
+ && docker exec teslamate-grafana-1 grafana cli plugins ls | grep volkovlabs-form-panel
 ```
+
+**期望输出**：
+
+```
+volkovlabs-form-panel @ 6.3.2
+```
+
+装一次后**永久生效**（Grafana 数据卷持久化）。
+
+##### 为什么升级镜像本身不够（Docker 数据卷坑）
+
+TeslaMate 标准 compose 有 `teslamate-grafana-data:/var/lib/grafana` 命名卷。Docker 命名卷的行为：
+
+> **首次创建容器时**从镜像挂载点**拷贝初始内容**，**之后只用卷自己的内容**。
+
+后果：
+- 已经跑过 grafana 的用户 → 卷里是旧镜像的 plugins/，**新镜像里的 form-panel 进不去卷**
+- 全新用户首次 `docker compose up` → 卷是空的，从 v1.6.3+ 镜像拷贝（**含 form-panel**）✅
+
+`--force-recreate` 只销毁容器实例，**不动卷**。所以已有 grafana 卷的用户必须 runtime 装一次。
+
+##### 谁不受影响
+
+| 用户类型 | 是否需要 runtime 装 |
+|---|---|
+| 全新装（首次 `docker compose up`，卷为空）| ❌ 不需要，v1.6.3+ 镜像自动带 |
+| 用 `scripts/upgrade.sh` 升级 | ❌ 不需要，脚本自动检测 + 触发 runtime 装 |
+| **手动 `docker compose pull + up -d`（任何旧版本升 v1.6.3）** | ✅ 需要，跑上面的命令 |
+| 自己组 compose 没用我们镜像 | ✅ 需要，跑上面的命令 |
 
 #### 主仪表盘费用数字突然变了
 

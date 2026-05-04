@@ -25,16 +25,28 @@ USER grafana
 
 **升级方法**：
 
+**全新用户**（首次部署）：直接拉 v1.6.3+ 镜像，build-time 自动带 form-panel。
+
+**已有 grafana 数据卷的升级用户**（重要 ⚠️）：除了升级镜像，还要 **runtime 装一次** 把 plugin 落到 volume 里。issue #13 实测发现：Docker 命名卷 `teslamate-grafana-data:/var/lib/grafana` 在首次创建后**只用卷自己的内容**，新镜像里 build-time 装的 plugin **被卷盖住进不去**。
+
 ```bash
+# 已有用户（任何旧版本升 v1.6.3）
 docker compose pull grafana
 docker compose up -d --force-recreate grafana
-docker exec teslamate-grafana-1 grafana cli plugins ls | grep volkovlabs-form-panel
+# ↓ 关键这步：runtime 装一次 plugin 到卷里（永久生效）
+docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2 \
+ && docker compose restart grafana \
+ && sleep 10 \
+ && docker exec teslamate-grafana-1 grafana cli plugins ls | grep volkovlabs-form-panel
 # 期望: volkovlabs-form-panel @ 6.3.2
 ```
 
+**用 `scripts/upgrade.sh` 升级的用户**：脚本第 6 步自动检测 + 触发 runtime 装，**不需要手动跑上面的命令**。
+
 ### 📚 文档
 
-- `TROUBLESHOOTING.md` 「分时电价配置面板空白」诊断段落更新：明确 v1.5-v1.6.2 受影响 + 给出升级和手动装两种修法 + 加验证命令
+- `TROUBLESHOOTING.md` 「分时电价配置面板空白」段落改写：解释 Docker 数据卷坑 + 给一条 runtime 装的命令 + 谁不受影响的对照表
+- `CHANGELOG` 升级方法补充「已有数据卷用户必须 runtime 装一次」
 
 ---
 
