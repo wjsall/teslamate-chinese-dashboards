@@ -105,9 +105,9 @@ sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json <<-'EOF'
 {
   "registry-mirrors": [
-    "https://dockerproxy.cn",
     "https://docker.1ms.run",
-    "https://hub-mirror.c.163.com"
+    "https://docker.m.daocloud.io",
+    "https://docker.cnb.cool"
   ]
 }
 EOF
@@ -263,59 +263,68 @@ docker compose logs grafana | grep -i "error\|failed"
 
 ---
 
-### ❌ TeslaMate「Sign in with Tesla」按钮反复登不上
+### ❌ TeslaMate 登录失败（Token 粘贴提交后报错）
 
-**症状**：打开 TeslaMate 主页 `http://服务器IP:4000`，点击「Sign in with Tesla」后页面跳转特斯拉登录页，但出现以下任一情况：
-- 跳转后空白页 / 一直加载
-- 报 `unauthorized_client` 或 `invalid_request`
-- 中国账号怎么试都进不去
-- 输完两步验证码仍然报错
-- 跳回 TeslaMate 后状态依然是「未授权」
+> ℹ️ **TeslaMate 3.0 已移除浏览器 OAuth 登录**——登录页只有 Access Token + Refresh Token 两个粘贴框，没有「Sign in with Tesla」大按钮。本节专门讲粘贴 token 后失败的排查。
+
+**症状**：登录页粘贴 token 点提交后出现以下任一情况：
+- 报 `Tokens are invalid`
+- 报 `Your Tesla account is locked`
+- 一直转圈无响应
+- 提交后跳回登录页没有进展
 
 **逐项排查：**
 
-#### 1. 国内用户：是否配置了 Tesla 中国区 API？
+#### 1. Token 是否过期 / 复制完整？
 
-中国账号必须用 `auth.tesla.cn`（不是 `auth.tesla.com`）。检查 `~/teslamate-chinese/docker-compose.yml`：
+`access_token` 通常 ≥ 2000 字符，`refresh_token` 约 100 字符。粘贴时容易因换行/空格导致截断：
+- 重新打开 Auth for Tesla App，重新生成一对（点 App 内「重新登录」或「刷新」）
+- 复制时**长按整段 → 全选 → 复制**，避免只复制可见部分
+- 粘贴到 TeslaMate 后用浏览器开发者工具看输入框 value 长度，是否被空格污染
+
+#### 2. 账号被锁
+
+如果 App 里反复登录失败，特斯拉会锁账号几小时。看到 `Your Tesla account is locked due to too many failed sign in attempts`：
+- 去 [Tesla 官网](https://www.tesla.com/teslaaccount/forgot-password) 重置密码
+- 等几小时后再用 Auth for Tesla App 重新生成 token
+
+#### 3. 服务器到 Tesla 服务器网络不通
+
 ```bash
-grep -E "TESLA_API_HOST|TESLA_WSS_HOST" ~/teslamate-chinese/docker-compose.yml
-```
-应该看到：
-```
-- TESLA_API_HOST=https://owner-api.vn.cloud.tesla.cn
-- TESLA_WSS_HOST=wss://streaming.vn.cloud.tesla.cn
-```
-如果前面有 `#` 注释掉，去掉 `#` 后 `docker compose up -d` 重启。详细操作见 [QUICKSTART.md](QUICKSTART.md) 第四步「中国大陆用户必看」。
-
-#### 2. 服务器能否访问 Tesla 服务器？
-
-```bash
-# 国际账号
-curl -I https://auth.tesla.com
 # 中国账号
-curl -I https://auth.tesla.cn
+curl -fsI https://auth.tesla.cn
+curl -fsI https://owner-api.vn.cloud.tesla.cn
+
+# 国际账号
+curl -fsI https://auth.tesla.com
+curl -fsI https://owner-api.teslamotors.com
 ```
 任一报错（超时、连接拒绝、SSL 握手失败）→ 服务器网络不通 → 配代理或换可用网络。
 
-#### 3. 两步验证码是否超时？
+#### 4. TeslaMate 容器看具体报错
 
-验证码默认有效期约 30 秒。**收到短信/App 推送后立即输入**，别拖到下一分钟才输。
+```bash
+docker compose logs --tail 100 teslamate | grep -iE "error|failed|tokens"
+```
+看到 `:token_refresh` → token 已被 Tesla 服务端废弃，Auth for Tesla App 重新生成
+看到 SSL/TLS 错误 → 服务器系统时间偏差太多（`date` 看一下，必要时 `chronyd` / `systemctl restart systemd-timesyncd`）
 
-#### 4. 浏览器卡 cookie / 缓存
+#### 5. 用工具拿 token 的具体步骤
 
-换无痕模式 / 换浏览器 / 清 `auth.tesla.com` 和 `auth.tesla.cn` 的 cookie 后重试。
+TeslaMate 3.0 没有别的登录方式，token 必须从外部工具来。**推荐 tesla_auth 桌面版**（TeslaMate 主作者维护、跨平台、不需要 Apple ID 切区）：
 
-#### 5. ⭐ 推荐方案：换用「Auth for Tesla」App（最简单）
+1. 下载：[github.com/adriankumpf/tesla_auth/releases](https://github.com/adriankumpf/tesla_auth/releases) 选对应平台二进制
+2. 解压后双击运行 → 弹出窗口登录 Tesla 账号
+3. 显示 `access_token` 和 `refresh_token` 两段字符串，复制下来
+4. 回 TeslaMate 登录页（**直接显示两个输入框，不是折叠的**）粘贴两段 token，点 `Sign in`
 
-**国内 Tesla 圈早就把这条作为首选**，不需要改 docker-compose.yml 也不用配中国区 API：
+**国内 iOS 用户备选：**
+- App Store 搜「Auth for Tesla」**需要美区 / 港区 Apple ID**，国内大陆账号看不到这个 App
+- 不想切区的，去家人/朋友的美区 iPhone 装一下，或者直接用 macOS / Windows 桌面版 tesla_auth
 
-1. 手机 App Store 搜「**Auth for Tesla**」（iOS / Android 都有）
-2. App 里登录 Tesla 账号 → 显示 `access_token` 和 `refresh_token` 两段字符串
-3. 回 TeslaMate 登录页，展开「**Use existing tokens** / 使用现有 Token」折叠选项，粘贴两段 token
+绑定后 TeslaMate 用 refresh_token 自动续期，长期不需要重新拿。
 
-> ⚠️ Auth for Tesla 是社区开源工具，**只在你信任的设备上用**（自己的 iPhone / Android）。绑定后 TeslaMate 用 refresh_token 自动续期。
-
-完整步骤 + 注意事项见 [QUICKSTART.md 第四步「方法 A：用 Auth for Tesla App 拿 Token」](QUICKSTART.md)。
+完整步骤 + 截图见 [QUICKSTART.md 第四步「授权 Tesla 账号」](QUICKSTART.md#step-4)。
 
 ---
 
@@ -568,6 +577,146 @@ sudo firewall-cmd --reload
 - ✅ Grafana 默认密码改掉（admin/admin → 强密码）
 - ✅ 云服务器安全组里 4000/3000 不要 `0.0.0.0/0` 全开放
 - ✅ docker-compose.yml 端口绑定改 `127.0.0.1:` 前缀（如果配反向代理）
+
+---
+
+### 🟢 群晖 DSM 7.x 反向代理 + Let's Encrypt（推荐 NAS 用户）
+
+**目标：** 用域名 `teslamate.your-domain.com` HTTPS 访问，不暴露 `:4000` `:3000` 端口。
+
+**前置条件：**
+- DSM 7.0+
+- 一个能解析到你 NAS 公网 IP（或 DDNS）的域名
+- 路由器已把 80 / 443 端口转发到 NAS
+
+**步骤 1：申请 Let's Encrypt 证书**
+
+1. **控制面板 → 安全性 → 证书 → 新增 → 添加新证书 → 从 Let's Encrypt 取得证书**
+2. **域名** 填 `teslamate.your-domain.com`，**电邮** 填你能收信的邮箱
+3. 点确定，DSM 自动用 80 端口完成 ACME 验证
+4. 提示「证书已添加」即成功（**域名不解析 / 80 端口不通会失败**，先 `curl -I http://teslamate.your-domain.com` 验证）
+
+**步骤 2：配反向代理**
+
+1. **控制面板 → 登录门户 → 高级 → 反向代理服务器 → 新增**
+2. **来源**：协议 `HTTPS` / 主机名 `teslamate.your-domain.com` / 端口 `443`
+3. **目的地**：协议 `HTTP` / 主机名 `localhost` / 端口 `4000`（TeslaMate 主页）
+4. 切到「自定义标头」标签页 → **新增 → 创建** → 选 **WebSocket**（TeslaMate 实时更新依赖 WS，不加这条会卡）
+5. 保存。如果还要给 Grafana 配反代，新建一条规则：来源 `grafana.your-domain.com:443` → 目的地 `localhost:3000`
+
+**步骤 3：绑定证书到域名**
+
+控制面板 → 安全性 → 证书 → 选刚申请的证书 → **设置 → 把 `teslamate.your-domain.com` 服务的证书改为这张**。
+
+**步骤 4：关掉端口直连**
+
+打开浏览器测试 `https://teslamate.your-domain.com` 能进 → 改 `~/teslamate-chinese/docker-compose.yml`，给 teslamate 端口加 `127.0.0.1:` 前缀（仅本机访问，反代用），重启容器：
+```yaml
+    ports:
+      - 127.0.0.1:4000:4000
+```
+
+**证书自动续期：** Let's Encrypt 90 天到期，DSM 默认每天 03:00 检查 → 30 天内到期自动续期，**不用手动管**。
+
+> ⚠️ 证书续期失败常见原因：80 端口路由器忘了转发，或被 ISP 封。检查路径：控制面板 → 通知 → 看 ACME renewal 的失败日志。
+
+---
+
+### 🟢 群晖 Container Manager 「项目」部署（DSM 7.2+ 推荐）
+
+**适用场景：** DSM 7.2+ 移除了 Docker 套件、用 Container Manager 替代。命令行不熟、想纯 GUI 部署的群晖小白。
+
+**步骤 1：装 Container Manager**
+
+控制面板 → 套件中心 → 搜「Container Manager」→ 安装。
+
+**步骤 2：准备 docker-compose.yml**
+
+DSM File Station 进入 `/volume1/docker/`，新建子文件夹 `teslamate`。**右键 → 新建文件 → 命名 `docker-compose.yml`**，内容粘贴下方完整模板（**记得替换两个红色占位符**）：
+
+```yaml
+services:
+  teslamate:
+    image: teslamate/teslamate:latest
+    restart: always
+    cap_drop:
+      - all
+    ports:
+      - 4000:4000
+    volumes:
+      - ./import:/opt/app/import
+    environment:
+      - ENCRYPTION_KEY=【请改成 openssl rand -hex 32 生成的 64 位字符串】
+      - DATABASE_USER=teslamate
+      - DATABASE_PASS=【请改成 openssl rand -base64 24 生成的密码】
+      - DATABASE_NAME=teslamate
+      - DATABASE_HOST=database
+      - MQTT_HOST=mosquitto
+      - TZ=Asia/Shanghai
+
+  database:
+    image: postgres:18-trixie
+    restart: always
+    volumes:
+      - teslamate-db:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=teslamate
+      - POSTGRES_PASSWORD=【与上面 DATABASE_PASS 同一个密码】
+      - POSTGRES_DB=teslamate
+
+  grafana:
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest
+    restart: always
+    ports:
+      - 3000:3000
+    volumes:
+      - teslamate-grafana-data:/var/lib/grafana
+    environment:
+      - DATABASE_USER=teslamate
+      - DATABASE_PASS=【与上面 DATABASE_PASS 同一个密码】
+      - DATABASE_NAME=teslamate
+      - DATABASE_HOST=database
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: always
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - mosquitto-conf:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+
+volumes:
+  teslamate-db:
+  teslamate-grafana-data:
+  mosquitto-conf:
+  mosquitto-data:
+```
+
+> **生成两个密钥的方法**（任选一种）：
+> - **DSM 套件中心装「Text Editor / 终端机」**：开终端，跑 `openssl rand -hex 32`（这是 ENCRYPTION_KEY）+ `openssl rand -base64 24 | tr -d '/+=' | cut -c1-24`（这是 DATABASE_PASS），把输出粘到 yml 里
+> - **任何 Mac / Linux 桌面**：终端跑同样命令，复制粘贴
+> - **没终端**：用 [random-string-generator.com](https://www.random-string-generator.com/) 生成 64 位 hex（不推荐，第三方网站存在泄露风险，本地终端跑更稳）
+
+⚠️ **`ENCRYPTION_KEY` 用于加密 Tesla token，丢了下次装就解密不出来**。生成完立刻抄到 1Password / Bitwarden / Keychain。
+
+**步骤 3：在 Container Manager 里建项目**
+
+1. Container Manager → **项目 → 新增**
+2. **项目名称**：`teslamate-chinese`（随意，别和已有项目重名）
+3. **路径**：选刚刚放 docker-compose.yml 的文件夹（如 `/docker/teslamate`）
+4. **来源**：选「使用现有的 docker-compose.yml」
+5. 点「下一步」→ Container Manager 自动解析 compose，列出 4 个服务（teslamate / database / grafana / mosquitto）
+6. **下一步 → 完成 → 启动项目**
+
+**步骤 4：等容器拉取启动**
+
+进度条到 100% 后，浏览器访问 `http://NAS-IP:4000` 进 TeslaMate。
+
+**升级时：** Container Manager → 项目 → 选 `teslamate-chinese` → **操作 → 重新构建** 即可重新拉镜像（实际等价于 `docker compose pull && docker compose up -d`）。
+
+> ⚠️ Container Manager 项目模式有个坑：第一次启动失败后，**项目状态会卡在 STOPPED**，但部分容器其实启动了一半。**清理方法**：项目页面 → 操作 → 停止 → 清理 → 重新构建。
 
 ---
 
@@ -905,6 +1054,83 @@ docker cp teslamate-database-1:/tmp/teslamate.dump \
 ```bash
 find /volume1/backup/teslamate-*.dump -mtime +28 -delete
 ```
+
+---
+
+### 🟡 进阶：把数据从 Docker 命名卷迁到 NAS 共享文件夹（bind mount）
+
+**适用场景：** 群晖 / 威联通用户想把 Postgres 数据库 / Grafana 数据放到能直接通过 NAS 文件浏览器看见的路径，方便用 Hyper Backup / Snapshot Replication 备份。
+
+> ⚠️ **这是有损操作（涉及停服 + 文件搬运），新装直接用 bind mount 比迁移简单**。已经在跑的用户，**先做完整数据库 dump 再开始**（见上节「单纯备份数据库」）。
+
+**步骤：**
+
+1. **停服 + 整库 dump 留底（保险）**
+   ```bash
+   cd ~/teslamate-chinese
+   docker exec teslamate-database-1 pg_dump -U teslamate teslamate > /volume1/backup/teslamate-pre-bindmount.dump
+   docker compose down
+   ```
+
+2. **从命名卷拷数据到目标路径**
+
+   先找到命名卷的实际宿主路径：
+   ```bash
+   docker volume inspect teslamate_teslamate-db | grep Mountpoint
+   # 输出类似 /var/lib/docker/volumes/teslamate_teslamate-db/_data
+   ```
+
+   建好目标目录并拷过去（保留属主 / 权限，**这一步必须 sudo**）：
+   ```bash
+   sudo mkdir -p /volume1/docker/teslamate/data/{db,grafana,mosquitto-conf,mosquitto-data}
+   sudo cp -a /var/lib/docker/volumes/teslamate_teslamate-db/_data/. /volume1/docker/teslamate/data/db/
+   sudo cp -a /var/lib/docker/volumes/teslamate_teslamate-grafana-data/_data/. /volume1/docker/teslamate/data/grafana/
+   sudo cp -a /var/lib/docker/volumes/teslamate_mosquitto-conf/_data/. /volume1/docker/teslamate/data/mosquitto-conf/
+   sudo cp -a /var/lib/docker/volumes/teslamate_mosquitto-data/_data/. /volume1/docker/teslamate/data/mosquitto-data/
+   ```
+
+3. **改 docker-compose.yml**
+
+   把 `database` / `grafana` / `mosquitto` 三个服务的 `volumes:` 段改成 bind mount：
+   ```yaml
+   database:
+     volumes:
+       - /volume1/docker/teslamate/data/db:/var/lib/postgresql
+
+   grafana:
+     volumes:
+       - /volume1/docker/teslamate/data/grafana:/var/lib/grafana
+
+   mosquitto:
+     volumes:
+       - /volume1/docker/teslamate/data/mosquitto-conf:/mosquitto/config
+       - /volume1/docker/teslamate/data/mosquitto-data:/mosquitto/data
+   ```
+
+   把文件最底部 `volumes:` 段（声明 4 个命名卷的部分）整段删除（已经不用了）。
+
+4. **修权限**（关键，permission 错容器起来报错）：
+   ```bash
+   sudo chown -R 999:999 /volume1/docker/teslamate/data/db          # postgres 容器 uid
+   sudo chown -R 472:472 /volume1/docker/teslamate/data/grafana     # grafana 容器 uid
+   sudo chown -R 1883:1883 /volume1/docker/teslamate/data/mosquitto-conf /volume1/docker/teslamate/data/mosquitto-data
+   ```
+
+5. **启动 + 验证**：
+   ```bash
+   docker compose up -d
+   docker compose logs -f database | grep -i "ready\|error"
+   ```
+
+   看到 `database system is ready to accept connections` 即成功。打开 TeslaMate 主页验证数据完整。
+
+6. **确认无问题后删旧命名卷**（可选，省宿主磁盘空间）：
+   ```bash
+   docker volume rm teslamate_teslamate-db teslamate_teslamate-grafana-data \
+                    teslamate_mosquitto-conf teslamate_mosquitto-data
+   ```
+
+> ⚠️ **任一步骤出错**：恢复方案 = `docker compose down` → 把 docker-compose.yml volumes 段改回命名卷 → `docker compose up -d` → `docker exec -i teslamate-database-1 psql -U teslamate -d teslamate < /volume1/backup/teslamate-pre-bindmount.dump`。所以第 1 步的 dump 必须先做。
 
 ---
 

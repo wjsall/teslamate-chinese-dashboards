@@ -1,5 +1,59 @@
 # 更新日志
 
+## [v1.6.5] - 2026-05-03
+
+### 🐛 修复
+
+- **群晖 NAS 用户上传 Dashboard JSON 后看不到**（`TROUBLESHOOTING.md`）：scp 上去的文件 owner 是 `wjsall:admin`，DSM 的隐藏 ACL 让 grafana 容器读不了，provisioning 静默失败。新增 chown 472:472 修复模板（zh-cn 仪表盘 + internal 仪表盘两条命令分别给）
+- **ARM NAS（树莓派 / Apple Silicon NAS）拉 mosquitto 失败导致整堆服务起不来**（`TROUBLESHOOTING.md`）：增加 `DISABLE_MQTT=true` fallback 方案——主功能（车辆数据 + 仪表盘）不依赖 MQTT，关掉 mosquitto 不影响核心使用
+- **`README.md` / `QUICKSTART.md` / `simple-deploy.sh` 升级章节误用 `wget`**：macOS 默认没装 wget 会报 `command not found`，统一改 `curl`
+
+### 🆕 新增
+
+- **「整机迁移」3 件套备份恢复流程**（`TROUBLESHOOTING.md`）：旧 NAS → 新 NAS / 重装 DSM / 换云服务器场景，含「配置 + DB dump + Grafana volume」三件备份方法和恢复顺序，避免迁移漏内容
+- **公网部署「流量爆表防护」章节**（`TROUBLESHOOTING.md`）：直接公网开放 :4000 :3000 = 任何人能看车辆位置/历史行程，强烈推荐 Tailscale 走虚拟内网，云服务器关掉公网端口
+- **公网部署「失败告警」可选配置**（`TROUBLESHOOTING.md`）：uptime-kuma 监控容器存活，挂了发邮件/微信通知
+- **「装完了？下一步看哪些仪表盘？」引导**（`QUICKSTART.md`）：第一周必看 5 个核心仪表盘 + 进阶玩法（充电分析 / 驾驶习惯 / 维护提醒 / 趋势对比），链 DASHBOARD_MAP / SCENE_GUIDE 找完整目录
+
+### 📚 文档修复
+
+- **TeslaMate 3.0 浏览器 OAuth 登录已被上游移除**：`QUICKSTART.md` 之前写的「方法 B：点 `Sign in with Tesla` 大按钮跳 `auth.tesla.cn`」流程在 TeslaMate 3.0 不存在了——登录页只剩 Access Token / Refresh Token 两个粘贴框，**唯一登录方式**是用 Auth for Tesla App 拿 token 后粘贴。原方法 B 整段删除
+- **国内账号不再需要改 `TESLA_API_HOST` / `TESLA_WSS_HOST`**：TeslaMate 3.0 会从 token 的 issuer (auth.tesla.cn) 自动识别为中国区，自动用 `owner-api.vn.cloud.tesla.cn` / `streaming.vn.cloud.tesla.cn`。`QUICKSTART.md` / `README.md` / `simple-deploy.sh` / `TROUBLESHOOTING.md` 同步去掉「中国账号必须设环境变量」的过时指引
+- **`TROUBLESHOOTING.md` 登录失败排查**：从「OAuth 浏览器跳转排查」改为「token 粘贴失败排查」（`Tokens are invalid` / `account_locked` / 网络不通 / 系统时间偏差）
+
+### 🇨🇳 国内镜像源更新
+
+- **替换两个已失效的 Docker 镜像加速器**：`dockerproxy.cn`（曾是国内最常推荐的镜像之一）和 `hub-mirror.c.163.com`（NetEase 镜像）实测都已下线（HTTP 000 / 不响应）。`README.md` / `QUICKSTART.md` / `TROUBLESHOOTING.md` / `simple-deploy.sh` 全部替换为 2026-05 实测可用的：
+  - `https://docker.1ms.run`
+  - `https://docker.m.daocloud.io`
+  - `https://docker.cnb.cool`
+
+### 🆕 群晖 NAS 用户专属指引
+
+- **DSM 7.x 反向代理 + Let's Encrypt 教程**（`TROUBLESHOOTING.md`）：4 步打通 `https://teslamate.your-domain.com` 域名访问，自动续期，不暴露 `:4000` `:3000` 端口
+- **DSM 7.2+ Container Manager「项目」模式部署**（`TROUBLESHOOTING.md`）：纯 GUI 部署，不用 SSH，照着点几下完成；含升级和「项目卡 STOPPED」的坑修
+- **NAS bind mount 迁移指引**（`TROUBLESHOOTING.md`）：把数据从 Docker 命名卷搬到 NAS 共享文件夹的 6 步流程，含 dump 留底、权限 chown 列表、回滚方案
+
+### 🛠 一键脚本（`simple-deploy.sh`）改进
+
+- **端口预检**：装之前先 `lsof / ss / netstat` 检查 `4000` / `3000` 是否被占用（群晖：Portainer / Bitwarden 占 3000；macOS：Vite / Next.js / Rails 占 3000），冲突时直接退出并提示具体占用进程，不让容器启动失败再排查
+- **支持 `TM_PORT` / `GF_PORT` 环境变量改端口**：端口冲突或想自定义时跑 `TM_PORT=14000 GF_PORT=13000 bash simple-deploy.sh`，脚本自动改 docker-compose.yml 端口映射 + 改最后的访问地址提示
+- **修正脚本结尾「使用 OAuth 授权」措辞**为「TeslaMate 3.0 仅支持 Token 粘贴登录」，与实际行为一致，避免装完后用户找不到「Sign in with Tesla」按钮
+
+### 🔄 工具推荐改进
+
+- **拿 Tesla token 的工具改推 [tesla_auth 桌面版](https://github.com/adriankumpf/tesla_auth/releases)**：TeslaMate 主作者 Adrian Kumpf 维护，跨平台（macOS / Windows / Linux 原生二进制），开源可信。原 Auth for Tesla iOS App 退为「国内 iOS 备选」并明示需要美区 / 港区 Apple ID 才能下载（之前文档没说，国内大陆账号点开就看不到 App）
+
+### 🆕 新增 `scripts/diagnose.sh` 一键诊断脚本
+
+跑一行 `bash scripts/diagnose.sh`，自动检查：Docker / 4 个容器状态 / 端口监听 / 数据库连通 + 车辆数 + 行程数 / 坐标函数 / TOU 表 / Grafana 镜像版本 / form-panel 插件 / 最近 5 分钟错误日志 / Tesla API 国内外端点连通性。失败项给出具体修复命令。报 issue 时附上输出能省 N 轮排查。
+
+### 兼容性
+
+升级到 v1.6.5 不需要任何额外动作。仅文档/脚本注释的更新。
+
+---
+
 ## [v1.6.4] - 2026-05-04
 
 ### 🔒 安全修复

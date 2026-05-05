@@ -249,7 +249,7 @@ bash simple-deploy.sh
 
 跑完后看终端输出：
 
-- TeslaMate: `http://服务器IP:4000`（OAuth 授权 Tesla 账号）
+- TeslaMate: `http://服务器IP:4000`（粘贴 Auth for Tesla App 生成的 token 完成绑定）
 - Grafana:   `http://服务器IP:3000`（默认 admin/admin，登录后立即改密码）
 - ENCRYPTION_KEY + DATABASE_PASS（**抄到密码管理器**，丢了未来迁移失败）
 
@@ -319,7 +319,8 @@ sudo tee /etc/docker/daemon.json <<'EOF'
 {
   "registry-mirrors": [
     "https://docker.1ms.run",
-    "https://hub-mirror.c.163.com"
+    "https://docker.m.daocloud.io",
+    "https://docker.cnb.cool"
   ]
 }
 EOF
@@ -367,15 +368,18 @@ docker compose restart grafana
 
 ## 🇨🇳 中国大陆用户专项配置
 
-国内 Tesla 账号必须添加以下环境变量到 `teslamate` 服务，否则连不上 Tesla 服务器：
+**TeslaMate 3.0 起，国内账号通常什么都不用改**。登录方式是粘贴 Access Token / Refresh Token（推荐用 [tesla_auth 桌面版](https://github.com/adriankumpf/tesla_auth/releases) 拿，TeslaMate 主作者维护，跨平台），TeslaMate 会从 token 自动识别中国区，所有 API/streaming 请求自动走 `*.cloud.tesla.cn`。详见 [QUICKSTART.md 第四步](QUICKSTART.md#step-4)。
+
+仅在以下情况需要手动设置环境变量：
 
 ```yaml
 services:
   teslamate:
     environment:
       - TZ=Asia/Shanghai
-      - TESLA_API_HOST=https://owner-api.vn.cloud.tesla.cn
-      - TESLA_WSS_HOST=wss://streaming.vn.cloud.tesla.cn
+      # 走自建 Fleet API 网关 / 反向代理时才需要：
+      # - TESLA_API_HOST=https://your-proxy.example.com
+      # - TESLA_WSS_HOST=wss://your-proxy.example.com
 ```
 
 完整环境变量参考：[TeslaMate 官方文档](https://docs.teslamate.org/docs/configuration/environment_variables)
