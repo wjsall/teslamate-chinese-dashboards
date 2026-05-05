@@ -44,6 +44,12 @@
 
 - **拿 Tesla token 的工具改推 [tesla_auth 桌面版](https://github.com/adriankumpf/tesla_auth/releases)**：TeslaMate 主作者 Adrian Kumpf 维护，跨平台（macOS / Windows / Linux 原生二进制），开源可信。原 Auth for Tesla iOS App 退为「国内 iOS 备选」并明示需要美区 / 港区 Apple ID 才能下载（之前文档没说，国内大陆账号点开就看不到 App）
 
+### 🐛 收尾修复（同一发版补完）
+
+- **`scripts/diagnose.sh` 错误日志匹配过严**：原 `grep -ic "error\|failed"` 会把正常日志里的 `0 errors` / `error: false` / `error_count=0` 都计入告警噪声。Grafana 改为严格匹配 `lvl=eror\b|level=error\b|permission denied`，TeslaMate 改为匹配 `[error] / [crit] / fatal / MatchError` 等真错误标记
+- **NAS bind mount 章节 uid 注释**（`TROUBLESHOOTING.md`）：`chown 999/472/1883` 三个数字加注释说明分别来自 postgres / grafana / mosquitto 官方镜像 Dockerfile 里硬编码的 USER 指令（不是任意数），并给出 `docker exec ... id` 验证命令
+- **Token 登录 `account_locked` 排查链接区分国内 / 国际**（`TROUBLESHOOTING.md`）：之前给的密码重置链接是 `tesla.com`，国内大陆账号在 tesla.cn 体系下登不进；现按账号区分给两条链接
+
 ### 🆕 新增 `scripts/diagnose.sh` 一键诊断脚本
 
 跑一行 `bash scripts/diagnose.sh`，自动检查：Docker / 4 个容器状态 / 端口监听 / 数据库连通 + 车辆数 + 行程数 / 坐标函数 / TOU 表 / Grafana 镜像版本 / form-panel 插件 / 最近 5 分钟错误日志 / Tesla API 国内外端点连通性。失败项给出具体修复命令。报 issue 时附上输出能省 N 轮排查。

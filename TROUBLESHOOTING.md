@@ -285,8 +285,9 @@ docker compose logs grafana | grep -i "error\|failed"
 #### 2. 账号被锁
 
 如果 App 里反复登录失败，特斯拉会锁账号几小时。看到 `Your Tesla account is locked due to too many failed sign in attempts`：
-- 去 [Tesla 官网](https://www.tesla.com/teslaaccount/forgot-password) 重置密码
-- 等几小时后再用 Auth for Tesla App 重新生成 token
+- **国内大陆账号**：去 [Tesla 中国官网](https://www.tesla.cn/teslaaccount/forgot-password) 重置密码（用 `tesla.com` 那边登不进去，国内账号在 tesla.cn 体系下）
+- **国际账号**：去 [Tesla 官网](https://www.tesla.com/teslaaccount/forgot-password) 重置密码
+- 等几小时后再用 tesla_auth / Auth for Tesla 重新生成 token
 
 #### 3. 服务器到 Tesla 服务器网络不通
 
@@ -1111,10 +1112,15 @@ find /volume1/backup/teslamate-*.dump -mtime +28 -delete
 
 4. **修权限**（关键，permission 错容器起来报错）：
    ```bash
-   sudo chown -R 999:999 /volume1/docker/teslamate/data/db          # postgres 容器 uid
-   sudo chown -R 472:472 /volume1/docker/teslamate/data/grafana     # grafana 容器 uid
+   # 999 = postgres 官方镜像内置的 postgres 用户 uid（固定值，不能改）
+   sudo chown -R 999:999 /volume1/docker/teslamate/data/db
+   # 472 = Grafana 官方镜像内置的 grafana 用户 uid（固定值，不能改）
+   sudo chown -R 472:472 /volume1/docker/teslamate/data/grafana
+   # 1883 = eclipse-mosquitto 镜像内置的 mosquitto 用户 uid（固定值，不能改）
    sudo chown -R 1883:1883 /volume1/docker/teslamate/data/mosquitto-conf /volume1/docker/teslamate/data/mosquitto-data
    ```
+
+   > 这三个 uid 来自各官方镜像 Dockerfile 里硬编码的 `USER` 指令，不是任意数。`docker exec teslamate-database-1 id` 验证 = `uid=999(postgres)`。
 
 5. **启动 + 验证**：
    ```bash

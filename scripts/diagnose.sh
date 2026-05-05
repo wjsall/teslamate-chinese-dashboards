@@ -177,11 +177,12 @@ else
         echo "        docker restart $GRAFANA_CONTAINER"
     fi
 
-    # 最近 5 分钟内的 ERROR 日志
-    ERR_CNT=$(docker logs --since 5m "$GRAFANA_CONTAINER" 2>&1 | grep -ic "lvl=eror\|level=error\|permission denied" || true)
+    # 最近 5 分钟内的 ERROR 日志（严格匹配 logfmt: lvl=eror / level=error，不抓 error_count=0 / error: false 这类）
+    ERR_PATTERN='lvl=eror\b|level=error\b|permission denied'
+    ERR_CNT=$(docker logs --since 5m "$GRAFANA_CONTAINER" 2>&1 | grep -cE "$ERR_PATTERN" || true)
     if [ "$ERR_CNT" -gt 0 ]; then
         warn "最近 5 分钟 Grafana 日志有 $ERR_CNT 条错误，最后 5 条："
-        docker logs --since 5m "$GRAFANA_CONTAINER" 2>&1 | grep -i "lvl=eror\|level=error\|permission denied" | tail -5 | sed 's/^/    | /'
+        docker logs --since 5m "$GRAFANA_CONTAINER" 2>&1 | grep -E "$ERR_PATTERN" | tail -5 | sed 's/^/    | /'
     else
         ok "Grafana 最近 5 分钟无错误日志"
     fi
@@ -194,11 +195,12 @@ TM_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "^${PROJECT}-teslamate-
 if [ -z "$TM_CONTAINER" ]; then
     fail "teslamate 容器没起来"
 else
-    # 最近 5 分钟错误
-    ERR_CNT=$(docker logs --since 5m "$TM_CONTAINER" 2>&1 | grep -ic "error\|failed" || true)
+    # 最近 5 分钟错误（严格匹配 Elixir 日志: [error] [warning] / fatal / [crit]，过滤 "0 errors" 这类正常输出）
+    TM_ERR_PATTERN='\[error\]|\[crit\]|\bfatal\b|MatchError|Sign in failed'
+    ERR_CNT=$(docker logs --since 5m "$TM_CONTAINER" 2>&1 | grep -cE "$TM_ERR_PATTERN" || true)
     if [ "$ERR_CNT" -gt 0 ]; then
         warn "最近 5 分钟 teslamate 日志有 $ERR_CNT 条错误，最后 5 条："
-        docker logs --since 5m "$TM_CONTAINER" 2>&1 | grep -i "error\|failed" | tail -5 | sed 's/^/    | /'
+        docker logs --since 5m "$TM_CONTAINER" 2>&1 | grep -E "$TM_ERR_PATTERN" | tail -5 | sed 's/^/    | /'
     else
         ok "teslamate 最近 5 分钟无错误日志"
     fi
