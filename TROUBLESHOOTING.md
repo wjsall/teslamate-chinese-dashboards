@@ -154,6 +154,44 @@ newgrp docker
 
 ## 📊 Dashboard 问题
 
+### ❌ 自定义 / 上传 Dashboard JSON 后 Grafana 看不到（群晖 NAS 用户高发）
+
+**症状**：把改过的 dashboard JSON 通过 File Station / scp 推到 `/volume1/docker/teslamate/dashboards/zh-cn/`，重启 grafana 也不生效，仪表盘还是旧版。
+
+**根因**：DSM File Station / scp 上传的文件 owner 是你本地用户（`wjsall:admin` 之类），但 Grafana 容器跑的是 uid `472`，**读不了你的文件**（DSM 隐藏 ACL 让 grafana 看上去 permission denied 但 provisioning 静默跳过）。
+
+**修法**：上传后必须 chown 到容器 uid：
+
+```bash
+# zh-cn 仪表盘（挂到容器内 /dashboards/）
+ssh wjsall@192.168.31.135 \
+  "docker exec --user root teslamate-grafana-1 chown 472:472 /dashboards/<filename>.json"
+
+# internal 仪表盘（挂到容器内 /dashboards_internal/）
+ssh wjsall@192.168.31.135 \
+  "docker exec --user root teslamate-grafana-1 chown 472:472 /dashboards_internal/<filename>.json"
+```
+
+> ⚠️ 容器内 `chown grafana:grafana` 报 `unknown user`，必须用 uid `472:472`（数字形式）。
+
+**判断是否中招**：
+
+```bash
+docker logs teslamate-grafana-1 | grep -i "permission denied"
+```
+
+看到对应文件名就是这个坑。
+
+**永久修法（一劳永逸）**：在 NAS 任务计划里建一个每分钟跑一次的脚本：
+
+```bash
+docker exec --user root teslamate-grafana-1 chown -R 472:472 /dashboards /dashboards_internal
+```
+
+这样以后任何 scp / File Station 上传都自动修。
+
+---
+
 ### ❌ Dashboard 显示空白 / 无数据
 
 **Step 1：确认 TeslaMate 有数据**
@@ -303,6 +341,30 @@ docker compose restart teslamate grafana
 
 **常见原因：端口冲突**
 见上方「端口被占用」章节。
+
+**常见原因：mosquitto 拉不下来 → TeslaMate 卡 MQTT 连接（群晖 ARM 用户高发）**
+
+群晖 ARM 系列（DS218j / DS118 等）拉 `eclipse-mosquitto:2` 经常超时失败，TeslaMate 启动后报 `MQTT connection refused` 反复重启。
+
+**MQTT 是可选功能**（只用于 / 实时推送外部 home assistant 等场景），不用 MQTT 也不影响数据收集 / 仪表盘。**禁掉即可解决**：
+
+```yaml
+# docker-compose.yml 的 teslamate service 改：
+services:
+  teslamate:
+    environment:
+      - DISABLE_MQTT=true       # ← 加这一行
+      # - MQTT_HOST=mosquitto   # ← 注释掉这一行（如果有）
+```
+
+然后整个 mosquitto service 也可以删（节省内存）：
+
+```yaml
+# 删掉 docker-compose.yml 末尾的 mosquitto: 整段
+# 也删 volumes 段的 mosquitto-conf / mosquitto-data
+```
+
+`docker compose up -d` 重启后 TeslaMate 不再尝试连 MQTT，启动正常。
 
 ---
 
@@ -539,6 +601,63 @@ location /teslamate/ {
 
 ---
 
+## 🌍 公网部署专项（云服务器用户）
+
+### ⚠️ 流量爆表防护
+
+云服务器（阿里云轻量 / 腾讯云轻量 / AWS Lightsail）通常按**月流量包**计费，公网暴露 Grafana 后高德/谷歌瓦片可能让流量飙升。
+
+**典型场景**：
+
+- 阿里云轻量 `1Mbps / 100GB` 套餐
+- 你 + 家人手机经常打开「足迹地图」/ 「驾驶记录追踪」，每次加载几百张地图瓦片
+- **1 周打满 100GB**（高德瓦片每张 ~30KB，3000 张 ≈ 100MB，1 周访问 1000 次就 100GB）
+
+**3 种解决方案**：
+
+| 方案 | 说明 | 推荐度 |
+|---|---|---|
+| ✅ **Tailscale / 自建 WireGuard** | 不开公网，只在自己设备间通信，**0 流量消耗** | ⭐⭐⭐⭐⭐ |
+| ⚠️ Cloudflare 反代 | 中间挡一层 CDN 缓存瓦片 | ⭐⭐⭐ 减少但不消除 |
+| ⚠️ Grafana 切换 OSM 默认 | OSM 瓦片小（~10KB），但**国内访问慢** | ⭐⭐ 小流量但卡 |
+
+**强烈建议**：除非确实需要公网访问，**用 Tailscale** —— 5 分钟设置，免费，所有家人手机一并接入，流量为 0。
+
+详见 [QUICKSTART → cloud-security 章节](QUICKSTART.md#cloud-security) 的 Tailscale 段。
+
+### ⚠️ 服务挂了你怎么知道？— 失败告警可选配置
+
+TeslaMate / Grafana 容器 OOM / 数据库挂 / Tesla token 过期 等情况下，**默认无任何通知**，你只能下次打开 Grafana 才发现「数据停在三周前」。
+
+**配 uptime-kuma 5 分钟搞定**：
+
+```yaml
+# 在你 docker-compose.yml 末尾加这个 service：
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: always
+    ports:
+      - 3001:3001
+    volumes:
+      - uptime-kuma-data:/app/data
+
+# 也别忘了 volumes 段加：
+volumes:
+  uptime-kuma-data:
+```
+
+`docker compose up -d` 后访问 `http://你机器:3001`：
+
+- 添加监控：`http://localhost:4000` (TeslaMate)、`http://localhost:3000` (Grafana)
+- 频率：每 60 秒 ping 一次
+- 通知：Telegram / 微信 (PushDeer / Bark) / 邮件 / Discord 任选
+
+挂了 1 分钟内手机收到告警。
+
+> ⚠️ uptime-kuma 是**第三方开源项目**，本项目不强制集成，仅作可选推荐。
+
+---
+
 ## 🔄 升级问题
 
 ### 如何升级到新版本
@@ -550,7 +669,7 @@ location /teslamate/ {
 直接重跑一键脚本，**它会自动检测现有安装并转升级模式**：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash
 ```
 
 会做：拉新镜像 → 重启容器 → 装/更新坐标转换函数 → 重启 Grafana。**不会改你的 ENCRYPTION_KEY 或其他配置。**
@@ -702,6 +821,89 @@ docker compose exec -T database psql -U teslamate teslamate < backup_20260315_12
 
 # 重启
 docker compose start teslamate
+```
+
+---
+
+## 🚚 迁移与备份
+
+### 整机迁移（旧 NAS → 新 NAS / 重装 DSM / 换云服务器）
+
+⚠️ **必须备份的 3 件**（缺一不可，少一个都恢复不了）：
+
+| 项 | 不备份的后果 |
+|---|---|
+| 1. **`docker-compose.yml`**（含 `ENCRYPTION_KEY` + 数据库密码）| Tesla token 永远解密不出来，必须重新授权 |
+| 2. **PostgreSQL 数据库 dump**（`drives` / `charges` / `positions` / `cars` 全部历史）| 行车记录全丢 |
+| 3. **Grafana 数据卷**（自定义书签 / 用户 / 配置）| 你改过的 dashboard 设置丢，43 个仪表盘会自动重新 provisioning |
+
+**备份步骤（旧机器上跑）**：
+
+```bash
+cd ~/teslamate-chinese
+
+# 1. 备份 docker-compose.yml + .env
+tar czf teslamate-config.tar.gz docker-compose.yml .env 2>/dev/null
+
+# 2. 备份数据库（pg_dump）
+docker compose exec -T database \
+  pg_dump -U teslamate -d teslamate -Fc -f /tmp/teslamate.dump
+docker cp $(docker compose ps -q database):/tmp/teslamate.dump ./teslamate.dump
+
+# 3. 备份 Grafana 数据卷
+docker run --rm \
+  -v teslamate_teslamate-grafana-data:/data \
+  -v $(pwd):/backup alpine \
+  tar czf /backup/grafana-data.tar.gz -C /data .
+
+# 4. 把 3 个备份文件下载到本机 / 网盘 / 移动硬盘
+ls -lh teslamate-config.tar.gz teslamate.dump grafana-data.tar.gz
+```
+
+**恢复步骤（新机器上）**：
+
+```bash
+# 1. 装回 TeslaMate
+mkdir -p ~/teslamate-chinese
+cd ~/teslamate-chinese
+
+# 2. 恢复 docker-compose.yml + .env（含 ENCRYPTION_KEY，必须保持一致）
+tar xzf teslamate-config.tar.gz
+
+# 3. 启动（先起 database，让它自动创建 schema）
+docker compose up -d database
+sleep 30   # 等数据库就绪
+
+# 4. 恢复数据库
+docker cp teslamate.dump $(docker compose ps -q database):/tmp/teslamate.dump
+docker compose exec -T database \
+  pg_restore -U teslamate -d teslamate -c /tmp/teslamate.dump
+
+# 5. 恢复 Grafana 数据卷
+docker run --rm \
+  -v teslamate_teslamate-grafana-data:/data \
+  -v $(pwd):/backup alpine \
+  tar xzf /backup/grafana-data.tar.gz -C /data
+
+# 6. 启动其他服务
+docker compose up -d
+```
+
+### 单纯备份数据库（定期跑）
+
+如果只想 hypper backup 时拉一份数据库快照（不迁移），加到 NAS 任务计划：
+
+```bash
+docker exec teslamate-database-1 \
+  pg_dump -U teslamate -d teslamate -Fc -f /tmp/teslamate.dump && \
+docker cp teslamate-database-1:/tmp/teslamate.dump \
+  /volume1/backup/teslamate-$(date +%Y%m%d).dump
+```
+
+每周保留 4 份：
+
+```bash
+find /volume1/backup/teslamate-*.dump -mtime +28 -delete
 ```
 
 ---
