@@ -32,7 +32,12 @@
 
 **14. QUICKSTART vs DASHBOARD_MAP「第一周必看」推荐 0 重合**：QUICKSTART 推 5 个（概览/驾驶记录追踪/充电记录/电池健康度/省钱分析），DASHBOARD_MAP 推 4 个（概览/最近车辆状态/充电费用统计/续航曲线图），用户照不同文档走看到完全不同推荐。统一为 QUICKSTART 的 5 个。
 
-**15. CurrentChargeView 仪表盘电压单位错用 `kwatt`（千瓦）**：电压 panel 应该用 `volt`（伏特），错单位让 230V 显示成「230 千瓦」。同仪表盘里程表用了非 Grafana 标准单位 `Km`，改 `none` + displayName 标 `(km)`。
+**15. 仪表盘单位违规一次清理（10 处）**：
+- **CurrentChargeView 电压 panel 错用 `kwatt`（千瓦）**：电压应该用 `volt`（伏特），错单位让 230V 显示成「230 千瓦」
+- **CurrentChargeView 里程表用非标准单位 `Km`**：改 `none` + displayName 标 `(km)`
+- **internal/charge-details.json「充电能量」panel `kwatth`** + 同文件 override 里 `.*_km$` / `/.*_km/` 两处 `lengthkm` → 大数值会被自动换算（4500 kWh 显成 4.5 MWh、28000 km 显成 28 Mm）
+- **internal/drive-details.json 4 处违规**：「温度」/「轮胎压力」用 `short`（数字会自动 k/M 缩写），「能耗 (净)」/「能量回收」用 `kwatth`（同样自动换算问题），override 里 `km` 字段也是 `lengthkm`
+- 全部改 `unit: none` + displayName 在尾部加 `(km)` / `(kWh)` 等单位标注
 
 ### 兼容性
 
