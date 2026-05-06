@@ -822,7 +822,7 @@ ssh -L 3000:localhost:3000 -L 4000:localhost:4000 user@server
 
 ### 装完检查清单
 
-- [ ] Grafana 默认密码已改（不是 admin/admin）
+- [ ] Grafana 密码已抄到密码管理器（v1.6.9 起脚本自动生成强随机；旧版 admin/admin 用户必须立刻改）
 - [ ] 云服务器安全组 4000/3000 端口**未对 `0.0.0.0/0` 开放**
 - [ ] 选了 Tailscale / Cloudflare Tunnel / 反代 三种方式之一并已配置
 - [ ] SSH 用 key 登录而非密码（建议）

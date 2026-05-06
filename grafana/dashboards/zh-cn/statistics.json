@@ -709,7 +709,11 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "时长(分钟)"
+                "value": "时长"
+              },
+              {
+                "id": "unit",
+                "value": "分钟"
               }
             ]
           },

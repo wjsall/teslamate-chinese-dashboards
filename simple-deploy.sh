@@ -59,6 +59,25 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 
+# 检测是否在云主机上（AWS/GCP/Azure/阿里云/腾讯云/华为云等）
+# 用于发版后提醒用户加固，不改默认行为
+detect_cloud() {
+    local vendor="" product=""
+    [ -r /sys/class/dmi/id/sys_vendor ] && vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
+    [ -r /sys/class/dmi/id/product_name ] && product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
+    case "${vendor}${product}" in
+        *Google*|*Amazon*|*EC2*|*Microsoft*|*Alibaba*|*Tencent*|*HUAWEI*|*Huawei*|*Oracle*|*Vultr*|*DigitalOcean*|*Linode*|*Hetzner*)
+            echo "cloud"; return ;;
+    esac
+    # metadata 端点（link-local，云厂商通用）— 1 秒内连得通基本是云
+    if curl -fsS --max-time 1 -o /dev/null http://169.254.169.254 2>/dev/null; then
+        echo "cloud"; return
+    fi
+    echo "physical"
+}
+
+IS_CLOUD=$(detect_cloud)
+
 # Linux 上一键装 Docker（用 docker.com 官方脚本，覆盖主流发行版）
 install_docker_linux() {
     echo "🚀 正在安装 Docker（用 docker.com 官方一键脚本，1-2 分钟）..."
@@ -346,7 +365,7 @@ services:
       - DATABASE_PASS=password
       - DATABASE_NAME=teslamate
       - DATABASE_HOST=database
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=INSERT_GRAFANA_PASSWORD_HERE
       - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
 
   mosquitto:
@@ -364,13 +383,15 @@ volumes:
   mosquitto-data:
 EOF
 
-# 生成随机加密密钥 + 随机 DB 密码（兼容 Linux 和 macOS）
+# 生成随机加密密钥 + 随机 DB 密码 + 随机 Grafana admin 密码（兼容 Linux 和 macOS）
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 DB_PASS=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)
+GRAFANA_PASS=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-18)
 if sed --version 2>/dev/null | grep -q GNU; then
   sed -i "s/INSERT_RANDOM_KEY_HERE/$ENCRYPTION_KEY/" docker-compose.yml
   sed -i "s/DATABASE_PASS=password/DATABASE_PASS=$DB_PASS/g" docker-compose.yml
   sed -i "s/POSTGRES_PASSWORD=password/POSTGRES_PASSWORD=$DB_PASS/" docker-compose.yml
+  sed -i "s/INSERT_GRAFANA_PASSWORD_HERE/$GRAFANA_PASS/" docker-compose.yml
   # 端口映射（默认 4000/3000，TM_PORT/GF_PORT 环境变量可覆盖）
   sed -i "s|- 4000:4000|- ${TM_PORT}:4000|" docker-compose.yml
   sed -i "s|- 3000:3000|- ${GF_PORT}:3000|" docker-compose.yml
@@ -461,14 +482,41 @@ echo "=============================================="
 echo "✅ 安装完成！"
 echo "=============================================="
 echo ""
-echo "🚨 立刻保存这两条信息（丢了再也找不回）："
+
+# 云主机检测：在凭据展示前先打安全警告（最容易被看见）
+if [ "$IS_CLOUD" = "cloud" ]; then
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║  ⚠️  检测到本机是云服务器（公网 IP 暴露）                  ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "   TeslaMate (4000) / Grafana (3000) 端口默认绑 0.0.0.0，"
+    echo "   任何扫描你公网 IP 的人都能直接看到登录页。"
+    echo ""
+    echo "   立刻做的两件事："
+    echo "   1) 云厂商安全组只放白名单 IP 访问 4000/3000，不要全公网开放"
+    echo "   2) 加反向代理 + HTTPS（Caddy / Traefik）+ basic-auth，"
+    echo "      参考 TROUBLESHOOTING.md「公网部署专项」章节"
+    echo ""
+fi
+
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  🚨🚨🚨 必须立刻抄录！下面凭据仅显示这一次！  🚨🚨🚨        ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "  ENCRYPTION_KEY = $ENCRYPTION_KEY"
 echo "  DATABASE_PASS  = $DB_PASS"
+echo "  GRAFANA_PASS   = $GRAFANA_PASS"
 echo ""
-echo "  原文件位置: $INSTALL_DIR/docker-compose.yml （已设 mode 600）"
-echo "  抄到密码管理器（1Password / Keychain / Bitwarden）以备未来迁移用。"
-echo "  KEY 丢失 = Tesla Token 永远解密不出来 = 必须重新授权。"
+echo "  📁 docker-compose.yml 备份位置：$INSTALL_DIR/docker-compose.yml"
+echo "     （已设 mode 600，仅 root 可读）"
+echo ""
+echo "  ❌ ENCRYPTION_KEY 丢失 → 所有 Tesla Token 永远解密不出 → 必须重新授权"
+echo "  ❌ DATABASE_PASS 丢失 → 数据库迁移/恢复全部失败"
+echo "  ❌ GRAFANA_PASS 丢失 → Grafana 后台进不去，需 docker exec 重置"
+echo ""
+echo "  👉 立刻抄到密码管理器（1Password / Keychain / Bitwarden）"
+echo ""
+echo "════════════════════════════════════════════════════════════"
 echo ""
 echo "📱 访问地址："
 echo "  - TeslaMate:  http://localhost:${TM_PORT}"
@@ -476,9 +524,7 @@ echo "  - Grafana:    http://localhost:${GF_PORT}"
 echo ""
 echo "🔐 Grafana 登录信息："
 echo "  - 用户名: admin"
-echo "  - 密码: admin"
-echo "  ⚠️ 公网部署必须立即改 Grafana admin 密码"
-echo "    Grafana 右上角头像 → Profile → Change password"
+echo "  - 密码: $GRAFANA_PASS  （已自动生成强随机，不再是默认 admin）"
 echo ""
 echo "📝 下一步："
 echo "  1. 拿 Token：推荐 https://github.com/adriankumpf/tesla_auth/releases （桌面版，TeslaMate 主作者维护）"

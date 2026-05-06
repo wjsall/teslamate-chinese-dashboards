@@ -567,7 +567,7 @@ sudo firewall-cmd --reload
 
 ### ❌ 从外网访问（公网 IP）
 
-⚠️ **直接把 TeslaMate `:4000` 暴露到公网 = 任何人能看到你的车辆位置/历史行程**。Grafana `:3000` 默认 admin/admin 也是一秒被攻破。**强烈建议先看 [QUICKSTART.md - 云服务器场景：安全防护必读](QUICKSTART.md#cloud-security)** 完整 5 级防护清单。
+⚠️ **直接把 TeslaMate `:4000` 暴露到公网 = 任何人能看到你的车辆位置/历史行程**。Grafana `:3000` 自 v1.6.9 起脚本自动生成强随机密码（旧版 admin/admin 一秒被攻破）。**强烈建议先看 [QUICKSTART.md - 云服务器场景：安全防护必读](QUICKSTART.md#cloud-security)** 完整 5 级防护清单。
 
 简版快速选项（详细操作见上述 QUICKSTART 章节）：
 1. **Tailscale / ZeroTier**（推荐新手）：虚拟内网，云服务器关掉公网端口，本地像局域网访问
@@ -575,7 +575,7 @@ sudo firewall-cmd --reload
 3. **反向代理（Nginx/Caddy）+ Basic Auth + HTTPS**：最灵活，需运维经验
 
 无论选哪种，都要：
-- ✅ Grafana 默认密码改掉（admin/admin → 强密码）
+- ✅ Grafana 密码（v1.6.9+ 自动强随机；旧版 admin/admin 务必手动改）
 - ✅ 云服务器安全组里 4000/3000 不要 `0.0.0.0/0` 全开放
 - ✅ docker-compose.yml 端口绑定改 `127.0.0.1:` 前缀（如果配反向代理）
 
@@ -677,7 +677,7 @@ services:
       - DATABASE_PASS=【与上面 DATABASE_PASS 同一个密码】
       - DATABASE_NAME=teslamate
       - DATABASE_HOST=database
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=【建议改成强密码，simple-deploy.sh v1.6.9+ 会自动生成】
       - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
 
   mosquitto:

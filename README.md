@@ -266,8 +266,8 @@ bash simple-deploy.sh
 跑完后看终端输出：
 
 - TeslaMate: `http://服务器IP:4000`（粘贴 Auth for Tesla App 生成的 token 完成绑定）
-- Grafana:   `http://服务器IP:3000`（默认 admin/admin，登录后立即改密码）
-- ENCRYPTION_KEY + DATABASE_PASS（**抄到密码管理器**，丢了未来迁移失败）
+- Grafana:   `http://服务器IP:3000`（admin / **脚本自动生成的强随机密码**，从终端输出抄走）
+- ENCRYPTION_KEY + DATABASE_PASS + GRAFANA_PASS（三条**立刻抄到密码管理器**，丢了未来迁移/进 Grafana 全失败）
 
 ### 方法二：替换已有原版 TeslaMate 的 Grafana 镜像
 

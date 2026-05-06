@@ -1,5 +1,31 @@
 # 更新日志
 
+## [v1.6.9] - 2026-05-06
+
+### 🔐 安全增强（云主机）
+
+- **simple-deploy.sh 自动检测云主机**（DMI 字符串 + metadata 端点 + 多家厂商识别：AWS/GCP/Azure/阿里云/腾讯云/华为云/Oracle/Vultr/DO/Linode/Hetzner）。检测到云时在脚本结尾打加粗警告，引导先收紧安全组 + 加反向代理，避免 4000/3000 公网裸奔。
+- **Grafana admin 密码改为脚本生成的 18 位强随机**（替换原来的 `admin/admin` 默认）。脚本结尾跟 ENCRYPTION_KEY/DATABASE_PASS 一起打印，加超大边框 + 「仅显示这一次」+ 「丢失后果」三段提醒。
+
+### 📚 文档
+
+- 新建 `docs/units-convention.md` — Grafana 单位决策矩阵（汇总型用字符串单位避免 Mm/MWh/weeks 误显，drill-down 用内置单位保留 i18n），固化 v1.6.7-v1.6.8 反复踩坑的经验。
+- README / QUICKSTART / TROUBLESHOOTING 三处「admin/admin」表述同步更新（旧版用户仍需手动改）。
+
+### 🐛 displayName 一致性
+
+12 个仪表盘 14 处 `时长(min)` / `时长(分钟)` displayName → 统一为 `时长` + `unit: "分钟"`（单位由 unit 字段承载，不再混入 displayName 后缀）。
+
+### 🐛 drives.json id=2 SQL 重复列修复
+
+v1.6.8 cover-release 把 outer SELECT 的 `duration_min` alias 改成 `duration_str`，但 inner CTE 早就有 `TO_CHAR(duration_min, 'HH24:MI') as duration_str`（HH:MM 英文格式）。outer SELECT 同时输出两个 `duration_str` 列，PG 不报错但 Grafana override 行为不可预测。本版删除 inner CTE 的 `TO_CHAR` 死字段 + outer 的透传引用 + 失效的 `custom.hidden` override。
+
+### 兼容性
+
+镜像 LABEL 1.6.8 → 1.6.9。**首次安装新用户**自动获得强随机 Grafana 密码；**升级老用户** docker-compose.yml 不变（密码沿用旧的 `admin` 或之前手动设置的值），需要自己改 Grafana 后台密码。
+
+---
+
 ## [v1.6.8] - 2026-05-06
 
 ### 🐛 单位显示修复（系统性）
