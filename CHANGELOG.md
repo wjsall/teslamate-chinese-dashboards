@@ -1,5 +1,33 @@
 # 更新日志
 
+## [v1.6.6] - 2026-05-06
+
+### 🐛 修复（数据迁移真 bug）
+
+对照 [TeslaMate 官方 backup_restore 文档](https://docs.teslamate.org/docs/maintenance/backup_restore) 审了我们的「整机迁移」恢复流程，发现 **2 个真 bug** 会让用户恢复时踩坑：
+
+1. **`private` schema 不清理 → Tesla token 解密失败**：旧版用 `pg_restore -c` 只 drop public schema 对象，TeslaMate 的 `private` schema（存 OAuth 加密对象）不被清理 → 残留旧 token 加密元数据 → 恢复后 token 解密失败 → 用户被迫重新授权
+2. **缺 `cube` + `earthdistance` extension 显式重建 → pg_restore 直接报错卡死**：旧版「先 `docker compose up -d database` 单起数据库 → pg_restore」流程，单起的 database 容器**不会自动装** `cube` / `earthdistance` extension（这俩是 teslamate 容器初始化时建的）→ pg_restore 报 `type "cube" does not exist`，用户卡死
+
+**修法**（`TROUBLESHOOTING.md` 整机迁移恢复步骤）：
+- 改成先 `docker compose up -d` 完整启动让 teslamate 自动建 schema + extensions
+- 停 teslamate 防止写冲突
+- 显式 `DROP SCHEMA public + private CASCADE` + `CREATE EXTENSION cube + earthdistance`
+- `pg_restore` 去掉 `-c`（已手动 DROP）
+- 整体跟官方 backup_restore 流程对齐
+
+### ⚠️ 影响范围 / 谁需要做什么
+
+- **已用过我们旧版迁移流程 + token 解密失败被迫重授权过** → 这就是这个 bug 的症状。重授权后数据无丢失，仅 token 那一步受影响
+- **将来要做迁移的所有用户** → 必须用 v1.6.6 新版恢复步骤
+- **未做过迁移的用户** → 不受影响，无需任何动作
+
+### 兼容性
+
+升级到 v1.6.6 不需要任何额外动作。仅 `TROUBLESHOOTING.md` 文档修复，镜像内容跟 v1.6.5 一致。
+
+---
+
 ## [v1.6.5] - 2026-05-03
 
 ### 🐛 修复

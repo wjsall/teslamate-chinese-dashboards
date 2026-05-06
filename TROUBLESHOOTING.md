@@ -1012,6 +1012,8 @@ ls -lh teslamate-config.tar.gz teslamate.dump grafana-data.tar.gz
 
 **恢复步骤（新机器上）**：
 
+> ⚠️ **关键 vs 旧版**：旧版「先起 database → pg_restore -c」流程会踩两个坑：(1) `private` schema 不被 `-c` 清理 → 旧 token 加密对象残留 → Tesla token 解密失败被迫重新授权；(2) 单起 database 容器时 `cube` / `earthdistance` extension 没装 → pg_restore 报 `type "cube" does not exist`。下面流程跟 [TeslaMate 官方 backup_restore](https://docs.teslamate.org/docs/maintenance/backup_restore) 对齐，避坑。
+
 ```bash
 # 1. 装回 TeslaMate
 mkdir -p ~/teslamate-chinese
@@ -1020,24 +1022,38 @@ cd ~/teslamate-chinese
 # 2. 恢复 docker-compose.yml + .env（含 ENCRYPTION_KEY，必须保持一致）
 tar xzf teslamate-config.tar.gz
 
-# 3. 启动（先起 database，让它自动创建 schema）
-docker compose up -d database
-sleep 30   # 等数据库就绪
+# 3. 完整启动一次（让 teslamate 容器自动建好 schema 和 extensions）
+docker compose up -d
+sleep 30   # 等 teslamate 完成首次 schema/extension 初始化
 
-# 4. 恢复数据库
+# 4. 停 teslamate 防止恢复时写冲突（database 保持运行）
+docker compose stop teslamate
+
+# 5. 清空 schema + 重建 extensions（跟官方 backup_restore 对齐）
+docker compose exec -T database psql -U teslamate teslamate <<'EOF'
+DROP SCHEMA public CASCADE;
+DROP SCHEMA private CASCADE;
+CREATE SCHEMA public;
+CREATE EXTENSION cube WITH SCHEMA public;
+CREATE EXTENSION earthdistance WITH SCHEMA public;
+EOF
+
+# 6. 恢复数据库（用 -Fc 格式 dump → pg_restore，不带 -c 因为已手动 DROP）
 docker cp teslamate.dump $(docker compose ps -q database):/tmp/teslamate.dump
 docker compose exec -T database \
-  pg_restore -U teslamate -d teslamate -c /tmp/teslamate.dump
+  pg_restore -U teslamate -d teslamate /tmp/teslamate.dump
 
-# 5. 恢复 Grafana 数据卷
+# 7. 恢复 Grafana 数据卷
 docker run --rm \
   -v teslamate_teslamate-grafana-data:/data \
   -v $(pwd):/backup alpine \
   tar xzf /backup/grafana-data.tar.gz -C /data
 
-# 6. 启动其他服务
-docker compose up -d
+# 8. 启动 teslamate
+docker compose start teslamate
 ```
+
+> **如果你已经按旧版流程恢复过 + token 解密失败被迫重授权过**：那是这个 bug 的症状。现在用新流程不会再遇到。如果还有 4S 店保养记录或其他业务数据是从 backup 来的，旧版流程不会丢，仅 token 那一项受影响。
 
 ### 单纯备份数据库（定期跑）
 
