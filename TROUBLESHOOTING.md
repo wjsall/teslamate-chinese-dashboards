@@ -158,7 +158,7 @@ newgrp docker
 
 **症状**：把改过的 dashboard JSON 通过 File Station / scp 推到 `/volume1/docker/teslamate/dashboards/zh-cn/`，重启 grafana 也不生效，仪表盘还是旧版。
 
-**根因**：DSM File Station / scp 上传的文件 owner 是你本地用户（`wjsall:admin` 之类），但 Grafana 容器跑的是 uid `472`，**读不了你的文件**（DSM 隐藏 ACL 让 grafana 看上去 permission denied 但 provisioning 静默跳过）。
+**根因**：DSM File Station / scp 上传的文件属主是你本地用户（`wjsall:admin` 之类），但 Grafana 容器跑的是 uid `472`，**读不了你的文件**（DSM 隐藏 ACL 让 grafana 看上去 permission denied 但 自动加载静默跳过）。
 
 **修法**：上传后必须 chown 到容器 uid：
 
@@ -479,7 +479,7 @@ docker exec -i teslamate-database-1 psql -U teslamate teslamate \
 
 **排查步骤：**
 1. **强刷浏览器**：Ctrl+Shift+R（Windows）/ Cmd+Shift+R（Mac），清掉 Grafana 前端缓存
-2. **重启 Grafana 容器**：`docker compose restart grafana`，触发仪表盘 provisioning 重载
+2. **重启 Grafana 容器**：`docker compose restart grafana`，触发仪表盘自动加载重新生效
 3. **确认你打开的是含地图的仪表盘**：只有 9 个仪表盘有此下拉框（CurrentChargeView / CurrentDriveView / CurrentState / TrackingDrives / charging-stats / trip / visited / charge-details / drive-details）
 4. **确认仓库是 v1.4.2+**：`head -3 CHANGELOG.md` 应显示 `## [v1.4.2]` 或更新版本
 
@@ -853,14 +853,14 @@ docker compose up -d
 
 ### PostgreSQL 大版本升级（如 17 → 18）
 
-⚠️ **不能直接改 `image: postgres:18-trixie` 重启**——PostgreSQL 大版本之间数据文件不兼容，直接换 image 会让 database 容器进入 `database files are incompatible with server` 反复重启循环。**必须按官方流程：dump → 删卷 → 换 image → restore**。
+⚠️ **不能直接改 `image: postgres:18-trixie` 重启**——PostgreSQL 大版本之间数据文件不兼容，直接换镜像会让 database 容器进入 `database files are incompatible with server` 反复重启循环。**必须按官方流程：备份 → 删卷 → 换镜像 → 恢复**。
 
 参考：[TeslaMate 官方 upgrading_postgres](https://docs.teslamate.org/docs/maintenance/upgrading_postgres)
 
 ```bash
 cd ~/teslamate-chinese
 
-# 1. 先用旧 PG 容器做完整 dump（关键！换镜像前最后机会）
+# 1. 先用旧 PG 容器做完整备份（关键！换镜像前最后机会）
 docker compose exec -T database pg_dump -U teslamate teslamate > pg-pre-upgrade.sql
 
 # 2. 完全停服（包括数据库）
@@ -872,7 +872,7 @@ DB_VOL=$(docker volume ls -q | grep teslamate-db | head -1)
 [ -z "$DB_VOL" ] && { echo "❌ 找不到 teslamate-db 卷，可能你之前用了 bind mount。手动删 PG 数据目录，跳过这一步"; exit 1; }
 echo "将删除卷：$DB_VOL"
 docker volume rm "$DB_VOL"
-# ⚠ 这一步会删除整个数据库文件，没有 dump 千万别跑！
+# ⚠ 这一步会删除整个数据库文件，没有备份千万别跑！
 
 # 4. 修改 docker-compose.yml 把 image 改成新版本：
 #    image: postgres:18-trixie  # 或更新版本
@@ -896,7 +896,7 @@ docker compose exec -T database psql -U teslamate teslamate < pg-pre-upgrade.sql
 docker compose up -d
 ```
 
-> 跳过任一步都会丢数据。**第 1 步 dump 是唯一保险**——dump 没做就跑第 3 步 = 行车记录全丢且无法恢复。
+> 跳过任一步都会丢数据。**第 1 步备份是唯一保险**——备份没做就跑第 3 步 = 行车记录全丢且无法恢复。
 
 ---
 
@@ -910,7 +910,7 @@ docker compose up -d
 
 #### 「⚡ 分时电价配置」仪表盘空白 / 不显示表单
 
-Grafana 缺 `volkovlabs-form-panel` 插件。**v1.6.3+ 镜像 build-time 已装**，但**升级用户需要额外做一步 runtime 装**（Docker 数据卷会盖住镜像里新装的插件）。详见 [issue #13](https://github.com/wjsall/teslamate-chinese-dashboards/issues/13)。
+Grafana 缺 `volkovlabs-form-panel` 插件。**v1.6.3+ 镜像 构建时已装**，但**升级用户需要额外做一步 运行时装**（Docker 数据卷会盖住镜像里新装的插件）。详见 [issue #13](https://github.com/wjsall/teslamate-chinese-dashboards/issues/13)。
 
 ##### 修法（**所有受影响用户都跑这条**）
 
@@ -939,14 +939,14 @@ TeslaMate 标准 compose 有 `teslamate-grafana-data:/var/lib/grafana` 命名卷
 - 已经跑过 grafana 的用户 → 卷里是旧镜像的 plugins/，**新镜像里的 form-panel 进不去卷**
 - 全新用户首次 `docker compose up` → 卷是空的，从 v1.6.3+ 镜像拷贝（**含 form-panel**）✅
 
-`--force-recreate` 只销毁容器实例，**不动卷**。所以已有 grafana 卷的用户必须 runtime 装一次。
+`--force-recreate` 只销毁容器实例，**不动卷**。所以已有 grafana 卷的用户必须 运行时装一次。
 
 ##### 谁不受影响
 
-| 用户类型 | 是否需要 runtime 装 |
+| 用户类型 | 是否需要 运行时装 |
 |---|---|
 | 全新装（首次 `docker compose up`，卷为空）| ❌ 不需要，v1.6.3+ 镜像自动带 |
-| 用 `scripts/upgrade.sh` 升级 | ❌ 不需要，脚本自动检测 + 触发 runtime 装 |
+| 用 `scripts/upgrade.sh` 升级 | ❌ 不需要，脚本自动检测 + 触发 运行时装 |
 | **手动 `docker compose pull + up -d`（任何旧版本升 v1.6.3）** | ✅ 需要，跑上面的命令 |
 | 自己组 compose 没用我们镜像 | ✅ 需要，跑上面的命令 |
 
@@ -984,9 +984,9 @@ python3 scripts/wrap-cost-with-tou-view.py --revert
 #### 分时电价计算不对劲（充电费用看上去不合理）
 
 打开「⚡ 分时电价配置」仪表盘，看「⚠ 配置审计」面板：
-- **时段空缺**：某些小时没配置 → 那段时间充电会按 NULL → 仪表盘 fallback 原 cost
+- **时段空缺**：某些小时没配置 → 那段时间充电会按 NULL → 仪表盘回退到原 `cost`
 - **时段重叠**：同一小时被多条记录覆盖 → 系统按 ID 最小的那条算，其他失效
-- **月份空缺**：整个月没落入任何季节 → 那个月充电按 NULL → fallback 原 cost
+- **月份空缺**：整个月没落入任何季节 → 那个月充电按 NULL → 回退到原 `cost`
 
 修法：用「⚡ 一键填一整季节」重新覆盖，或「✏️ 修改单价」/「🗑️ 删除整段」精修。
 改完点底部「**🔄 重算所有历史充电**」按钮重算历史。
@@ -1058,8 +1058,8 @@ docker compose start teslamate
 | 项 | 不备份的后果 |
 |---|---|
 | 1. **`docker-compose.yml`**（含 `ENCRYPTION_KEY` + 数据库密码）| Tesla token 永远解密不出来，必须重新授权 |
-| 2. **PostgreSQL 数据库 dump**（`drives` / `charges` / `positions` / `cars` 全部历史）| 行车记录全丢 |
-| 3. **Grafana 数据卷**（自定义书签 / 用户 / 配置）| 你改过的 dashboard 设置丢，43 个仪表盘会自动重新 provisioning |
+| 2. **PostgreSQL 数据库备份**（`drives` / `charges` / `positions` / `cars` 全部历史）| 行车记录全丢 |
+| 3. **Grafana 数据卷**（自定义书签 / 用户 / 配置）| 你改过的 dashboard 设置丢，43 个仪表盘会自动重新加载 |
 
 **备份步骤（旧机器上跑）**：
 
@@ -1112,7 +1112,7 @@ CREATE EXTENSION cube WITH SCHEMA public;
 CREATE EXTENSION earthdistance WITH SCHEMA public;
 EOF
 
-# 6. 恢复数据库（用 -Fc 格式 dump → pg_restore，不带 -c 因为已手动 DROP）
+# 6. 恢复数据库（用 -Fc 格式备份文件 → pg_restore，不带 -c 因为已手动 DROP）
 docker cp teslamate.dump $(docker compose ps -q database):/tmp/teslamate.dump
 docker compose exec -T database \
   pg_restore -U teslamate -d teslamate /tmp/teslamate.dump
@@ -1127,11 +1127,11 @@ docker run --rm \
 docker compose start teslamate
 ```
 
-> **如果你已经按旧版流程恢复过 + token 解密失败被迫重授权过**：那是这个 bug 的症状。现在用新流程不会再遇到。如果还有 4S 店保养记录或其他业务数据是从 backup 来的，旧版流程不会丢，仅 token 那一项受影响。
+> **如果你已经按旧版流程恢复过 + token 解密失败被迫重授权过**：那是这个 bug 的症状。现在用新流程不会再遇到。如果还有 4S 店保养记录或其他业务数据是从备份恢复来的，旧版流程不会丢，仅 token 那一项受影响。
 
 ### 单纯备份数据库（定期跑）
 
-如果只想 hypper backup 时拉一份数据库快照（不迁移），加到 NAS 任务计划：
+如果只想用 Hyper Backup（群晖备份套件）拉一份数据库快照（不迁移），加到 NAS 任务计划：
 
 ```bash
 docker exec teslamate-database-1 \
@@ -1152,11 +1152,11 @@ find /volume1/backup/teslamate-*.dump -mtime +28 -delete
 
 **适用场景：** 群晖 / 威联通用户想把 Postgres 数据库 / Grafana 数据放到能直接通过 NAS 文件浏览器看见的路径，方便用 Hyper Backup / Snapshot Replication 备份。
 
-> ⚠️ **这是有损操作（涉及停服 + 文件搬运），新装直接用 bind mount 比迁移简单**。已经在跑的用户，**先做完整数据库 dump 再开始**（见上节「单纯备份数据库」）。
+> ⚠️ **这是有损操作（涉及停服 + 文件搬运），新装直接用 bind mount 比迁移简单**。已经在跑的用户，**先做完整数据库备份再开始**（见上节「单纯备份数据库」）。
 
 **步骤：**
 
-1. **停服 + 整库 dump 留底（保险）**
+1. **停服 + 整库备份留底（保险）**
    ```bash
    cd ~/teslamate-chinese
    docker exec teslamate-database-1 pg_dump -U teslamate teslamate > /volume1/backup/teslamate-pre-bindmount.dump
@@ -1226,7 +1226,7 @@ find /volume1/backup/teslamate-*.dump -mtime +28 -delete
                     teslamate_mosquitto-conf teslamate_mosquitto-data
    ```
 
-> ⚠️ **任一步骤出错**：恢复方案 = `docker compose down` → 把 docker-compose.yml volumes 段改回命名卷 → `docker compose up -d` → `docker exec -i teslamate-database-1 psql -U teslamate -d teslamate < /volume1/backup/teslamate-pre-bindmount.dump`。所以第 1 步的 dump 必须先做。
+> ⚠️ **任一步骤出错**：恢复方案 = `docker compose down` → 把 docker-compose.yml volumes 段改回命名卷 → `docker compose up -d` → `docker exec -i teslamate-database-1 psql -U teslamate -d teslamate < /volume1/backup/teslamate-pre-bindmount.dump`。所以第 1 步的备份必须先做。
 
 ---
 

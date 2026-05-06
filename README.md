@@ -16,7 +16,7 @@
 > - 🌡️ 「天气-能耗关联」仪表盘（v1.6.0）— 国内 #1 痛点「冬天到底掉多少电」量化版
 > - 🚀 positions 表性能索引（v1.6.1）— 电池健康/行程列表/能耗聚合等查询从 200ms 降到 < 5ms
 > - 🔧 9 个仪表盘 60+ 处 SQL 自动适配分时电价
-> - **没装分时电价的用户无任何感知差异**（所有面板 fallback 原 `cp.cost`）
+> - **没装分时电价的用户无任何感知差异**（所有面板回退到原 `cp.cost`）
 >
 > 按你当时怎么装的，选一种：
 >
@@ -87,7 +87,7 @@
 > bash migrate-from-official.sh
 > ```
 >
-> 脚本预检 docker daemon + compose CLI（v1/v2 都识别）→ 找 `docker-compose.yml`（含 v2 新 `compose.yml`）→ 备份（mode 600，含 ENCRYPTION_KEY）→ 改 grafana image → 拉新镜像 → 探测 database 容器名 → 装 SQL。**TeslaMate / Postgres / MQTT 完全不动，ENCRYPTION_KEY 和数据 0 丢失**。脚本结尾会打印一行 `cp + $DC up -d` 的回滚命令，复制粘贴即可回去。
+> 脚本预检 docker daemon + compose CLI（v1/v2 都识别）→ 找 `docker-compose.yml`（含 v2 新 `compose.yml`）→ 备份（mode 600，含 ENCRYPTION_KEY）→ 改 grafana 镜像 → 拉新镜像 → 探测 database 容器名 → 装 SQL。**TeslaMate / Postgres / MQTT 完全不动，ENCRYPTION_KEY 和数据 0 丢失**。脚本结尾会打印一行 `cp + $DC up -d` 的回滚命令，复制粘贴即可回去。
 >
 > ⚠️ 在 Grafana 里手动改过 dashboard 的，先到「仪表盘 → ⋮ → Export」备份 JSON，迁移完再 Import 回来 —— 我们的镜像会用我们这一套覆盖。
 >
@@ -101,7 +101,7 @@
 >
 > ### 升级前必读：先备份
 >
-> 任何升级（含 v1.6.x → v1.6.x、PG 大版本升级）前都强烈建议先做完整数据库 dump：
+> 任何升级（含 v1.6.x → v1.6.x、PG 大版本升级）前都强烈建议先做完整数据库备份：
 > ```bash
 > docker compose exec -T database pg_dump -U teslamate teslamate > backup_$(date +%Y%m%d).sql
 > ```
@@ -113,7 +113,7 @@
 >
 > ### v1.6.6+ 升级提示
 >
-> v1.6.6 修复了备份恢复跟 TeslaMate 官方流程不对齐的真 bug（缺 `DROP SCHEMA private` + `CREATE EXTENSION cube`）。**如果你做过整机迁移且遇到 token 解密失败被迫重新授权过**——那就是这个 bug，新版恢复流程不会再触发。详见 [v1.6.6 release notes](https://github.com/wjsall/teslamate-chinese-dashboards/releases/tag/v1.6.6)。
+> v1.6.6 修复了备份恢复跟 TeslaMate 官方流程不对齐的真 bug（缺 `DROP SCHEMA private` + `CREATE EXTENSION cube`）。**如果你做过整机迁移且遇到 token 解密失败被迫重新授权过**——那就是这个 bug，新版恢复流程不会再触发。详见 [v1.6.6 发版说明](https://github.com/wjsall/teslamate-chinese-dashboards/releases/tag/v1.6.6)。
 >
 
 ---
@@ -276,7 +276,7 @@ bash simple-deploy.sh
 ```yaml
 # 原 docker-compose.yml 的 grafana service 改两处：
   grafana:
-    image: bswlhbhmt816/teslamate-chinese-dashboards:latest   # ← 改 image（原 teslamate/grafana:latest）
+    image: bswlhbhmt816/teslamate-chinese-dashboards:latest   # ← 改镜像（原 teslamate/grafana:latest）
     environment:
       - DATABASE_USER=teslamate
       - DATABASE_PASS=password

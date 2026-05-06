@@ -20,7 +20,7 @@
 
 **8. README 方法 C 升级容器名硬编码**：之前写 `docker exec -i teslamate-database-1 psql ...`，用户 git clone 到不同目录名（如 `teslamate-chinese-dashboards`）时容器名会变成 `teslamate-chinese-dashboards-database-1`，命令报错。改用 `DB=$(docker compose ps -q database)` 自动检测。
 
-**9. README 升级 callout 加 backup 提醒 + v1.6.6 提示**：升级前没显式提醒 `pg_dump` backup（官方强烈建议）。
+**9. README 升级提示段加备份提醒 + v1.6.6 提示**：升级前没显式提醒 `pg_dump` 备份（官方强烈建议）。
 
 **10. README 「最后更新」过期**：之前写 2026-05-02，今天 2026-05-06。
 
@@ -36,7 +36,7 @@
 
 ### 兼容性
 
-镜像 LABEL 1.6.6 → 1.6.7。仪表盘 JSON 修了 2 处单位错误，**升级用户需要重新拉镜像让新仪表盘 provisioning** 才能看到电压显示修复。
+镜像 LABEL 1.6.6 → 1.6.7。仪表盘 JSON 修了 2 处单位错误，**升级用户需要重新拉镜像让新仪表盘自动加载** 才能看到电压显示修复。
 
 ---
 
@@ -44,7 +44,7 @@
 
 ### 🐛 修复（数据迁移真 bug）
 
-对照 [TeslaMate 官方 backup_restore 文档](https://docs.teslamate.org/docs/maintenance/backup_restore) 审了我们的「整机迁移」恢复流程，发现 **2 个真 bug** 会让用户恢复时踩坑：
+整机迁移恢复流程跟 [TeslaMate 官方 backup_restore](https://docs.teslamate.org/docs/maintenance/backup_restore) 不对齐，**2 个真 bug** 会让用户踩坑：
 
 1. **`private` schema 不清理 → Tesla token 解密失败**：旧版用 `pg_restore -c` 只 drop public schema 对象，TeslaMate 的 `private` schema（存 OAuth 加密对象）不被清理 → 残留旧 token 加密元数据 → 恢复后 token 解密失败 → 用户被迫重新授权
 2. **缺 `cube` + `earthdistance` extension 显式重建 → pg_restore 直接报错卡死**：旧版「先 `docker compose up -d database` 单起数据库 → pg_restore」流程，单起的 database 容器**不会自动装** `cube` / `earthdistance` extension（这俩是 teslamate 容器初始化时建的）→ pg_restore 报 `type "cube" does not exist`，用户卡死
@@ -72,13 +72,13 @@
 
 ### 🐛 修复
 
-- **群晖 NAS 用户上传 Dashboard JSON 后看不到**（`TROUBLESHOOTING.md`）：scp 上去的文件 owner 是 `wjsall:admin`，DSM 的隐藏 ACL 让 grafana 容器读不了，provisioning 静默失败。新增 chown 472:472 修复模板（zh-cn 仪表盘 + internal 仪表盘两条命令分别给）
-- **ARM NAS（树莓派 / Apple Silicon NAS）拉 mosquitto 失败导致整堆服务起不来**（`TROUBLESHOOTING.md`）：增加 `DISABLE_MQTT=true` fallback 方案——主功能（车辆数据 + 仪表盘）不依赖 MQTT，关掉 mosquitto 不影响核心使用
+- **群晖 NAS 用户上传 Dashboard JSON 后看不到**（`TROUBLESHOOTING.md`）：scp 上去的文件属主是 `wjsall:admin`，DSM 的隐藏 ACL 让 grafana 容器读不了，自动加载（provisioning）静默失败。新增 chown 472:472 修复模板（zh-cn 仪表盘 + internal 仪表盘两条命令分别给）
+- **ARM NAS（树莓派 / Apple Silicon NAS）拉 mosquitto 失败导致整堆服务起不来**（`TROUBLESHOOTING.md`）：增加 `DISABLE_MQTT=true` 回退方案——主功能（车辆数据 + 仪表盘）不依赖 MQTT，关掉 mosquitto 不影响核心使用
 - **`README.md` / `QUICKSTART.md` / `simple-deploy.sh` 升级章节误用 `wget`**：macOS 默认没装 wget 会报 `command not found`，统一改 `curl`
 
 ### 🆕 新增
 
-- **「整机迁移」3 件套备份恢复流程**（`TROUBLESHOOTING.md`）：旧 NAS → 新 NAS / 重装 DSM / 换云服务器场景，含「配置 + DB dump + Grafana volume」三件备份方法和恢复顺序，避免迁移漏内容
+- **「整机迁移」3 件套备份恢复流程**（`TROUBLESHOOTING.md`）：旧 NAS → 新 NAS / 重装 DSM / 换云服务器场景，含「配置 + 数据库备份 + Grafana 数据卷」三件备份方法和恢复顺序，避免迁移漏内容
 - **公网部署「流量爆表防护」章节**（`TROUBLESHOOTING.md`）：直接公网开放 :4000 :3000 = 任何人能看车辆位置/历史行程，强烈推荐 Tailscale 走虚拟内网，云服务器关掉公网端口
 - **公网部署「失败告警」可选配置**（`TROUBLESHOOTING.md`）：uptime-kuma 监控容器存活，挂了发邮件/微信通知
 - **「装完了？下一步看哪些仪表盘？」引导**（`QUICKSTART.md`）：第一周必看 5 个核心仪表盘 + 进阶玩法（充电分析 / 驾驶习惯 / 维护提醒 / 趋势对比），链 DASHBOARD_MAP / SCENE_GUIDE 找完整目录
@@ -100,7 +100,7 @@
 
 - **DSM 7.x 反向代理 + Let's Encrypt 教程**（`TROUBLESHOOTING.md`）：4 步打通 `https://teslamate.your-domain.com` 域名访问，自动续期，不暴露 `:4000` `:3000` 端口
 - **DSM 7.2+ Container Manager「项目」模式部署**（`TROUBLESHOOTING.md`）：纯 GUI 部署，不用 SSH，照着点几下完成；含升级和「项目卡 STOPPED」的坑修
-- **NAS bind mount 迁移指引**（`TROUBLESHOOTING.md`）：把数据从 Docker 命名卷搬到 NAS 共享文件夹的 6 步流程，含 dump 留底、权限 chown 列表、回滚方案
+- **NAS bind mount 迁移指引**（`TROUBLESHOOTING.md`）：把数据从 Docker 命名卷搬到 NAS 共享文件夹的 6 步流程，含数据库备份留底、权限 chown 列表、回滚方案
 
 ### 🛠 一键脚本（`simple-deploy.sh`）改进
 
@@ -167,7 +167,7 @@
 
 **影响范围**：v1.5.0 及以后所有镜像用户都中招（v1.5.0 是引入 form-panel 的版本）。早期 base image 用 Grafana 11 没事。
 
-**修法**：改用 build-time `grafana cli plugins install`，绕开所有 env var 风险（`Dockerfile`）。
+**修法**：改用 构建时 `grafana cli plugins install`，绕开所有 env var 风险（`Dockerfile`）。
 
 ```dockerfile
 USER root
@@ -178,15 +178,15 @@ USER grafana
 
 **升级方法**：
 
-**全新用户**（首次部署）：直接拉 v1.6.3+ 镜像，build-time 自动带 form-panel。
+**全新用户**（首次部署）：直接拉 v1.6.3+ 镜像，构建时自动带 form-panel。
 
-**已有 grafana 数据卷的升级用户**（重要 ⚠️）：除了升级镜像，还要 **runtime 装一次** 把 plugin 落到 volume 里。issue #13 实测发现：Docker 命名卷 `teslamate-grafana-data:/var/lib/grafana` 在首次创建后**只用卷自己的内容**，新镜像里 build-time 装的 plugin **被卷盖住进不去**。
+**已有 grafana 数据卷的升级用户**（重要 ⚠️）：除了升级镜像，还要 **运行时装一次** 把插件落到数据卷里。Issue #13 实测发现：Docker 命名卷 `teslamate-grafana-data:/var/lib/grafana` 在首次创建后**只用卷自己的内容**，新镜像里构建时装的插件**被卷盖住进不去**。
 
 ```bash
 # 已有用户（任何旧版本升 v1.6.3）
 docker compose pull grafana
 docker compose up -d --force-recreate grafana
-# ↓ 关键这步：runtime 装一次 plugin 到卷里（永久生效）
+# ↓ 关键这步：运行时装一次插件到数据卷里（永久生效）
 docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2 \
  && docker compose restart grafana \
  && sleep 10 \
@@ -194,12 +194,12 @@ docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovla
 # 期望: volkovlabs-form-panel @ 6.3.2
 ```
 
-**用 `scripts/upgrade.sh` 升级的用户**：脚本第 6 步自动检测 + 触发 runtime 装，**不需要手动跑上面的命令**。
+**用 `scripts/upgrade.sh` 升级的用户**：脚本第 6 步自动检测 + 触发 运行时装，**不需要手动跑上面的命令**。
 
 ### 📚 文档
 
-- `TROUBLESHOOTING.md` 「分时电价配置面板空白」段落改写：解释 Docker 数据卷坑 + 给一条 runtime 装的命令 + 谁不受影响的对照表
-- `CHANGELOG` 升级方法补充「已有数据卷用户必须 runtime 装一次」
+- `TROUBLESHOOTING.md` 「分时电价配置面板空白」段落改写：解释 Docker 数据卷坑 + 给一条 运行时装的命令 + 谁不受影响的对照表
+- `CHANGELOG` 升级方法补充「已有数据卷用户必须 运行时装一次」
 
 ---
 
