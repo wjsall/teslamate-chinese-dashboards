@@ -218,7 +218,8 @@
                 "color": "super-light-blue"
               }
             ]
-          }
+          },
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1422,7 +1423,8 @@
                 "color": "super-light-blue"
               }
             ]
-          }
+          },
+          "unit": "Wh/km"
         },
         "overrides": [
           {

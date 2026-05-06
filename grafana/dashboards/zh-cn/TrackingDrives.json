@@ -779,11 +779,7 @@
               },
               {
                 "id": "unit",
-                "value": "clocks"
-              },
-              {
-                "id": "decimals",
-                "value": 1
+                "value": "string"
               }
             ]
           },
@@ -859,7 +855,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "text": {
@@ -878,7 +874,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT ((DATE_PART('day', end_date - start_date) * 24 + \n                DATE_PART('hour', end_date - start_date)) * 60 +\n                DATE_PART('minute', end_date - start_date)) * 60 +\n                DATE_PART('second', end_date - start_date) as sec_diff\nFROM drives\nWHERE drives.id = $journey;",
+          "rawSql": "SELECT CASE\n  WHEN secs < 60 THEN floor(secs)::int || '秒'\n  WHEN secs < 3600 THEN floor(secs/60)::int || '分' || lpad((floor(secs)::int % 60)::text, 2, '0') || '秒'\n  ELSE floor(secs/3600)::int || '时' || lpad((floor(secs/60)::int % 60)::text, 2, '0') || '分'\nEND as sec_diff\nFROM (SELECT EXTRACT(EPOCH FROM (end_date - start_date))::bigint AS secs FROM drives WHERE drives.id = $journey) t;",
           "refId": "A",
           "select": [
             [
@@ -911,7 +907,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "select\n\t(NULLIF(GREATEST(start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km, 0), 0) * car.efficiency) *1000 /\n\t  convert_km(distance::numeric, '$length_unit') as \"单位\"\nfrom drives d\nJOIN cars car ON car.id = car_id\nwhere d.id = $journey;",
+          "rawSql": "select\n\t(NULLIF(GREATEST(start_[[preferred_range]]_range_km - end_[[preferred_range]]_range_km, 0), 0) * car.efficiency) *1000 /\n\t  convert_km(distance::numeric, '$length_unit') as \"$length_unit\"\nfrom drives d\nJOIN cars car ON car.id = car_id\nwhere d.id = $journey;",
           "refId": "Distance",
           "select": [
             [
@@ -977,7 +973,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               },
               {
                 "id": "displayName",
@@ -1025,7 +1021,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "velocitykmh"
               },
               {
                 "id": "displayName",
@@ -1094,7 +1090,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "select convert_km(distance::numeric, '$length_unit') as \"单位\" from drives where id = $journey;",
+          "rawSql": "select convert_km(distance::numeric, '$length_unit') as \"$length_unit\" from drives where id = $journey;",
           "refId": "A",
           "select": [
             [
@@ -1182,7 +1178,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kwatth"
         },
         "overrides": [
           {
@@ -1294,7 +1290,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "m"
         },
         "overrides": [
           {

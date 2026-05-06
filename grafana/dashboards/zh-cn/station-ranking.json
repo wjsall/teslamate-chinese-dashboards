@@ -201,7 +201,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "元",
           "decimals": 2,
           "color": {
             "mode": "fixed",

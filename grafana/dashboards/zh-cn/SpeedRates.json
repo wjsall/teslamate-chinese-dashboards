@@ -310,7 +310,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "velocitykmh"
               },
               {
                 "id": "custom.width",
@@ -508,7 +508,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -646,7 +646,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "Wh/km"
         },
         "overrides": [
           {
@@ -796,7 +796,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "Wh/km"
         },
         "overrides": [
           {
@@ -1059,7 +1059,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n\tCASE WHEN '$length_unit' = 'km' THEN efficiency\n\t     WHEN '$length_unit' = 'mi' THEN efficiency * 1.60934\n\tEND * 1000 as \"效率\"\nFROM\n\tcars\nWHERE\n\tid = $car_id;",
+          "rawSql": "SELECT\n\tCASE WHEN '$length_unit' = 'km' THEN efficiency\n\t     WHEN '$length_unit' = 'mi' THEN efficiency * 1.60934\n\tEND * 1000 as \"efficiency_$length_unit\"\nFROM\n\tcars\nWHERE\n\tid = $car_id;",
           "refId": "A",
           "select": [
             [

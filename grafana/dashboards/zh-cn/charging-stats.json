@@ -201,7 +201,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -311,7 +311,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": [
           {
@@ -421,7 +421,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": [
           {
@@ -531,7 +531,8 @@
                 "color": "#d8d9da"
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -637,7 +638,8 @@
                 "color": "#d8d9da"
               }
             ]
-          }
+          },
+          "unit": "元/度"
         },
         "overrides": [
           {
@@ -743,7 +745,8 @@
                 "color": "#d8d9da"
               }
             ]
-          }
+          },
+          "unit": "元/度"
         },
         "overrides": [
           {
@@ -849,7 +852,8 @@
                 "color": "#d8d9da"
               }
             ]
-          }
+          },
+          "unit": "元/度"
         },
         "overrides": [
           {

@@ -517,7 +517,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": []
       },
@@ -1089,7 +1089,7 @@
               }
             ]
           },
-          "unit": "clocks"
+          "unit": "string"
         },
         "overrides": []
       },
@@ -1106,11 +1106,9 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "sum"
-          ],
-          "fields": "",
-          "values": false
+          "calcs": [],
+          "fields": "/.*/",
+          "values": true
         },
         "text": {},
         "textMode": "auto"
@@ -1143,7 +1141,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "WITH start_process AS ( SELECT date FROM charges \twhere charging_process_id=$charging_processes \tORDER BY DATE ASC \tLIMIT 1 ) SELECT EXTRACT(EPOCH FROM (charges.date - start_process.date)) AS \"已用时间\" FROM charges, start_process WHERE charging_process_id = $charging_processes AND $__timeFilter(charges.date) order by charges.date desc LIMIT 1",
+          "rawSql": "WITH start_process AS (\n  SELECT date FROM charges\n  WHERE charging_process_id=$charging_processes\n  ORDER BY date ASC LIMIT 1\n)\nSELECT\n  CASE WHEN floor(secs / 3600) > 0 THEN floor(secs / 3600)::text || '时' ELSE '' END ||\n  CASE WHEN floor(secs::bigint % 3600 / 60) > 0 OR floor(secs / 3600) > 0\n       THEN floor(secs::bigint % 3600 / 60)::text || '分' ELSE '' END ||\n  floor(secs::bigint % 60)::text || '秒' AS \"已用时间\"\nFROM (\n  SELECT EXTRACT(EPOCH FROM (max(charges.date) - max(start_process.date)))::bigint AS secs\n  FROM charges, start_process\n  WHERE charges.charging_process_id = $charging_processes\n) sub",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -1422,7 +1420,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {

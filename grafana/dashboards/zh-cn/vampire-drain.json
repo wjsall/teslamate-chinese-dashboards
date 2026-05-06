@@ -182,7 +182,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "km"
               },
               {
                 "id": "decimals",
@@ -251,7 +251,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "km/h"
               },
               {
                 "id": "decimals",
@@ -384,7 +384,7 @@
               },
               {
                 "id": "unit",
-                "value": "lengthmi"
+                "value": "mi/h"
               },
               {
                 "id": "decimals",

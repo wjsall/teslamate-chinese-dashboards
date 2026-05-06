@@ -183,7 +183,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -316,7 +316,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -447,7 +447,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -458,7 +458,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               },
               {
                 "id": "displayName",
@@ -583,7 +583,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -594,7 +594,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               }
             ]
           },
@@ -747,7 +747,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km/h"
         },
         "overrides": [
           {
@@ -882,7 +882,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km/h"
         },
         "overrides": [
           {
@@ -1018,7 +1018,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km/h"
         },
         "overrides": [
           {
@@ -1344,7 +1344,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1466,7 +1466,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {

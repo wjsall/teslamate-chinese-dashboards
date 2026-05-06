@@ -141,7 +141,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -263,7 +263,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -374,7 +374,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": [
           {
@@ -498,7 +498,7 @@
               }
             ]
           },
-          "unit": "m"
+          "unit": "分钟"
         },
         "overrides": [
           {
@@ -910,7 +910,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               }
             ]
           },

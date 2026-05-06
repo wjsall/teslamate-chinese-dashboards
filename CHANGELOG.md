@@ -1,5 +1,60 @@
 # 更新日志
 
+## [v1.6.8] - 2026-05-06
+
+### 🐛 单位显示修复（系统性）
+
+对 30 个仪表盘做单位全量核对，修复三类问题：
+
+**1. 自动换算单位让大数值显示英文前缀**
+
+- `kwatth` 把 8842 kWh 显示为 `8.84 MWh`（charging-stats / drive-stats / trip 等）
+- `lengthkm` 把 8076 km 显示为 `8 Mm`、把 0.66 km 显示为 `660.00 m`（annual-summary / vampire-drain）
+- `m`（分钟）把 10080 min 显示为 `1 weeks`（drives / DCChargingCurvesByCarrier）
+
+修法：改用字符串单位 `"kWh"` / `"km"` / `"分钟"`（Grafana 把任何非内置字符串当后缀，不换算、不本地化）。
+
+**2. override `unit: "none"` 让数字裸显示**
+
+CurrentDriveView / CurrentState / overview / drives / drive-stats 等的 `range_km` / `distance_km` 字段 override 是 `none`，数字旁边没单位。改回 `lengthkm`（drill-down 单次详情值小，不会触发 Mm 换算）或 `km` 字符串。
+
+**3. 缺少中文单位/费用/能耗提示**
+
+补全：trip / visited / station-ranking 充电费用 `元`；charges / drives / DCChargingCurvesByCarrier 时长 `分钟`；weather-efficiency / battery-health 能耗 `Wh/km`；DCChargingCurvesByCarrier 单位电费 `元/度`；vehicle-comparison 费用 `元`；trip 平均速度 `km/h`；CurrentDriveView 能耗 `Wh/km`。
+
+### 🐛 时长面板英文 → 中文
+
+Grafana 内置 `clocks` / `m` 单位输出 `1h:07m` / `1 weeks` 这种英文。改 SQL 输出中文字符串 + `unit: "string"`：
+
+- TrackingDrives「持续时间」→ `1时07分`
+- ContinuousTrips「长途行程」持续时间列
+- drives「行程」时长列
+- charge-details / drive-details 时长列（之前已做 `时:分:秒` 拼接）
+- CurrentChargeView 充电时间
+
+⚠️ stat 面板 unit 从数字改 string 必须同步把 `reduceOptions.fields` 从 `""` 改成 `"/.*/"`，否则字符串字段被默认过滤显示空（已记 memory）。
+
+### 🐛 SQL 中文别名破坏 override（回退）
+
+历史改动把上游 `as "$length_unit"` 翻译成 `as "单位"` / `as "效率"`，dead-string 让 override matcher 找不到列名：
+
+- `charge-details` / `drive-details` / `ContinuousTrips`：`as "单位"` → `as "$length_unit"`
+- `efficiency` / `SpeedRates`：`as "效率"` → `as "efficiency_$length_unit"`
+
+### 🐛 charge-level 中文图例还原
+
+之前一次 SQL 别名批量改动误把 `charge-level` 的 4 条图例（滚动 7.5%/平均/中位数/92.5% 分位）改回上游英文。本次还原。
+
+### 🔄 上游对齐回滚
+
+v1.6.7 v1.6.8 早期把 `charge-details` / `drive-details` 8 处 `kwatth` / `lengthkm` / `short` 改成 `none`，违反「上游有同款不改」原则——drill-down 单次详情数值小，根本不触发 Mm/MWh 换算。已全部回滚到上游原值。
+
+### 兼容性
+
+镜像 LABEL 1.6.7 → 1.6.8。升级方法：`docker pull` 后 `docker compose up -d`，仪表盘 10 秒内自动重载。
+
+---
+
 ## [v1.6.7] - 2026-05-06
 
 ### 🐛 修复

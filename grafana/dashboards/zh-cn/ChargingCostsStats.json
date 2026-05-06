@@ -864,7 +864,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1002,7 +1002,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1152,7 +1152,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -1291,7 +1291,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1416,7 +1416,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1517,7 +1518,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1618,7 +1620,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1719,7 +1722,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1821,7 +1825,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1942,7 +1947,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "元/度"
         },
         "overrides": [
           {
@@ -2050,7 +2056,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "Wh/km"
         },
         "overrides": [
           {
@@ -2201,7 +2207,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "Wh/km"
         },
         "overrides": [
           {

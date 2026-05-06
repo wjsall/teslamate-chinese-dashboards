@@ -606,7 +606,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "km/h"
         },
         "overrides": [
           {
@@ -1274,7 +1274,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1395,7 +1395,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -1851,7 +1851,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "km"
               },
               {
                 "id": "decimals",
@@ -2538,7 +2538,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               },
               {
                 "id": "decimals",
@@ -3234,7 +3234,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": []
       },

@@ -89,7 +89,8 @@
                 "color": "super-light-blue"
               }
             ]
-          }
+          },
+          "unit": "km"
         },
         "overrides": [
           {

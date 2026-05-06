@@ -426,7 +426,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "km"
               },
               {
                 "id": "displayName",
@@ -450,7 +450,7 @@
               },
               {
                 "id": "unit",
-                "value": "none"
+                "value": "km"
               },
               {
                 "id": "displayName",

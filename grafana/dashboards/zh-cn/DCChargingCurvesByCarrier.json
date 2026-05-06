@@ -768,7 +768,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "分钟"
         },
         "overrides": [
           {
@@ -893,7 +893,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "元"
         },
         "overrides": [
           {
@@ -1018,7 +1019,8 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "元/度"
         },
         "overrides": [
           {

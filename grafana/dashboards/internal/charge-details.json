@@ -189,7 +189,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               },
               {
                 "id": "custom.axisPlacement",
@@ -453,7 +453,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "元"
         },
         "overrides": [
           {
@@ -553,7 +553,7 @@
               }
             ]
           },
-          "unit": "clocks"
+          "unit": "string"
         },
         "overrides": []
       },
@@ -571,15 +571,13 @@
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": [
-            "sum"
-          ],
-          "fields": "",
-          "values": false
+          "calcs": [],
+          "fields": "/.*/",
+          "values": true
         },
         "showPercentChange": false,
         "text": {},
-        "textMode": "value",
+        "textMode": "auto",
         "wideLayout": true
       },
       "pluginVersion": "12.1.1",
@@ -611,7 +609,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (end_date - start_date)) AS \"时长\" FROM \r\n  (SELECT min(date) as start_date FROM charges where charging_process_id=$charging_process_id) s\r\n  CROSS JOIN \r\n  (SELECT max(date) as end_date FROM charges where charging_process_id=$charging_process_id) e",
+          "rawSql": "SELECT\n  CASE WHEN floor(secs / 3600) > 0 THEN floor(secs / 3600)::text || '时' ELSE '' END ||\n  CASE WHEN floor(secs::bigint % 3600 / 60) > 0 OR floor(secs / 3600) > 0\n       THEN floor(secs::bigint % 3600 / 60)::text || '分' ELSE '' END ||\n  floor(secs::bigint % 60)::text || '秒' AS \"时长\"\nFROM (\n  SELECT EXTRACT(EPOCH FROM (max(date) - min(date)))::bigint AS secs\n  FROM charges\n  WHERE charging_process_id = $charging_process_id\n) sub",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -787,7 +785,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "kwatth"
         },
         "overrides": [
           {
@@ -1393,7 +1391,8 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "unit": "celsius"
         },
         "overrides": [
           {
@@ -1514,7 +1513,8 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "unit": "km"
         },
         "overrides": [
           {
@@ -1525,7 +1525,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "lengthkm"
               }
             ]
           },

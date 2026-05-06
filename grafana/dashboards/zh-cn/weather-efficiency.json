@@ -152,7 +152,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "Wh/km",
           "decimals": 0,
           "color": {
             "mode": "fixed",
@@ -212,7 +212,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "Wh/km",
           "decimals": 0,
           "color": {
             "mode": "thresholds"
@@ -279,7 +279,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "Wh/km",
           "decimals": 0,
           "color": {
             "mode": "thresholds"
