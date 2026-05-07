@@ -1096,7 +1096,7 @@ docker compose start teslamate
 |---|---|
 | 1. **`docker-compose.yml`**（含 `ENCRYPTION_KEY` + 数据库密码）| Tesla token 永远解密不出来，必须重新授权 |
 | 2. **PostgreSQL 数据库备份**（`drives` / `charges` / `positions` / `cars` 全部历史）| 行车记录全丢 |
-| 3. **Grafana 数据卷**（自定义书签 / 用户 / 配置）| 你改过的 dashboard 设置丢，43 个仪表盘会自动重新加载 |
+| 3. **Grafana 数据卷**（自定义书签 / 用户 / 配置）| 你改过的 dashboard 设置丢，46 个仪表盘会自动重新加载 |
 
 **备份步骤（旧机器上跑）**：
 

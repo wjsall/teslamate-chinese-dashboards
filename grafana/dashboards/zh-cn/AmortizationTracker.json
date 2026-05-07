@@ -1,0 +1,870 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "definition": "TeslaMate|U2FsdGVkX1/cEWK+8cz7pjEKXtzJnDN7b21ZDXt1MGneFGPWTLqOPtxKmu02mJPLzi/f29I+NBHd3vi0FB8R4Xn0+GtobWDgk6VAVSBTdSNniOKO8i2WPlhRaOsl2+hG7gnZ7wrf1Th2nxR7f1uYCrbwOek0IzkfLzrkjh7gkr6inT6bbDuJqrmogZajLxmAMrQ6V+/vHxBRGiwjJhgiEeq3hM1q2h04JKkNiZ8RHbsF5Cd/xd8Q9u0JVrZzIrtnhM/SFlaApU7RtRMu8CSj1llTX7WEOj6VDZAMSf+XUAanWdk725kEPN9MNu89o2zEq5P3E3cju8IbbBdPzXLV3oVuzD6/tMnxFToIIV1E/BrpF7s2RtNa8+KJJ1PF8xgs6m+/KTD2hy+WsP0636AgObRAmYg7+qotGrgNvpNPdE0EgrB7WHYlV7R/1q66bcq6tCe51X1Un70k+zo+K6AK0o4B1H6IyMlEVuRH/Fz8QVl9aYu2ztd08RbuKJlYVKpkH+pxVETAO9MclYQ90tzE6TfwDZrQZzsAlMenr4s1ZB1OlFXjLjVjnddnUilzO76cqv4yI2THQEuyQ47nuVQ4gUbx02K59vMQhns3C01JOAYokOaSXe66Y7QYdMlk09Lf|aes-256-cbc",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "标注与警报",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "icon": "dashboard",
+      "tags": [],
+      "title": "TeslaMate",
+      "tooltip": "",
+      "type": "link",
+      "url": "${base_url:raw}"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "tags": [
+        "tesla"
+      ],
+      "title": "仪表板",
+      "type": "dashboards"
+    },
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "TeslamateCustomDashboards"
+      ],
+      "targetBlank": false,
+      "title": "自定义仪表板",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlGr"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 13,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineStyle": {
+              "dash": [
+                10,
+                10
+              ],
+              "fill": "dash"
+            },
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 263500
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_value_pls_el_savings"
+            },
+            "properties": [
+              {
+                "id": "custom.gradientMode",
+                "value": "scheme"
+              },
+              {
+                "id": "displayName",
+                "value": "折旧后车价 + 累计节省"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "period_number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "周期 [${period:text}]"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "id": 76,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "period_number"
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 77,
+          "refId": "A"
+        }
+      ],
+      "title": "回本曲线（综合资产 vs 购车成本）",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "car_value_pls_el_savings",
+                "period_number"
+              ]
+            }
+          }
+        }
+      ],
+      "type": "trend",
+      "description": "绿色虚线 = 你的「综合资产」（折旧后车价 + 累计节省）。红色水平线 = 你的购车成本。两线相交 = 回本时间点。线条颜色按数值高低自动渐变（绿=高，红=低）。"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-YlRd"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 50,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "pointShape": "circle",
+            "pointSize": {
+              "fixed": 9
+            },
+            "pointStrokeWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "show": "points+lines"
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "period_number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "周期 [${period:text}]"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "percent_depreciated"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "折旧 [%]"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 75,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "mapping": "auto",
+        "series": [
+          {
+            "frame": {
+              "matcher": {
+                "id": "byIndex",
+                "options": 0
+              }
+            },
+            "x": {
+              "matcher": {
+                "id": "byType",
+                "options": "number"
+              }
+            },
+            "y": {
+              "exclude": {
+                "id": "byNames",
+                "options": [
+                  "months",
+                  "depreciation_time",
+                  "depreciation_mileage"
+                ]
+              },
+              "matcher": {
+                "id": "byType",
+                "options": "number"
+              }
+            }
+          }
+        ],
+        "tooltip": {
+          "hideZeros": false,
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH periodic_mileage AS (\r\n    SELECT\r\n        DATE_TRUNC('$period', TIMEZONE('UTC', start_date), '$__timezone') AS period_start,\r\n        convert_km(SUM(end_km - start_km)::numeric, '$length_unit') AS total_mileage\r\n    FROM\r\n        drives\r\n    WHERE\r\n        car_id = $car_id \r\n    GROUP BY\r\n        period_start\r\n),\r\ncum_mileage AS (\r\n    SELECT\r\n        ROW_NUMBER() OVER () AS period_number,\r\n        period_start,\r\n        total_mileage,\r\n        SUM(total_mileage) OVER (ORDER BY period_start) AS cum_mileage\r\n    FROM\r\n        periodic_mileage\r\n),\r\nBreakEven AS (\r\nSELECT\r\n    cm.period_number,\r\n    cm.cum_mileage * $loss_rate AS depreciation_mileage,\r\n    LEAST(95.0, CASE WHEN '$period' = 'year' THEN (SELECT $depreciated_value * neff - 5.0 * neff * (neff - 1) / 2 FROM (SELECT LEAST(cm.period_number, FLOOR($depreciated_value::numeric / 5 + 1)::int) AS neff) eff_yr) ELSE (SELECT ($depreciated_value * neff - 5.0 * neff * (neff - 1) / 24) / 12 FROM (SELECT LEAST(cm.period_number, FLOOR($depreciated_value::numeric * 12 / 5 + 1)::int) AS neff) eff_mo) END) AS depreciation_time\r\nFROM\r\n    cum_mileage cm\r\nLEFT JOIN\r\n    periodic_mileage mm ON cm.period_start = mm.period_start\r\nORDER BY\r\n    cm.period_number\r\n)\r\nSELECT \r\n    period_number,\r\n    100 - ($car_cost  - depreciation_mileage - (($car_cost  - depreciation_mileage) * depreciation_time / 100)) * 100 / $car_cost AS percent_depreciated\r\nFROM BreakEven",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "折旧曲线",
+      "type": "xychart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 100
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "period_number"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "周期 [${period:text}]"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "periodic_mileage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "里程 (公里)"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "period_el_cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "电费"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "period_cost_per_mileage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "每公里成本"
+              },
+              {
+                "id": "custom.width",
+                "value": 105
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cum_mileage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "累计里程"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cum_el_cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "累计电费"
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cum_el_savings"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "累计节省"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "depreciated_car_value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "折旧后车价"
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_value_pls_el_savings"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "折旧后车价 + 节省"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "depreciation_mileage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "累计里程折旧"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "depreciation_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "按持有时长的折旧"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 77,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH periodic_mileage AS (\r\n    SELECT\r\n        DATE_TRUNC('$period', TIMEZONE('UTC', start_date), '$__timezone') AS period_start,\r\n        convert_km(SUM(end_km - start_km)::numeric, '$length_unit') AS total_mileage\r\n    FROM\r\n        drives\r\n    WHERE\r\n        car_id = $car_id \r\n    GROUP BY\r\n        period_start\r\n),\r\nperiod_cost AS (\r\n    SELECT\r\n        DATE_TRUNC('$period', TIMEZONE('UTC', start_date), '$__timezone') AS period_start,\r\n        SUM(cost) AS total_cost\r\n    FROM\r\n        charging_processes \r\n    WHERE\r\n        car_id = $car_id \r\n    GROUP BY\r\n        period_start\r\n),\r\ncum_mileage AS (\r\n    SELECT\r\n        ROW_NUMBER() OVER () AS period_number,\r\n        period_start,\r\n        total_mileage,\r\n        SUM(total_mileage) OVER (ORDER BY period_start) AS cum_mileage\r\n    FROM\r\n        periodic_mileage\r\n),\r\ncum_cost AS (\r\n    SELECT\r\n        ROW_NUMBER() OVER () AS period_number,\r\n        period_start,\r\n        total_cost,\r\n        SUM(total_cost) OVER (ORDER BY period_start) AS cum_el_cost\r\n    FROM\r\n        period_cost\r\n),\r\ncar_current_value AS (\r\n    SELECT\r\n        $car_cost AS car_current_value\r\n),\r\nBreakEven AS (\r\nSELECT\r\n    cm.period_number,\r\n    mm.total_mileage AS periodic_mileage,\r\n    mc.total_cost AS period_el_cost,\r\n    mc.total_cost/mm.total_mileage AS period_cost_per_mileage,\r\n    cm.cum_mileage,\r\n    cc.cum_el_cost,\r\n    cm.cum_mileage * $loss_rate AS depreciation_mileage,\r\n    LEAST(95.0, CASE WHEN '$period' = 'year' THEN (SELECT $depreciated_value * neff - 5.0 * neff * (neff - 1) / 2 FROM (SELECT LEAST(cm.period_number, FLOOR($depreciated_value::numeric / 5 + 1)::int) AS neff) eff_yr) ELSE (SELECT ($depreciated_value * neff - 5.0 * neff * (neff - 1) / 24) / 12 FROM (SELECT LEAST(cm.period_number, FLOOR($depreciated_value::numeric * 12 / 5 + 1)::int) AS neff) eff_mo) END) AS depreciation_time,\r\n    cm.cum_mileage * $fuel_price - cc.cum_el_cost AS cum_el_savings, car_current_value\r\nFROM\r\n    cum_mileage cm\r\nLEFT JOIN\r\n    cum_cost cc ON cm.period_number = cc.period_number\r\nLEFT JOIN\r\n    periodic_mileage mm ON cm.period_start = mm.period_start\r\nLEFT JOIN\r\n    period_cost mc ON cm.period_start = mc.period_start\r\nCROSS JOIN\r\n    car_current_value\r\nORDER BY\r\n    cm.period_number\r\n)\r\nSELECT \r\n    period_number, periodic_mileage, period_el_cost, period_cost_per_mileage, cum_mileage, cum_el_cost, depreciation_mileage, depreciation_time, cum_el_savings,\r\n    car_current_value - depreciation_mileage - ((car_current_value - depreciation_mileage) * depreciation_time / 100) AS depreciated_car_value,\r\n    (car_current_value - depreciation_mileage - ((car_current_value - depreciation_mileage) * depreciation_time / 100)) + (cum_mileage * $fuel_price - cum_el_cost) AS car_value_pls_el_savings\r\nFROM BreakEven",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "回本明细",
+      "type": "table"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 79,
+      "panels": [],
+      "title": "帮助",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 29,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 78,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "# 回本分析\n\n本仪表盘跟踪车辆**残值**（按持有时长 + 按里程两种维度），以及相比同级燃油车的**累计省油钱**。两条加起来与购车成本相交的点 = **回本时间**。\n\n## 折旧模型\n\n车辆折旧来源两块（本面板都算）：\n\n- **按时长折旧**：第一年贬值最大（行业经验 15-20%），之后每年递减 5 个百分点\n  - 第一年: 20% → 第二年: 15% → 第三年: 10% → 第四年: 5% → 第五年: 0%\n  - **累计折旧**：第 1 年 20% / 第 2 年 35% / 第 3 年 45% / 第 4 年 50% / 第 5+ 年封顶 50%（不再折）\n  - Tesla 等保值率高的车实际可能更慢，可调「首年折旧率」\n- **按里程折旧**：每公里损耗一个固定金额（保养摊薄、易损件折旧），由「电车每公里运行成本」决定。**不含电费**（电费从充电记录单独算）\n\n折旧后车价 = (购车成本 − 累计里程折旧) × (1 − 累计时长折旧%)\n\n## 文本框输入\n\n| 字段 | 含义 | 默认值 | 推算 |\n|---|---|---|---|\n| 周期 | 月 / 年 | 年 | 短期分析选月 |\n| 购车成本 | 你的购车价（含税）| 263500 元 | Tesla Model 3 标续 |\n| 首年折旧率 % | 第一年贬值百分比 | 20% | 保值率高的车可调 15 |\n| 电车每公里运行成本 | **里程损耗摊薄到每公里**（保养+易损，不含电费）| 0.20 元/km | 含保养约 0.15-0.20 元/km |\n| 同级燃油车每公里油费 | 同级油车每公里油费 | 1 元/km | 6L/100km × 8元/L ÷ 100 = 0.48；SUV 约 0.6-1+ |\n\n## 表格列说明\n\n| 列 | 含义 | 计算方式 |\n|---|---|---|\n| 周期 | 按下拉框选「月」或「年」| 从 TeslaMate 开始记录算 |\n| 里程 | 当期行驶距离（公里）| SUM(drives.distance) |\n| 电费 | 当期电费总支出（元）| SUM(charging_processes.cost) |\n| 每公里成本 | 当期电费 ÷ 当期里程 | |\n| 累计里程 | 截至当期累计行驶 | |\n| 累计电费 | 截至当期累计电费 | |\n| 累计里程折旧 | 累计里程 × 每公里运行成本 | 反映保养磨耗损失 |\n| 按持有时长的折旧 | 累计折旧率（见上面模型）| 与里程无关 |\n| 累计节省 | 累计里程 × 同级油费 **−** 累计电费 | 相比开油车实际省的钱 |\n| 折旧后车价 | 当期估算残值（递减）| (购车 − 里程折旧) × (1 − 累计折旧%) |\n| 折旧后车价 + 节省 | 残值 + 累计省钱 | **N 年后的综合资产** |\n\n## 怎么看回本？\n\n「回本曲线」面板上：\n- **绿色虚线**：你 N 年后的综合资产 = 折旧后车价 + 累计节省\n- **红色水平线**：购车成本（假设你直接买电车花的钱）\n- **绿线 ≥ 红线** 那一刻 = 回本（电车省下的油钱 + 剩下的车残值，足够抵消购车款）\n\n如果绿线长期低于红线 = 还没回本。两条路：继续开（累计省更多油钱）/ 等折旧封顶 50% 后残值不再缩水（5 年后）/ 油价上涨。\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.5.2",
+      "title": "",
+      "type": "text"
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 40,
+  "tags": [
+    "cost",
+    "tesla"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "includeAll": false,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select base_url from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "name": "base_url",
+        "options": [],
+        "query": "select base_url from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "select unit_of_length from settings limit 1;",
+        "hide": 2,
+        "includeAll": false,
+        "name": "length_unit",
+        "options": [],
+        "query": "select unit_of_length from settings limit 1;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": "年",
+          "value": "year",
+          "selected": true
+        },
+        "name": "period",
+        "options": [
+          {
+            "selected": false,
+            "text": "月",
+            "value": "month"
+          },
+          {
+            "selected": true,
+            "text": "年",
+            "value": "year"
+          }
+        ],
+        "query": "月 : month, 年 : year",
+        "refresh": 2,
+        "type": "custom",
+        "label": "周期"
+      },
+      {
+        "current": {
+          "text": "263500",
+          "value": "263500"
+        },
+        "description": "希望在持有期内回本的购车价（人民币）",
+        "label": "购车成本 (元)",
+        "name": "car_cost",
+        "options": [
+          {
+            "selected": false,
+            "text": "263500",
+            "value": "263500"
+          }
+        ],
+        "query": "263500",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "20",
+          "value": "20"
+        },
+        "description": "首年折旧百分比（如 20 表示首年贬值 20%；之后每年递减 5pp，第二年 15%、第三年 10% 类推）",
+        "label": "首年折旧率 (%)",
+        "name": "depreciated_value",
+        "options": [
+          {
+            "selected": true,
+            "text": "20",
+            "value": "20"
+          }
+        ],
+        "query": "20",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "0.20",
+          "value": "0.20"
+        },
+        "description": "电车每【公里】运行成本（人民币）— 仅指里程损耗（保养+易损件摊薄），不含电费。例：含保养摊薄约 0.15-0.20 元/km。电费 SQL 单独从充电记录算",
+        "label": "电车每公里运行成本",
+        "name": "loss_rate",
+        "options": [
+          {
+            "selected": false,
+            "text": "0.20",
+            "value": "0.20"
+          }
+        ],
+        "query": "0.20",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "1",
+          "value": "1"
+        },
+        "description": "同级燃油车每【公里】油费（人民币）。计算方法：油耗(L/100km) × 油价(元/L) ÷ 100。例：6L/100km × 8元/L ÷ 100 = 0.48 元/km；高油耗 SUV 约 0.6-1；经济车约 0.4",
+        "label": "同级燃油车每公里油费",
+        "name": "fuel_price",
+        "options": [
+          {
+            "selected": false,
+            "text": "1",
+            "value": "1"
+          }
+        ],
+        "query": "1",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-5y",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true,
+    "refresh_intervals": []
+  },
+  "timezone": "browser",
+  "title": "回本分析",
+  "uid": "jchmAdd4SiQgWa",
+  "version": 1,
+  "weekStart": ""
+}

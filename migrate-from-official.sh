@@ -95,6 +95,70 @@ detect_db_container() {
     return 0
 }
 
+# 探测 PG 版本 — 我们要求 18+（与官方 teslamate-org 默认对齐）
+# 12 个仪表盘用 3-arg date_trunc，PG ≤15 直接报错；PG 16/17 能跑但建议升 18
+check_pg_version() {
+    if [[ -z "${DB_CONTAINER:-}" ]]; then return 0; fi
+    local ver
+    ver=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" \
+        -tAc "SHOW server_version_num" 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -z "$ver" ]] && return 0  # 探测失败不阻塞
+    local major=$(( ver / 10000 ))
+    PG_MAJOR=$major
+    if (( major >= 18 )); then
+        echo "✓ PostgreSQL $major（与官方对齐）"
+        return 0
+    fi
+    echo
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if (( major <= 15 )); then
+        echo "❌ 检测到 PostgreSQL $major — **必须先升级到 18** 才能继续"
+        echo "   原因：本项目 12 个仪表盘用 3-arg date_trunc 时区聚合（PG 16+ 才支持）"
+    else
+        echo "⚠️  检测到 PostgreSQL $major — 建议升级到 18（与官方 teslamate-org 对齐）"
+        echo "   PG 16/17 能跑本项目所有仪表盘，但官方 docker-compose.yml 已默认 postgres:18-trixie"
+    fi
+    echo
+    echo "📦 升级流程（必须先备份！）："
+    echo
+    echo "   # 1. 完整备份当前数据库（PG $major 格式）"
+    echo "   docker exec $DB_CONTAINER pg_dumpall -U ${DB_USER:-teslamate} > teslamate-backup-pg${major}-\$(date +%Y%m%d).sql"
+    echo
+    echo "   # 2. 检查备份文件大小（应该几百 KB ~ 几十 MB，0 字节就是失败）"
+    echo "   ls -lh teslamate-backup-pg${major}-*.sql"
+    echo
+    echo "   # 3. 停服务 + 删旧 PG 数据卷（不可逆，备份没做完别走这步）"
+    echo "   cd \"$(dirname "$COMPOSE_FILE")\""
+    echo "   $DC down"
+    echo "   docker volume rm \$($DC config --volumes | grep -E 'db|database|postgres' | head -1)"
+    echo
+    echo "   # 4. 改 docker-compose.yml：image: postgres:$major... → image: postgres:18-trixie"
+    echo
+    echo "   # 5. 启 database + 等 30 秒（让 PG 18 初始化）"
+    echo "   $DC up -d database"
+    echo "   sleep 30"
+    echo
+    echo "   # 6. 恢复数据"
+    echo "   cat teslamate-backup-pg${major}-*.sql | docker exec -i \$($DC ps -q database) psql -U ${DB_USER:-teslamate}"
+    echo
+    echo "   # 7. 启全部服务"
+    echo "   $DC up -d"
+    echo
+    echo "   # 8. 升级完成后重跑此迁移脚本"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo
+    if (( major <= 15 )); then
+        echo "由于会有仪表盘报错，脚本退出。先升级 PG 再回来。"
+        exit 1
+    fi
+    read -rp "继续迁移而不升级 PG（推荐升级后再来）？ [y/N] " pg_skip </dev/tty
+    if [[ "$pg_skip" != "y" && "$pg_skip" != "Y" ]]; then
+        echo "已取消，先升级 PG 到 18。"
+        exit 0
+    fi
+    echo "⚠️  跳过升级，继续。仪表盘可正常用，但与官方栈版本不一致。"
+}
+
 # 装单个 SQL：失败把真实 stderr 露出来 + 累计到 FAILED_STEPS
 install_sql() {
     local label="$1" url="$2" key="$3"
@@ -203,7 +267,11 @@ else
     exit 1
 fi
 
-# 5. 改过 dashboard 提醒
+# 5a. PG 版本检测（在备份/改文件之前，给用户机会先升级）
+detect_db_container || true
+check_pg_version
+
+# 5b. 改过 dashboard 提醒
 echo
 echo "⚠️  迁移会用我们的 dashboard 替换官方版本。如果你在 Grafana 里手动改过 panel，"
 echo "   先到 Grafana → 仪表盘 → ⋮ → Export 备份 JSON，迁移完再 Import 回去。"

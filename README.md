@@ -2,7 +2,7 @@
 
 **TeslaMate Chinese Grafana Dashboards** — Simplified Chinese localization for TeslaMate, ready to use out of the box.
 
-简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 43 个仪表盘 99% 汉化 | 支持 Docker 一键部署
+简体中文汉化版 TeslaMate Grafana Dashboard - 开箱即用 | 46 个仪表盘 99% 汉化 | 支持 Docker 一键部署
 
 ---
 
@@ -55,7 +55,7 @@
 > ### 方法 C — 手动派（自己写 docker compose 套了我们镜像的）
 >
 > ```bash
-> # 1. 拉新镜像（带 volkovlabs-form-panel 插件 + 43 个仪表盘 — 该插件给「⚡ 分时电价配置」面板提供按钮交互）
+> # 1. 拉新镜像（带 volkovlabs-form-panel 插件 + 46 个仪表盘 — 该插件给「⚡ 分时电价配置」面板提供按钮交互）
 > docker compose pull && docker compose up -d
 >
 > # 2. 装 SQL 三件套（坐标函数 + 分时电价 + 性能索引，远程 curl 不用 git clone）
@@ -208,7 +208,7 @@
 - ✅ **开箱即用** - 无需 Docker Hub 账号，直接挂载使用
 - ✅ **一键安装** - 提供多种安装方式，5分钟完成部署
 - ✅ **持续更新** - 通过 git pull 即可获取最新汉化
-- ✅ **深度汉化** - 43 个 Dashboard，含12 个全新原创分析图表
+- ✅ **深度汉化** - 46 个 Dashboard，含12 个全新原创分析图表
 - 🌏 **地图源一键切换（独有）** - 9 个含地图仪表盘顶部加 OSM / 高德 / 高德卫星 / 谷歌 / 谷歌卫星 / Carto 下拉框，秒切，自动 GCJ-02 坐标纠偏（v1.4.2+）
   - 国内用户告别手动改 SQL，海外华人用户也能用谷歌中文路网
 - ✅ **完整适配 TeslaMate 3.0** - 同步官方全部新特性，已验证兼容 Grafana 12.4.0
@@ -217,14 +217,14 @@
 
 | 指标 | 数值 |
 | --- | --- |
-| Dashboard 数量 | 43个 ✅ |
+| Dashboard 数量 | 46个 ✅ |
 | 内部详情页 | 3个（行程/充电详情）|
 | 文件总大小 | ~1.2MB |
 | 汉化完成度 | 99%+ |
 | 质量等级 | A+ |
 | 最后更新 | 2026-05-06 |
 
-**43 个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
+**46 个 Dashboard 深度汉化，持续优化中，开箱即用！** 🎉
 
 ## 📚 使用文档
 
@@ -233,7 +233,7 @@
 | 文档 | 说明 | 适合人群 |
 |------|------|----------|
 | **[新手向导](QUICKSTART.md)** | 从零开始安装，含 FAQ | 完全新手 |
-| **[功能地图](DASHBOARD_MAP.md)** | 43 个 Dashboard 分类导航 | 新用户 |
+| **[功能地图](DASHBOARD_MAP.md)** | 46 个 Dashboard 分类导航 | 新用户 |
 | **[场景速查手册](SCENE_GUIDE.md)** | 什么时候看什么 Dashboard | 所有用户 |
 | **[数据指标手册](METRICS_GUIDE.md)** | 指标解释、正常范围、异常处理 | 进阶用户 |
 | **[故障排查手册](TROUBLESHOOTING.md)** | 遇到问题按症状查解决方案 | 遇到问题时 |
@@ -242,7 +242,7 @@
 
 ## 📁 包含的 Dashboard
 
-**43 个仪表盘** ：核心 4 / 充电 14 / 驾驶 12 / 车辆状态 6 / 其他 7。完整功能列表 + 字段映射 → [DASHBOARD_MAP.md](DASHBOARD_MAP.md)
+**46 个仪表盘** ：核心 4 / 充电 14 / 驾驶 13 / 车辆状态 6 / 其他 9。完整功能列表 + 字段映射 → [DASHBOARD_MAP.md](DASHBOARD_MAP.md)
 
 ## 🚀 快速开始
 
@@ -448,6 +448,9 @@ REPO_REF=v1.6.2 bash migrate-from-official.sh
 
 - Docker 20.10+
 - Docker Compose 2.0+
+- **PostgreSQL 18**（与官方 teslamate-org 对齐，`postgres:18-trixie`）
+  - 12 个仪表盘用 3-arg `date_trunc` 时区聚合，**PG ≤15 必报错**
+  - PG 16/17 能跑但建议升 18；从老 TeslaMate 迁过来要先升 PG，[备份升级流程见 TROUBLESHOOTING.md「PostgreSQL 大版本升级」](TROUBLESHOOTING.md#postgresql-大版本升级如-17--18)
 - 内存: 2GB+
 - 磁盘: 10GB+
 

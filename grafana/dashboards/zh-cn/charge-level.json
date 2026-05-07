@@ -402,7 +402,7 @@
             "value": "14400"
           }
         ],
-        "query": "1h : 3600, 2h : 7200, 4h : 14400",
+        "query": "1小时 : 3600, 2小时 : 7200, 4小时 : 14400",
         "type": "custom"
       },
       {
@@ -425,7 +425,7 @@
             "value": "1"
           }
         ],
-        "query": "no : 0, yes : 1",
+        "query": "否 : 0, 是 : 1",
         "type": "custom"
       },
       {
@@ -449,7 +449,7 @@
             "value": "12"
           }
         ],
-        "query": "1/6 of interval : 6, 1/12 of interval : 12",
+        "query": "间隔的1/6 : 6, 间隔的1/12 : 12",
         "type": "custom"
       },
       {
