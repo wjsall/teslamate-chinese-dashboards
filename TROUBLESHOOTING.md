@@ -170,6 +170,36 @@ newgrp docker
 
 ## 📊 Dashboard 问题
 
+### ❌ 从官方 TeslaMate 迁移后「分时电价配置」整页报 panel not found（v1.7.x 已知坑）
+
+**症状**：跑完 `migrate-from-official.sh` 后，打开「⚡ 分时电价配置」整个 dashboard 显示 `panel not found`，仪表盘列表里能搜到、Grafana 日志全是 INFO 无 ERROR。
+
+**根因**：「分时电价配置」里 5 个 panel 用 `volkovlabs-form-panel` 第三方插件。我们镜像 build 时把它装在 `/var/lib/grafana/plugins`，但这条路径**正好是 Grafana volume `teslamate-grafana-data` 的挂载点**。从官方迁移来的用户，他们的 volume 来自官方 grafana 镜像（没装 volkov），切镜像时 volume 覆盖镜像的 plugin 目录 → 镜像里装好的插件用不上。
+
+**修复（10 秒，不丢 Grafana 配置）**：
+
+```bash
+docker exec --user root teslamate-grafana-1 \
+    grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2
+docker compose restart grafana
+```
+
+等 30 秒后 Ctrl+F5 刷新「分时电价配置」，5 个 form panel 应该全部恢复。
+
+**或者**重跑迁移脚本（v1.7.2+ 的 migrate-from-official.sh 会自动检测 + 装这插件）：
+
+```bash
+bash migrate-from-official.sh    # 检测到已在我们镜像 → 会问要不要重装 SQL + 修 plugin
+```
+
+**确诊命令**（看不到 `volkovlabs-form-panel` 目录就是这个坑）：
+
+```bash
+docker exec teslamate-grafana-1 ls /var/lib/grafana/plugins
+```
+
+---
+
 ### ❌ 自定义 / 上传 Dashboard JSON 后 Grafana 看不到（群晖 NAS 用户高发）
 
 **症状**：把改过的 dashboard JSON 通过 File Station / scp 推到 `/volume1/docker/teslamate/dashboards/zh-cn/`，重启 grafana 也不生效，仪表盘还是旧版。

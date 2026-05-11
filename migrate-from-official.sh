@@ -180,6 +180,48 @@ install_sql() {
     return 1
 }
 
+# 确保 volkovlabs-form-panel 插件已装到 Grafana volume
+# 背景：Dockerfile 把 plugin 装在 /var/lib/grafana/plugins，但该路径正是 grafana volume
+# 挂载点，导致从官方迁移用户的旧 volume 覆盖镜像里的 plugin 目录 → 5 个 form panel
+# 报「panel not found」。本函数检测 + 自愈：volume 里没 plugin 就 cli 装上 + restart。
+ensure_volkov_plugin() {
+    local grafana_ct
+    grafana_ct=$(cd "$COMPOSE_DIR" && $DC ps -q grafana 2>/dev/null | head -1 || true)
+    if [[ -n "$grafana_ct" ]]; then
+        grafana_ct=$(docker inspect --format '{{.Name}}' "$grafana_ct" 2>/dev/null | sed 's|^/||' || true)
+    fi
+    if [[ -z "$grafana_ct" ]]; then
+        grafana_ct=$(docker ps --filter "status=running" --format '{{.Names}}' \
+            | grep -E '(^|[-_])grafana([-_]|$)' | head -1 || true)
+    fi
+    if [[ -z "$grafana_ct" ]]; then
+        echo "⚠️  探测不到 grafana 容器，跳过 volkov 插件检查"
+        FAILED_STEPS+=("volkov-plugin")
+        return 1
+    fi
+
+    echo
+    echo "→ 检查 volkovlabs-form-panel 插件（分时电价 5 个 form panel 需要）..."
+    if docker exec "$grafana_ct" ls /var/lib/grafana/plugins/volkovlabs-form-panel >/dev/null 2>&1; then
+        echo "✓ volkov-form-panel 已就位"
+        return 0
+    fi
+
+    echo "⚠️  Grafana volume 缺 volkov-form-panel 插件（迁移用户常踩的 volume 覆盖坑）"
+    echo "    正在装到 volume..."
+    if docker exec --user root "$grafana_ct" \
+            grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2 >/dev/null 2>&1; then
+        $DC restart grafana >/dev/null 2>&1 || true
+        echo "✓ volkov-form-panel 已装好，grafana 已重启"
+        return 0
+    fi
+    echo "⚠️  自动装插件失败（多半是网络问题）。手动补："
+    echo "    docker exec --user root $grafana_ct grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2"
+    echo "    $DC restart grafana"
+    FAILED_STEPS+=("volkov-plugin")
+    return 1
+}
+
 # ── Trap：脚本中段失败 / Ctrl+C 给 actionable 退路 ───────────────────
 on_error() {
     local rc=$?
@@ -237,9 +279,11 @@ if grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OFFICIAL_IMAGE_RE}" "$COMPOSE_
 elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*bswlhbhmt816/teslamate-chinese-dashboards" "$COMPOSE_FILE"; then
     echo "ℹ️  你已经在我们的镜像上了，image 不需要改。"
     echo
-    read -rp "要重装/升级 SQL（坐标函数 + 分时电价 + 性能索引）吗？ [y/N] " sql_confirm </dev/tty
+    read -rp "要重装/升级 SQL（坐标函数 + 分时电价 + 性能索引）+ 修补 volkov 插件吗？ [y/N] " sql_confirm </dev/tty
     if [[ "$sql_confirm" == "y" || "$sql_confirm" == "Y" ]]; then
         cd "$COMPOSE_DIR"
+        # 先修 volkov 插件兜底（若 grafana volume 缺，自动装；同样适用于先前版本没跑这段的迁移用户）
+        ensure_volkov_plugin || true
         detect_db_container || true
         install_sql "坐标转换函数（地图轨迹纠偏）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-coord-functions.sql" \
@@ -278,11 +322,12 @@ echo "   先到 Grafana → 仪表盘 → ⋮ → Export 备份 JSON，迁移完
 echo
 
 # 6. 预览改动
-echo "📋 我会做这 4 件事："
+echo "📋 我会做这 5 件事："
 echo "   1) 备份 docker-compose.yml.bak.\$(date +%Y%m%d-%H%M%S)（mode 600，含 ENCRYPTION_KEY）"
 echo "   2) 改 grafana image：$CURRENT_IMAGE  →  $NEW_IMAGE"
 echo "   3) $DC pull grafana && $DC up -d grafana"
-echo "   4) 装 2 个 SQL（坐标函数 + 分时电价旁路表，重复跑不会丢数据）"
+echo "   4) 检查 + 自动装 volkov-form-panel 插件（修「分时电价配置」5 个 form panel 报 panel not found 的 volume 覆盖坑）"
+echo "   5) 装 3 个 SQL（坐标函数 + 分时电价 + 性能索引，重复跑不会丢数据）"
 echo
 echo "⚠️  TeslaMate / Postgres / MQTT 容器完全不动。ENCRYPTION_KEY、Tesla token、"
 echo "    所有数据 0 丢失。万一不满意：把 image 改回去重启 grafana 即回滚。"
@@ -309,6 +354,13 @@ echo "→ 拉新镜像 + 重启 grafana..."
 $DC pull grafana
 $DC up -d grafana
 echo "✓ grafana 已切到中文版镜像"
+
+# 9b. 让 grafana 完全起来（plugin 检查需要 docker exec 进容器）
+echo "→ 等 grafana 启动（8s）..."
+sleep 8
+
+# 9c. volkov-form-panel 插件兜底（修官方迁移的 volume 覆盖坑）
+ensure_volkov_plugin || true
 
 # 10. 装 SQL（探测 DB 容器名 → install_sql × 3）
 detect_db_container || true
