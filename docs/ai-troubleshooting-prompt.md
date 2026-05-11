@@ -52,11 +52,20 @@ b) 字段引用错（项目某面板用了不存在的列名）→ 这是项目 
 c) 时区问题（中国用户看 UTC 时间偏 8 小时）→ TeslaMate / Grafana 容器应有 `TZ=Asia/Shanghai`，仪表盘 SQL 应用 `$__timezone` 变量
 d) `$__timeFilter()` 默认时间范围不包含数据 → 改时间范围到「Last 6 months」试试
 
-**问题 3：地址显示「Unknown」/ 空**
+**问题 3：地址显示「Unknown」/ 空（中国大陆用户高频问题）**
 
 a) addresses 表为空 → 跑 `SELECT COUNT(*) FROM addresses` 看
-b) TeslaMate 用 OpenStreetMap Nominatim 反向地理编码，国内访问偶尔失败 → 看 `docker compose logs teslamate | grep -i nominatim`
-c) 首次安装后 TeslaMate 会逐步反查所有历史 drive 的地址，可能要几小时
+b) 行程列表 `start_address_id` / `end_address_id` 大量 NULL → 用这个 SQL 看 NULL 比例：
+   `SELECT COUNT(*) AS total, COUNT(start_address_id) AS with_addr FROM drives WHERE car_id = 1`
+   with_addr 远小于 total = 反查未完成
+c) TeslaMate 用 OpenStreetMap Nominatim (`nominatim.openstreetmap.org`) 反向地理编码，**国内访问常超时**
+   → 看 `docker compose logs teslamate | grep -iE "nominatim|geocod"` 是否有 timeout / connection refused
+d) **国内修复**：给 TeslaMate 加 `NOMINATIM_PROXY` env（TeslaMate 上游专用变量，HTTP only，**仅一行**，**只代理 Nominatim** 不影响 Tesla API）：
+   在 docker-compose.yml 的 teslamate service environment 里加：
+   `- NOMINATIM_PROXY=http://代理IP:7890`
+   重启 `docker compose up -d teslamate`。几小时到一天，addresses 表会从几百涨到几千。
+   **不要建议用户加 HTTP_PROXY / HTTPS_PROXY / NO_PROXY** —— TeslaMate 不读这些通用 env，只读专用 NOMINATIM_PROXY。
+e) 国外用户：首次安装后 TeslaMate 会逐步反查所有历史 drive 的地址，可能要几小时，正常等待即可
 
 **问题 4：容器起不来 / 一直 Restarting**
 
