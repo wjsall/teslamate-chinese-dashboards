@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 🇨🇳 国内用户高频踩坑（行程地址列空 / 容器拉镜像超时）
+    url: https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/TROUBLESHOOTING.md#nominatim-proxy
+    about: nominatim.openstreetmap.org 国内访问超时是行程列表地址空的根因，加 NOMINATIM_PROXY 一行 env 解决
   - name: 🤖 先问 AI 自助排查
     url: https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md
     about: 复制项目 prompt 给主流 AI，看日志直接诊断
