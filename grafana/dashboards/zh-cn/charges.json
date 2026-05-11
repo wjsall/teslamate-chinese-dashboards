@@ -1737,6 +1737,144 @@
         "mode": "markdown",
         "content": "### 💡 看到 cost 列空 / 费用统计偏低？\n\n不在「收藏点（geofence）」范围内的充电（例如外出旅游、不熟悉的目的地）如果没配置「默认电价」，cost 列会为空，「充电费用统计」仪表盘也不会算这部分钱。\n\n**修法**：去 [⚡ 分时电价配置 → 💡 默认电价（无位置充电用此价）](/d/tou-config/) 设置一个全局默认单价（例如 1 元/度），所有未关联 geofence 的充电会自动按此价计费。配完跑面板里的「🔄 重算所有历史充电」按钮，历史也会重算。"
       }
+    },
+    {
+      "id": 22,
+      "type": "volkovlabs-form-panel",
+      "title": "✏️ 单笔充电单价（手动填/改）",
+      "description": "逐笔手动设充电单价 ¥/度，覆盖默认电价。下拉里【空】排前优先填。公式：cost = GREATEST(charge_energy_added, charge_energy_used) × 单价 （与「充电记录」表的电价列一致，所以保存后看到的电价就是你设的）。手填的值不会被「重算所有历史充电」或默认电价覆盖。Tip：清空单价 + 保存 = 把该笔 cost 清回【空】，可作误填回滚。",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 18,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "(SELECT cp.id, '【空】 | ' || to_char(cp.end_date, 'MM/DD HH24:MI') || ' | ' || LEFT(COALESCE(NULLIF(g.name, ''), NULLIF(addresses.city, ''), '?'), 16) || ' | ' || ROUND(GREATEST(cp.charge_energy_added, cp.charge_energy_used)::numeric, 1) || 'kWh' AS display_name FROM charging_processes cp LEFT JOIN addresses ON addresses.id = cp.address_id LEFT JOIN geofences g ON g.id = cp.geofence_id WHERE cp.car_id = $car_id AND cp.end_date IS NOT NULL AND COALESCE(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL AND cp.cost IS NULL ORDER BY cp.end_date DESC LIMIT 50) UNION ALL (SELECT cp.id, '已填 ¥' || cp.cost::text || ' | ' || to_char(cp.end_date, 'MM/DD HH24:MI') || ' | ' || LEFT(COALESCE(NULLIF(g.name, ''), NULLIF(addresses.city, ''), '?'), 16) || ' | ' || ROUND(GREATEST(cp.charge_energy_added, cp.charge_energy_used)::numeric, 1) || 'kWh' AS display_name FROM charging_processes cp LEFT JOIN addresses ON addresses.id = cp.address_id LEFT JOIN geofences g ON g.id = cp.geofence_id WHERE cp.car_id = $car_id AND cp.end_date IS NOT NULL AND COALESCE(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL AND cp.cost IS NOT NULL ORDER BY cp.end_date DESC LIMIT 30)",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "💾 保存单价",
+          "icon": "save",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "cp_id",
+            "type": "select",
+            "title": "选要操作的充电",
+            "value": null,
+            "optionsSource": "Query",
+            "queryOptions": {
+              "source": "A",
+              "value": "id",
+              "label": "display_name"
+            }
+          },
+          {
+            "id": "unit_price",
+            "type": "number",
+            "title": "单价 ¥/度",
+            "value": null,
+            "min": 0,
+            "step": 0.01,
+            "max": 10
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "-- 算法与 set_default_charging_rate (install-tou.sql) 保持一致：GREATEST(added,used) × rate\nUPDATE charging_processes SET cost = ROUND((GREATEST(charge_energy_added, charge_energy_used) * NULLIF('${payload.unit_price}', '')::NUMERIC)::NUMERIC, 2) WHERE id = NULLIF('${payload.cp_id}', '')::INT AND car_id = $car_id"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": true,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": false,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "确认保存？将覆盖该笔充电的 cost。空单价 = 清空回【空】。",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 单价已保存，刷新页面看 cost 列"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      }
     }
   ],
   "preload": false,
