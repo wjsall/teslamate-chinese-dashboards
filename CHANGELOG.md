@@ -1,5 +1,93 @@
 # 更新日志
 
+## [v1.7.3] - 2026-05-11
+
+### 🆕 新功能：默认电价（解决 issue #21 — 未关联收藏点的充电费用空）
+
+在「⚡ 分时电价配置」仪表盘底部新增 form panel：
+
+> 💡 **默认电价（无位置充电用此价）**
+
+国内用户外出快充经常充在不熟悉的充电站，没设置 geofence（收藏点）时这部分充电的 cost 列空、费用统计偏低。这次加了一个全局默认电价兜底：
+
+- 在 form 里输入一个单价（如 1.4 元/度）→ 保存
+- 所有未关联收藏点的充电（AC + DC 都覆盖）立即按此价计费
+- 公式：`cost = GREATEST(charge_energy_added, charge_energy_used) × 单价`，跟「充电记录」表「电价」列一致
+- 不覆盖 TeslaMate 已算的 / 你手填的 cost
+- 留空 + 保存 = 清回 NULL（误填回滚 escape hatch）
+
+技术上加了新 PG 函数 `set_default_charging_rate(p_rate)`，一次完成 tou_rates 表 UPSERT + charging_processes.cost UPDATE。
+
+### 🆕 新功能：单笔充电单价（精细级）
+
+在「充电记录」仪表盘底部新增 form panel：
+
+> ✏️ **单笔充电单价（手动填/改）**
+
+下拉选某次充电（【空】排前面优先填）+ 输入单价 → 该笔 cost 立即更新。可以：
+
+- 反复改某次（覆盖默认电价 / 修正之前误填）
+- 留空 + 保存 = 清回 NULL
+- 保存前有确认对话框防止误操作
+- max=10 元/度 防止手滑输入 1000
+
+适合外出快充每次单价不同的精细场景。
+
+### 🔧 修复：从官方 TeslaMate 迁移后「分时电价配置」5 个 form panel 报 panel not found（issue #20 / #21）
+
+`volkovlabs-form-panel` 插件被 grafana volume 覆盖的坑（dockerfile 装在 `/var/lib/grafana/plugins` 正好是 volume 挂载点）。`migrate-from-official.sh` 和 `scripts/upgrade.sh` 现在都会**自动检测 + 兜底安装**：
+
+- 优先 `grafana cli plugins install`（在线）
+- 国内 `grafana.com` 超时自动 fallback 打印 `docker cp` 路径 A 命令（无外网依赖）
+- 之前吞 stderr 的问题修了（现在能看到真实错误）
+
+### 🇨🇳 国内用户痛点系统加固：NOMINATIM_PROXY 8 道防线
+
+issue #20 / #22 都撞同一个坑：`nominatim.openstreetmap.org` 国内访问超时导致 TeslaMate 反向地理编码失败，行程列表「起始地址 / 结束地址」列大量为空。
+
+修法是给 teslamate 容器加一行 env `NOMINATIM_PROXY=http://你的代理IP:7890`（TeslaMate 上游专用变量，HTTP only，仅代理 Nominatim 不影响 Tesla API）。
+
+为避免后续用户继续踩，这次在 **8 处入口**都做了引导：
+
+1. AI 自助排查 prompt（`docs/ai-troubleshooting-prompt.md` 问题 3）
+2. TROUBLESHOOTING.md `#nominatim-proxy` ASCII 锚点（source-of-truth）
+3. README.md「🇨🇳 中国大陆用户专项配置」段
+4. `simple-deploy.sh` 装机时 compose 模板含 `# - NOMINATIM_PROXY=...` 注释占位
+5. `simple-deploy.sh` 装完「下一步」提示
+6. `migrate-from-official.sh`「下一步」提示
+7. `scripts/upgrade.sh`「下一步」提示
+8. `.github/ISSUE_TEMPLATE/config.yml` 第一个 contact link
+
+### 📚 AI 自助排查 prompt 全面扩充
+
+覆盖所有历史 issue 类型（#17 dashboard JSON 脏 current / #20-21 volkov 插件 volume 覆盖 / #22 Nominatim 超时 / PG < 18 date_trunc 报错）。AI 拿到 prompt 后会先问「整 dashboard 报还是单 panel 报」决定诊断方向，对三类典型问题（地址列空 / volkov panel 报错 / 升级 SQL 函数错）直接给具体修复路径，不再泛泛"等几小时"。
+
+### ⬆️ 升级方法（**必须用方法 A，因为含新 PG 函数**）
+
+**方法 A（推荐，自动装新 SQL 函数）**：
+
+```bash
+cd teslamate-chinese-dashboards
+git pull
+bash scripts/upgrade.sh
+```
+
+**方法 B（只更新镜像，不装新 SQL）**——仅适合「不需要默认电价 form」的用户：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+走方法 B 后想用默认电价 form panel 21 时，单独跑这条补装 SQL 函数：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-tou.sql | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+```
+
+新装机用户（`simple-deploy.sh` / `migrate-from-official.sh`）会自动装好新 SQL，无需额外操作。
+
+---
+
 ## [v1.7.2] - 2026-05-11
 
 ### 🆕 加 AI 自助排查机制（多数常见问题不用开 issue 就能解决）
