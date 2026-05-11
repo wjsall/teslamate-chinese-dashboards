@@ -911,7 +911,70 @@ COMMENT ON FUNCTION list_city_templates IS
 '分时电价城市模板列表，跟 apply_city_template() 的 CASE 分支同步';
 
 -- ----------------------------------------------------------------------------
--- 9. 自检：函数装好但需要用户配 tou_rates 才能算
+-- 9. set_default_charging_rate — 一键设默认电价（v1.7.3+ 新增）
+--
+-- 设计：tou_rates 系统设计了 TOU 旁路表 + 视图 charging_processes_v.cost_effective，
+-- 但项目 dashboards 没有 join 旁路表（v1.8 待办）。在那之前，最实用的方式是
+-- 当用户设默认电价时，同时**直接 UPDATE charging_processes.cost**（仅填 cost IS NULL
+-- 且 geofence_id IS NULL 的充电），这样 charges 等已有仪表盘自动显示费用，
+-- 不需要先大改 6 个 SQL。
+--
+-- 用法：
+--   SELECT * FROM set_default_charging_rate(1.0);
+-- 行为：
+--   - tou_rates 写两行 (AC + DC，apply_to_dc=FALSE/TRUE)，rate 都用 p_rate
+--   - 已有的默认行用 ON CONFLICT 覆盖（更新 rate）
+--   - UPDATE charging_processes SET cost = ROUND(kWh × p_rate, 2)
+--     WHERE geofence_id IS NULL AND cost IS NULL AND end_date IS NOT NULL
+--   - 不覆盖 TeslaMate 已算的 / 用户手填的 cost
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION set_default_charging_rate(p_rate NUMERIC)
+RETURNS TABLE(message TEXT) AS $$
+DECLARE
+  v_updated_cp INT;
+BEGIN
+  IF p_rate IS NULL OR p_rate <= 0 THEN
+    RETURN QUERY SELECT '❌ 默认电价必须 > 0'::TEXT;
+    RETURN;
+  END IF;
+
+  -- AC 默认行
+  INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label, apply_to_dc)
+  VALUES (NULL, 0, 24, p_rate, '默认(AC)', FALSE)
+  ON CONFLICT (COALESCE(geofence_id, -1), hour_start, hour_end,
+               COALESCE(valid_from, '0001-01-01'::DATE),
+               COALESCE(valid_to, '9999-12-31'::DATE), apply_to_dc)
+  DO UPDATE SET rate = EXCLUDED.rate, label = EXCLUDED.label;
+
+  -- DC 默认行
+  INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label, apply_to_dc)
+  VALUES (NULL, 0, 24, p_rate, '默认(DC)', TRUE)
+  ON CONFLICT (COALESCE(geofence_id, -1), hour_start, hour_end,
+               COALESCE(valid_from, '0001-01-01'::DATE),
+               COALESCE(valid_to, '9999-12-31'::DATE), apply_to_dc)
+  DO UPDATE SET rate = EXCLUDED.rate, label = EXCLUDED.label;
+
+  -- 把所有 cost IS NULL 且 geofence_id IS NULL 的已完成充电填上 cost
+  -- 用 GREATEST(charge_energy_added, charge_energy_used) 与 charges 仪表盘「电价」
+  -- 列（cost / GREATEST(added, used)）的算法一致，让用户看到的「电价」就是 p_rate
+  -- charge_energy_used 是充电桩输出（含损耗），通常 > charge_energy_added（车实际收到）
+  UPDATE charging_processes
+  SET cost = ROUND((GREATEST(charge_energy_added, charge_energy_used) * p_rate)::NUMERIC, 2)
+  WHERE geofence_id IS NULL
+    AND end_date IS NOT NULL
+    AND (charge_energy_added IS NOT NULL OR charge_energy_used IS NOT NULL)
+    AND cost IS NULL;
+  GET DIAGNOSTICS v_updated_cp = ROW_COUNT;
+
+  RETURN QUERY SELECT format('✅ 默认电价 %s 元/度 已保存（AC+DC 两条 tou_rates）。新填 %s 个无价格充电记录的 cost', p_rate, v_updated_cp);
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION set_default_charging_rate IS
+'v1.7.3: tou-config 仪表盘 panel 21 调此函数。设默认电价 + 即时填充无价格充电的 cp.cost';
+
+-- ----------------------------------------------------------------------------
+-- 10. 自检：函数装好但需要用户配 tou_rates 才能算
 -- ----------------------------------------------------------------------------
 DO $$
 BEGIN

@@ -1718,6 +1718,25 @@
       ],
       "title": "不完整的充电记录 🪫",
       "type": "table"
+    },
+    {
+      "id": 21,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### 💡 看到 cost 列空 / 费用统计偏低？\n\n不在「收藏点（geofence）」范围内的充电（例如外出旅游、不熟悉的目的地）如果没配置「默认电价」，cost 列会为空，「充电费用统计」仪表盘也不会算这部分钱。\n\n**修法**：去 [⚡ 分时电价配置 → 💡 默认电价（无位置充电用此价）](/d/tou-config/) 设置一个全局默认单价（例如 1 元/度），所有未关联 geofence 的充电会自动按此价计费。配完跑面板里的「🔄 重算所有历史充电」按钮，历史也会重算。"
+      }
     }
   ],
   "preload": false,

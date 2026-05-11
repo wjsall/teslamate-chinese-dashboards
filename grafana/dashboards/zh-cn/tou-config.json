@@ -1613,6 +1613,126 @@
         "w": 24,
         "h": 10
       }
+    },
+    {
+      "id": 21,
+      "type": "volkovlabs-form-panel",
+      "title": "💡 默认电价（无位置充电用此价）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [],
+      "options": {
+        "layout": {
+          "orientation": "horizontal",
+          "padding": 10,
+          "variant": "single",
+          "sectionVariant": "default"
+        },
+        "buttonGroup": {
+          "orientation": "center",
+          "size": "md"
+        },
+        "updateEnabled": "auto",
+        "submit": {
+          "text": "💾 保存默认电价",
+          "icon": "save",
+          "variant": "primary",
+          "foregroundColor": "white",
+          "backgroundColor": "#1f60c4"
+        },
+        "reset": {
+          "text": "重置",
+          "icon": "process",
+          "variant": "secondary",
+          "foregroundColor": "white",
+          "backgroundColor": "#3274d9"
+        },
+        "saveDefault": {
+          "variant": "hidden"
+        },
+        "elements": [
+          {
+            "id": "default_rate",
+            "type": "number",
+            "title": "默认单价 ¥/度",
+            "value": null,
+            "min": 0,
+            "step": 0.01,
+            "helpers": [
+              {
+                "display": "保存后立即生效——AC/DC 都按此价，未填 cost 的历史充电也会回填。已有 cost 的不会覆盖。"
+              }
+            ]
+          }
+        ],
+        "initial": {
+          "method": "-",
+          "code": "",
+          "highlight": false,
+          "payloadMode": "all"
+        },
+        "update": {
+          "method": "datasource",
+          "datasource": "TeslaMate",
+          "payload": {
+            "refId": "A",
+            "datasource": {
+              "type": "grafana-postgresql-datasource",
+              "uid": "TeslaMate"
+            },
+            "format": "table",
+            "rawSql": "SELECT * FROM set_default_charging_rate(NULLIF('${payload.default_rate}', '')::NUMERIC)"
+          },
+          "payloadMode": "all",
+          "code": "",
+          "confirm": false,
+          "highlight": false,
+          "highlightColor": "red"
+        },
+        "resetAction": {
+          "mode": "initial",
+          "code": ""
+        },
+        "elementValueChanged": "",
+        "sync": true,
+        "sections": [],
+        "confirmModal": {
+          "title": "确认",
+          "body": "保存默认电价？此操作会覆盖已存在的默认电价配置",
+          "columns": {
+            "name": "字段",
+            "oldValue": "原值",
+            "newValue": "新值",
+            "include": [
+              "title",
+              "value",
+              "newValue"
+            ]
+          },
+          "elements": []
+        },
+        "feedback": {
+          "success": {
+            "type": "success",
+            "title": "成功",
+            "body": "✅ 默认电价已保存，已填充无价格充电的 cost。刷新「充电记录」仪表盘看效果。"
+          },
+          "error": {
+            "type": "error",
+            "title": "失败",
+            "body": "出错了，请检查输入"
+          }
+        }
+      },
+      "description": "给没关联收藏点（geofence）的充电（外出/快充等无 location 场景）设固定单价。AC（家充）和 DC（直流快充）都按此价计算，并立即填充充电记录里 cost 为空的历史充电。已有 cost 的充电（TeslaMate 已算 / 用户手填）不覆盖。"
     }
   ],
   "links": [
