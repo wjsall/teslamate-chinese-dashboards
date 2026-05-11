@@ -180,10 +180,30 @@ install_sql() {
     return 1
 }
 
+# Pinned volkov-form-panel 版本，需与 Dockerfile 同步（也是 scripts/upgrade.sh 的来源）
+VOLKOV_FORM_PANEL_VERSION="6.3.2"
+
+# 等 grafana 容器可 docker exec（最多 maxsec 秒，每秒 poll 一次）
+wait_grafana_ready() {
+    local grafana_ct="$1" maxsec="${2:-20}"
+    local i
+    for ((i=0; i<maxsec; i++)); do
+        if docker exec "$grafana_ct" true 2>/dev/null; then return 0; fi
+        sleep 1
+    done
+    return 1
+}
+
 # 确保 volkovlabs-form-panel 插件已装到 Grafana volume
+#
 # 背景：Dockerfile 把 plugin 装在 /var/lib/grafana/plugins，但该路径正是 grafana volume
-# 挂载点，导致从官方迁移用户的旧 volume 覆盖镜像里的 plugin 目录 → 5 个 form panel
-# 报「panel not found」。本函数检测 + 自愈：volume 里没 plugin 就 cli 装上 + restart。
+# 挂载点。从官方迁移用户的旧 volume（来自 teslamate/grafana）覆盖镜像里的 plugin 目录
+# → 5 个 form panel 报「panel not found」。本函数检测 + 自愈。
+#
+# 注意 1：调用必须用 `|| true` 包，否则失败时触发 set -e + on_error trap
+# 注意 2：grafana 容器探测逻辑与 scripts/upgrade.sh 同款，volkov 版本号变更需同步更新两处
+# 注意 3：`grafana cli plugins install` 走 grafana.com，国内网络偶尔超时；
+#         失败时保留 stderr 让用户能看到真实错误（与 install_sql 同款约定）
 ensure_volkov_plugin() {
     local grafana_ct
     grafana_ct=$(cd "$COMPOSE_DIR" && $DC ps -q grafana 2>/dev/null | head -1 || true)
@@ -202,21 +222,46 @@ ensure_volkov_plugin() {
 
     echo
     echo "→ 检查 volkovlabs-form-panel 插件（分时电价 5 个 form panel 需要）..."
-    if docker exec "$grafana_ct" ls /var/lib/grafana/plugins/volkovlabs-form-panel >/dev/null 2>&1; then
+
+    # 等容器能 exec（避免 8 秒硬等不够 / 太久无谓阻塞）
+    if ! wait_grafana_ready "$grafana_ct" 20; then
+        echo "⚠️  grafana 容器 20 秒内未就绪：$($DC ps grafana 2>/dev/null | tail -1)"
+        echo "    手动确认状态后重跑本脚本"
+        FAILED_STEPS+=("volkov-plugin")
+        return 1
+    fi
+
+    if docker exec "$grafana_ct" test -d /var/lib/grafana/plugins/volkovlabs-form-panel 2>/dev/null; then
         echo "✓ volkov-form-panel 已就位"
         return 0
     fi
 
     echo "⚠️  Grafana volume 缺 volkov-form-panel 插件（迁移用户常踩的 volume 覆盖坑）"
-    echo "    正在装到 volume..."
+    echo "    正在装到 volume（--user root 仅本次 docker exec，命令退出后恢复 grafana user）..."
+    # 保留 stderr：网络超时 / signature 错 / 磁盘满都能看到真实原因
     if docker exec --user root "$grafana_ct" \
-            grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2 >/dev/null 2>&1; then
-        $DC restart grafana >/dev/null 2>&1 || true
-        echo "✓ volkov-form-panel 已装好，grafana 已重启"
-        return 0
+            grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel "$VOLKOV_FORM_PANEL_VERSION" >/dev/null; then
+        if $DC restart grafana >/dev/null 2>&1; then
+            echo "✓ volkov-form-panel 已装好，grafana 已重启"
+            return 0
+        fi
+        echo "⚠️  插件已装但 grafana 重启失败。手动跑：$DC restart grafana"
+        FAILED_STEPS+=("grafana-restart")
+        return 1
     fi
-    echo "⚠️  自动装插件失败（多半是网络问题）。手动补："
-    echo "    docker exec --user root $grafana_ct grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2"
+
+    echo "⚠️  自动装插件失败（grafana.com 国内常超时）。两条修复路："
+    echo
+    echo "  路径 A — 从镜像本地复制（推荐，无外网依赖）："
+    echo "    docker create --name volkov-tmp $NEW_IMAGE"
+    echo "    docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel"
+    echo "    docker rm volkov-tmp"
+    echo "    docker cp /tmp/volkovlabs-form-panel $grafana_ct:/var/lib/grafana/plugins/"
+    echo "    docker exec --user root $grafana_ct chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel"
+    echo "    $DC restart grafana && rm -rf /tmp/volkovlabs-form-panel"
+    echo
+    echo "  路径 B — 重试 grafana cli（看真实错误）："
+    echo "    docker exec --user root $grafana_ct grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel $VOLKOV_FORM_PANEL_VERSION"
     echo "    $DC restart grafana"
     FAILED_STEPS+=("volkov-plugin")
     return 1
@@ -355,11 +400,8 @@ $DC pull grafana
 $DC up -d grafana
 echo "✓ grafana 已切到中文版镜像"
 
-# 9b. 让 grafana 完全起来（plugin 检查需要 docker exec 进容器）
-echo "→ 等 grafana 启动（8s）..."
-sleep 8
-
-# 9c. volkov-form-panel 插件兜底（修官方迁移的 volume 覆盖坑）
+# 9b. volkov-form-panel 插件兜底（修官方迁移的 volume 覆盖坑）
+# 函数内部用 poll loop 等 grafana 就绪，最多 20 秒
 ensure_volkov_plugin || true
 
 # 10. 装 SQL（探测 DB 容器名 → install_sql × 3）

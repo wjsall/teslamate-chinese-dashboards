@@ -170,13 +170,32 @@ newgrp docker
 
 ## 📊 Dashboard 问题
 
-### ❌ 从官方 TeslaMate 迁移后「分时电价配置」整页报 panel not found（v1.7.x 已知坑）
+### ❌ 从官方 TeslaMate 迁移后「分时电价配置」整页报 panel not found（v1.7.0 / v1.7.1 迁移用户）
 
-**症状**：跑完 `migrate-from-official.sh` 后，打开「⚡ 分时电价配置」整个 dashboard 显示 `panel not found`，仪表盘列表里能搜到、Grafana 日志全是 INFO 无 ERROR。
+**症状**：跑完 `migrate-from-official.sh` 后，打开「⚡ 分时电价配置」整个 dashboard 显示 `panel not found`，仪表盘列表里能搜到、Grafana 日志全是 INFO 无 ERROR。**v1.7.2+ 的 migrate 脚本已经自动修，这一节给已经踩坑的用户自助修复。**
 
 **根因**：「分时电价配置」里 5 个 panel 用 `volkovlabs-form-panel` 第三方插件。我们镜像 build 时把它装在 `/var/lib/grafana/plugins`，但这条路径**正好是 Grafana volume `teslamate-grafana-data` 的挂载点**。从官方迁移来的用户，他们的 volume 来自官方 grafana 镜像（没装 volkov），切镜像时 volume 覆盖镜像的 plugin 目录 → 镜像里装好的插件用不上。
 
-**修复（10 秒，不丢 Grafana 配置）**：
+> 下面命令里的 `teslamate-grafana-1` 是默认容器名。如果你用 `-p someproject` 起的，容器名会变成 `someproject-grafana-1`——按 `docker ps | grep grafana` 实际结果替换。
+
+**修复路径 A — 从我们镜像本地复制 plugin（推荐，国内用户首选，无外网依赖）**：
+
+```bash
+# 1. 临时启动一个用我们镜像的容器（不挂 volume，纯镜像层）
+docker create --name volkov-tmp bswlhbhmt816/teslamate-chinese-dashboards:latest
+
+# 2. cp 出 plugin
+docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel
+docker rm volkov-tmp
+
+# 3. cp 进运行中的 grafana 容器（写入 volume）+ 修 owner
+docker cp /tmp/volkovlabs-form-panel teslamate-grafana-1:/var/lib/grafana/plugins/
+docker exec --user root teslamate-grafana-1 chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel
+docker compose restart grafana
+rm -rf /tmp/volkovlabs-form-panel
+```
+
+**修复路径 B — grafana cli 在线装（需访问 grafana.com，国内常超时）**：
 
 ```bash
 docker exec --user root teslamate-grafana-1 \
@@ -184,12 +203,17 @@ docker exec --user root teslamate-grafana-1 \
 docker compose restart grafana
 ```
 
+> `--user root` 仅本次 docker exec 内有效，命令退出后 grafana 进程恢复 grafana user，不是持久权限提升。
+
 等 30 秒后 Ctrl+F5 刷新「分时电价配置」，5 个 form panel 应该全部恢复。
 
-**或者**重跑迁移脚本（v1.7.2+ 的 migrate-from-official.sh 会自动检测 + 装这插件）：
+**或者**重跑迁移脚本（v1.7.2+ 的 migrate-from-official.sh 会自动检测 + 装这插件，国内超时时也会打印两条路径的命令让你选）：
 
 ```bash
-bash migrate-from-official.sh    # 检测到已在我们镜像 → 会问要不要重装 SQL + 修 plugin
+# 先拉最新脚本（你本地可能是 v1.7.1 之前的旧版没这个修复逻辑）
+curl -fsSL -o migrate-from-official.sh \
+    https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/migrate-from-official.sh
+bash migrate-from-official.sh    # 识别到已在我们镜像 → 会问要不要重装 SQL + 修 plugin
 ```
 
 **确诊命令**（看不到 `volkovlabs-form-panel` 目录就是这个坑）：

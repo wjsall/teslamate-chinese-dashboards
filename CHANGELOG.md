@@ -19,9 +19,17 @@
 
 第一屏指引用户走自助路径，AI 没解决再走手动「诊断三板斧」。
 
+### 🔧 工具脚本：migrate-from-official.sh 自动修 volkov 插件 volume 覆盖坑
+
+从官方 TeslaMate 迁移时，「分时电价配置」5 个 form panel 报 `panel not found` 的根因是镜像内 plugin 目录被 grafana volume 覆盖。`migrate-from-official.sh` 现在会自动检测 + 兜底修复（grafana cli 在线装失败时打印「从镜像本地复制」的 docker cp 备选路径，照顾国内 grafana.com 超时用户）。**已经踩坑的 v1.7.0 / v1.7.1 迁移用户**：拉最新脚本重跑（`curl -fsSL -o migrate-from-official.sh https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/migrate-from-official.sh && bash migrate-from-official.sh`）即自动修，或者按 [TROUBLESHOOTING.md「从官方 TeslaMate 迁移后...」](TROUBLESHOOTING.md#-从官方-teslamate-迁移后分时电价配置整页报-panel-not-found-v170--v171-迁移用户) 手动 docker cp。
+
+### 📚 修订 docs/units-convention.md
+
+明确「速度统一用 velocitykmh 内置」决策（项目当前 13 处 vs `"km/h"` 字符串 5 处），合并 3 条自相矛盾的时长规则为 2 条「全 SQL 拼字符串」原则；SQL 模板补类型约束注释（`secs` 必须 bigint，否则 `mod(double precision, integer)` 错）；顶部加「维护者参考资料」声明。
+
 ### 兼容性
 
-纯文档 + GitHub 模板新增，**不动镜像、SQL、dashboard JSON**。已部署的用户 `git pull` 拿到新文档即可，不需要重启 / 拉镜像。
+镜像 / SQL / dashboard JSON **完全没变**——latest tag 内容跟 v1.7.1 一致。本版只是新增文档 + 改 migrate 脚本。已部署用户 `git pull` 拉新文档即可，不需要重启 / 拉镜像。
 
 ---
 

@@ -6,11 +6,6 @@ labels: ''
 assignees: ''
 ---
 
-<!--
-⚠️  开 issue 前请先按 https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md
-   把项目 prompt 复制给主流 AI 问一下，多数常见问题 AI 能直接给诊断方向，节省大家时间。
--->
-
 ## 我做过的尝试
 
 - [ ] 我已经按 [先问 AI 自助排查 prompt](https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md) 把项目背景 + 我的日志发给 AI 问过，AI 没解决或判断是项目 bug
