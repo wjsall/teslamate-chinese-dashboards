@@ -1,5 +1,54 @@
 # 更新日志
 
+## [v1.7.5] - 2026-05-17
+
+### 🐛 关键修复：TOU 分时电价费用偏低 5-15%（用户报告）
+
+**症状：** Dashboard 显示的分时电价费用永远低于充电桩 App 账单。
+
+**根因：** `compute_tou_cost()`（`sql/install-tou.sql:178`）用 `charge_energy_added`（电池**实收**电量）乘以加权电价，但实际电费应按 `charge_energy_used`（充电桩**输出**电量，含充电损耗）计费。两者通常差 5-15%（慢充损耗更大），直接导致 TOU 费用偏低。
+
+同一个 SQL 文件里 `set_default_charging_rate()`（v1.7.3 引入）已经正确使用 `GREATEST(charge_energy_added, charge_energy_used)`，并且注释明确写明「`charge_energy_used` 是充电桩输出（含损耗），通常 > `charge_energy_added`（车实际收到）」—— 但 `compute_tou_cost`（更早写的）忘了同步，本版补上。
+
+**v1.7.4 让影响更明显：** v1.7.4 把 6 个 dashboard 改造成走 `effective_cost()`，这个偏差从原来只在 tou-config 对账面板，扩散到 6 个 dashboard 都显示，更多用户注意到对不上账单。
+
+**修法：**
+
+```sql
+-- sql/install-tou.sql:187
+SELECT geofence_id, GREATEST(charge_energy_added, charge_energy_used)
+INTO cp_geofence_id, actual_kwh
+FROM charging_processes WHERE id = cp_id;
+```
+
+跟 `set_default_charging_rate` / charges 仪表盘「电价」列算法对齐。
+
+### 🔄 升级即自动回算历史费用
+
+旧的 `cost_tou` 旁路表数据全是按 added 算的，函数改了**不会自动重算**。本版 `scripts/upgrade.sh` 在装完 `install-tou.sql` 后会自动调用 `SELECT backfill_all_tou()`，秒级扫描所有历史充电并按新公式重算 cost_tou。
+
+**Watchtower / 自动镜像升级用户特别注意：** Watchtower 只换镜像、不跑 `upgrade.sh`，新公式不会自动套到旧数据上。**必须手动跑一次** SQL 回算（若 PG 容器名不是 `teslamate-database-1`，先 `docker ps | grep postgres` 查名替换）。
+
+第一步，先装最新的 `install-tou.sql`（让 `compute_tou_cost` 函数升到 v1.7.5 公式）：
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.7.5/sql/install-tou.sql" \
+  | docker exec -i teslamate-database-1 psql -U teslamate -d teslamate
+```
+
+第二步，回算历史费用：
+
+```bash
+docker exec -i teslamate-database-1 psql -U teslamate -d teslamate \
+  -c "SELECT * FROM backfill_all_tou();"
+```
+
+输出会显示扫描了几笔、回算了几笔、跳过几笔（未配 TOU 的）。
+
+**安全说明：** `backfill_all_tou()` 只重写 `charging_processes_tou_cost` 旁路表（TOU 计算缓存），**不动 `charging_processes.cost` 字段**（你手填的单笔单价、默认电价填的兜底价完全保留）。算法权威，旁路表即使全部重算也不会丢用户数据。
+
+---
+
 ## [v1.7.4] - 2026-05-16
 
 ### 🐛 统一费用口径（让现有 dashboard 用上 v1.5 引入的 `effective_cost()` 函数）
