@@ -100,6 +100,19 @@ else
         echo -e "${GREEN}  ✓ 分时电价表/函数/触发器/视图已就绪${NC}"
         echo "    用 'bash scripts/tou-wizard.sh' 配置峰谷电价（可选，没装也不影响主仪表盘）"
         TOU_INSTALLED=1
+
+        # v1.7.5: compute_tou_cost 公式从 charge_energy_added 改为
+        # GREATEST(added, used)。旁路表已有 cost_tou 是旧公式算的，重跑回算修正。
+        # 单笔几毫秒，对个人用户（百~千笔）秒级完成，无副作用（旁路表仅函数写入）。
+        echo "    回算历史 TOU 费用（v1.7.5 算法修正）..."
+        if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+                -At -c "SELECT format('  ✓ 已扫描 %s 笔充电，回算 %s 笔，跳过 %s 笔（未配 TOU 的）', processed, updated, skipped) FROM backfill_all_tou();" \
+                2> /tmp/tou-backfill.log; then
+            :
+        else
+            echo -e "${YELLOW}    ⚠ 回算失败（不影响升级，可稍后手动跑 SELECT backfill_all_tou();）${NC}"
+            sed 's/^/      /' /tmp/tou-backfill.log | head -10
+        fi
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"
         sed 's/^/    /' /tmp/tou-install.log | head -20

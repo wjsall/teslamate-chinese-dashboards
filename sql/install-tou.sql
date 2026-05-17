@@ -170,10 +170,15 @@ $$ LANGUAGE plpgsql STABLE;
 -- 4. 核心：compute_tou_cost(cp_id) — 单笔 TOU 实际费用
 --    返回 NULL 表示无 tou_rates 配置（用户未启用 TOU），调用方应回退到原 cost
 --
--- 算法：「按比例分配」防止 sum(power×dt) ≠ charge_energy_added 的积分误差
+-- 算法：「按比例分配」防止 sum(power×dt) ≠ 真实总 kWh 的积分误差
 --   weighted_rate = SUM(raw_kwh × rate) / SUM(raw_kwh)
---   tou_cost = charge_energy_added × weighted_rate
---   即先在各时段算占比，再乘以 TeslaMate 报告的真实总 kWh，总数严格守恒
+--   tou_cost = GREATEST(charge_energy_added, charge_energy_used) × weighted_rate
+--   即先在各时段算占比，再乘以 TeslaMate 报告的电网侧总 kWh，总数严格守恒
+--
+-- v1.7.5: 总 kWh 从 charge_energy_added（电池实收）改为
+--   GREATEST(charge_energy_added, charge_energy_used)（电网侧 / 桩输出，含损耗），
+--   与 set_default_charging_rate / charges 仪表盘「电价」列算法一致；
+--   原来用 added 会让 TOU 费用比充电桩账单偏低 ~5-15%。
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION compute_tou_cost(cp_id INT)
 RETURNS NUMERIC AS $$
@@ -184,7 +189,8 @@ DECLARE
   actual_kwh NUMERIC;
   has_any_rate BOOLEAN;
 BEGIN
-  SELECT geofence_id, charge_energy_added INTO cp_geofence_id, actual_kwh
+  SELECT geofence_id, GREATEST(charge_energy_added, charge_energy_used)
+  INTO cp_geofence_id, actual_kwh
   FROM charging_processes WHERE id = cp_id;
 
   IF actual_kwh IS NULL OR actual_kwh = 0 THEN RETURN 0; END IF;
