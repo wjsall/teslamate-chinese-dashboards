@@ -7,7 +7,7 @@
   Row 1 (h=4):  标题 + 说明
   Row 2 (h=5):  4 KPI（平均温度 / 平均能耗 / 最冷月能耗 / 最热月能耗）
   Row 3 (h=10): 温度桶能耗曲线（每 2°C 一档，柱色按温度梯度）
-  Row 4 (h=10): 月度温度 vs 能耗（双轴：蓝线温度 + 黄柱能耗）
+  Row 4 (h=10): 月度温度对比能耗（双轴：蓝线温度 + 黄柱能耗）
   Row 5 (h=8):  温度区间能耗对比柱图
   Row 6 (h=8):  季节能耗对比表
 
@@ -310,7 +310,7 @@ def build_panels():
 
 **怎么看**：
 - **温度桶曲线** — 每 2°C 一档，柱高=该桶中位能耗，柱色按温度冷蓝→热红
-- **月度双轴** — 蓝线月均温度 vs 黄柱月均能耗，反相关一目了然
+- **月度双轴** — 蓝线月均温度 与 黄柱月均能耗，反相关一目了然
 - **温度区间柱图** — 5 个温度档位的平均 Wh/km，估算续航差距
 - **季节对比** — 量化「冬季比夏季多耗 X%」
 """, {"x": 0, "y": 0, "w": 24, "h": 4}),
@@ -363,7 +363,7 @@ ORDER BY 1''',
             description=f"每 2°C 分一桶，画该桶里所有行驶的中位能耗。比散点更能看出趋势，柱顶数字仅在样本数 ≥{MIN_SAMPLES_PER_BUCKET} 时显示。"),
 
         # ─────── Row: 月度双轴 ───────
-        timeseries_panel(7, "📈 月度温度 vs 能耗（蓝线=温度，黄柱=能耗）",
+        timeseries_panel(7, "📈 月度温度对比能耗（蓝线=温度，黄柱=能耗）",
             f'''{DRIVES_BASE_CTE}
 SELECT
   date_trunc('month', start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone') AS time,
@@ -452,13 +452,13 @@ SELECT
   ROUND(SUM(distance)::numeric, 0) AS "总里程 (km)",
   ROUND(AVG(temp)::numeric, 1) AS "平均温度 (°C)",
   ROUND(AVG(wh_per_km)::numeric, 0) AS "平均能耗 (Wh/km)",
-  ROUND(((AVG(wh_per_km) - (SELECT avg_filtered FROM overall)) / (SELECT avg_filtered FROM overall) * 100)::numeric, 1) AS "vs 过滤后均值 %"
+  ROUND(((AVG(wh_per_km) - (SELECT avg_filtered FROM overall)) / (SELECT avg_filtered FROM overall) * 100)::numeric, 1) AS "相对均值 %"
 FROM seasonal
 GROUP BY season, sort_order
 ORDER BY sort_order''',
             {"x": 12, "y": 29, "w": 12, "h": 8},
             overrides=[
-                {"matcher": {"id": "byName", "options": "vs 过滤后均值 %"},
+                {"matcher": {"id": "byName", "options": "相对均值 %"},
                  "properties": [
                      {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
                      # [-3, 3] 区间不染色（接近全年均值不告警）

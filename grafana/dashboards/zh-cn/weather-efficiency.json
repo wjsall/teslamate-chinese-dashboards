@@ -62,7 +62,7 @@
       "title": "",
       "options": {
         "mode": "markdown",
-        "content": "\n# 🌡️ 天气-能耗关联\n\n国内特斯拉车主 #1 痛点：「冬天到底掉多少电」。这个仪表盘用 TeslaMate 已记录的每次行驶外部温度 + 续航损耗，**量化温度对能耗的真实影响**。\n\n**怎么看**：\n- **温度桶曲线** — 每 2°C 一档，柱高=该桶中位能耗，柱色按温度冷蓝→热红\n- **月度双轴** — 蓝线月均温度 vs 黄柱月均能耗，反相关一目了然\n- **温度区间柱图** — 5 个温度档位的平均 Wh/km，估算续航差距\n- **季节对比** — 量化「冬季比夏季多耗 X%」\n"
+        "content": "\n# 🌡️ 天气-能耗关联\n\n国内特斯拉车主 #1 痛点：「冬天到底掉多少电」。这个仪表盘用 TeslaMate 已记录的每次行驶外部温度 + 续航损耗，**量化温度对能耗的真实影响**。\n\n**怎么看**：\n- **温度桶曲线** — 每 2°C 一档，柱高=该桶中位能耗，柱色按温度冷蓝→热红\n- **月度双轴** — 蓝线月均温度 与 黄柱月均能耗，反相关一目了然\n- **温度区间柱图** — 5 个温度档位的平均 Wh/km，估算续航差距\n- **季节对比** — 量化「冬季比夏季多耗 X%」\n"
       },
       "gridPos": {
         "x": 0,
@@ -152,7 +152,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Wh/km",
+          "unit": "none",
           "decimals": 0,
           "color": {
             "mode": "fixed",
@@ -212,7 +212,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Wh/km",
+          "unit": "none",
           "decimals": 0,
           "color": {
             "mode": "thresholds"
@@ -279,7 +279,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Wh/km",
+          "unit": "none",
           "decimals": 0,
           "color": {
             "mode": "thresholds"
@@ -447,7 +447,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "📈 月度温度 vs 能耗（蓝线=温度，黄柱=能耗）",
+      "title": "📈 月度温度对比能耗（蓝线=温度，黄柱=能耗）",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
@@ -663,7 +663,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "TeslaMate"
           },
-          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n,\nfiltered AS (\n  SELECT temp, wh_per_km, distance,\n    EXTRACT(MONTH FROM start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')::int AS month_local\n  FROM d\n  WHERE wh_per_km BETWEEN 50 AND 500\n),\nseasonal AS (\n  SELECT\n    CASE\n      WHEN month_local IN (12,1,2) THEN '🥶 冬 (12-2月)'\n      WHEN month_local IN (3,4,5)  THEN '🌸 春 (3-5月)'\n      WHEN month_local IN (6,7,8)  THEN '☀ 夏 (6-8月)'\n      ELSE '🍂 秋 (9-11月)'\n    END AS season,\n    CASE\n      WHEN month_local IN (12,1,2) THEN 1\n      WHEN month_local IN (3,4,5)  THEN 2\n      WHEN month_local IN (6,7,8)  THEN 3\n      ELSE 4\n    END AS sort_order,\n    temp, wh_per_km, distance\n  FROM filtered\n),\noverall AS (SELECT AVG(wh_per_km) AS avg_filtered FROM seasonal)\nSELECT\n  season AS \"季节\",\n  COUNT(*) AS \"行程数\",\n  ROUND(SUM(distance)::numeric, 0) AS \"总里程 (km)\",\n  ROUND(AVG(temp)::numeric, 1) AS \"平均温度 (°C)\",\n  ROUND(AVG(wh_per_km)::numeric, 0) AS \"平均能耗 (Wh/km)\",\n  ROUND(((AVG(wh_per_km) - (SELECT avg_filtered FROM overall)) / (SELECT avg_filtered FROM overall) * 100)::numeric, 1) AS \"vs 过滤后均值 %\"\nFROM seasonal\nGROUP BY season, sort_order\nORDER BY sort_order",
+          "rawSql": "\nWITH d AS (\n  SELECT\n    drives.start_date,\n    drives.outside_temp_avg AS temp,\n    drives.distance,\n    drives.duration_min,\n    ((drives.start_ideal_range_km - drives.end_ideal_range_km)\n       * c.efficiency * 1000.0 / NULLIF(drives.distance, 0)) AS wh_per_km\n  FROM drives\n  JOIN cars c ON c.id = drives.car_id\n  WHERE drives.car_id = $car_id\n    AND drives.distance > 1\n    AND drives.outside_temp_avg IS NOT NULL\n    AND drives.start_ideal_range_km IS NOT NULL\n    AND drives.end_ideal_range_km IS NOT NULL\n    AND drives.end_date IS NOT NULL\n    AND $__timeFilter(drives.start_date)\n)\n,\nfiltered AS (\n  SELECT temp, wh_per_km, distance,\n    EXTRACT(MONTH FROM start_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone')::int AS month_local\n  FROM d\n  WHERE wh_per_km BETWEEN 50 AND 500\n),\nseasonal AS (\n  SELECT\n    CASE\n      WHEN month_local IN (12,1,2) THEN '🥶 冬 (12-2月)'\n      WHEN month_local IN (3,4,5)  THEN '🌸 春 (3-5月)'\n      WHEN month_local IN (6,7,8)  THEN '☀ 夏 (6-8月)'\n      ELSE '🍂 秋 (9-11月)'\n    END AS season,\n    CASE\n      WHEN month_local IN (12,1,2) THEN 1\n      WHEN month_local IN (3,4,5)  THEN 2\n      WHEN month_local IN (6,7,8)  THEN 3\n      ELSE 4\n    END AS sort_order,\n    temp, wh_per_km, distance\n  FROM filtered\n),\noverall AS (SELECT AVG(wh_per_km) AS avg_filtered FROM seasonal)\nSELECT\n  season AS \"季节\",\n  COUNT(*) AS \"行程数\",\n  ROUND(SUM(distance)::numeric, 0) AS \"总里程 (km)\",\n  ROUND(AVG(temp)::numeric, 1) AS \"平均温度 (°C)\",\n  ROUND(AVG(wh_per_km)::numeric, 0) AS \"平均能耗 (Wh/km)\",\n  ROUND(((AVG(wh_per_km) - (SELECT avg_filtered FROM overall)) / (SELECT avg_filtered FROM overall) * 100)::numeric, 1) AS \"相对均值 %\"\nFROM seasonal\nGROUP BY season, sort_order\nORDER BY sort_order",
           "format": "table"
         }
       ],
@@ -677,7 +677,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "vs 过滤后均值 %"
+              "options": "相对均值 %"
             },
             "properties": [
               {
