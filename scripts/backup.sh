@@ -9,16 +9,21 @@
 #   1. 自动检测运行中的 PostgreSQL 容器名（可用 DB_CONTAINER 覆盖）
 #   2. pg_dump -Fc 导出到临时文件
 #   3. 校验导出成功（退出码 + 文件非空 + pg_restore -l 可列出）
-#   4. 仅校验通过后才原子改名为正式备份，并清理超出保留份数的旧备份
-#   5. 全程写日志到 $BACKUP_DIR/backup.log，任何失败 exit 1（cron/任务计划可报警）
+#   4. 仅校验通过后才原子改名为正式备份；默认连 docker-compose.yml（含 ENCRYPTION_KEY）
+#      一并快照，让这份备份能独立恢复（INCLUDE_CONFIG=0 可关）
+#   5. 清理超出保留份数的旧备份
+#   6. 全程写日志到 $BACKUP_DIR/backup.log，任何失败 exit 1（cron/任务计划可报警）
 #
 # 安全保证（这是本脚本存在的理由）:
 #   - pg_dump 失败 → 立即中止，不产出文件、绝不删除任何旧备份
 #   - 本轮备份未确认成功 → 保留清理一步不执行
 #   - 只写备份、从不碰数据库，回滚天然安全
 #
-# ⚠️ 本脚本只备份数据库。ENCRYPTION_KEY（在 docker-compose.yml / .env）请另行留底，
-#    否则即使数据库恢复成功，Tesla token 也永远解密不出来，必须重新授权。
+# ⚠️ 默认会把 docker-compose.yml（含 ENCRYPTION_KEY）一并放进备份目录
+#    （teslamate-compose-SECRET.yml），这样备份能独立恢复——否则光有数据库 dump、
+#    没有密钥，恢复后 Tesla token 解不开、必须重新授权。
+#    代价：谁拿到这份备份就能解你的 Tesla token —— 请保证备份目录私密、别公开分享
+#    （发论坛求助前删掉它）。不想包含：INCLUDE_CONFIG=0。
 #
 # 本脚本产出 -Fc 格式，恢复要用 pg_restore（不是 psql < xxx.sql）。
 # 恢复 + 演练流程见 TROUBLESHOOTING.md「定期自动备份数据库」(#db-backup) 与「整机迁移」恢复步骤。
@@ -31,6 +36,8 @@ KEEP="${KEEP:-4}"                        # 保留最近几份（按时间，coun
 DB_USER="${DB_USER:-teslamate}"
 DB_NAME="${DB_NAME:-teslamate}"
 DB_CONTAINER="${DB_CONTAINER:-}"         # 留空则自动探测
+INCLUDE_CONFIG="${INCLUDE_CONFIG:-1}"    # 1=备份含 docker-compose.yml（含密钥）以便独立恢复；0=不含
+COMPOSE_FILE="${COMPOSE_FILE:-}"         # docker-compose.yml 路径，留空自动找
 
 # 安全下限：至少保留 1 份（含本轮刚生成的），防止 KEEP=0 把新备份也删掉
 case "$KEEP" in
@@ -95,8 +102,31 @@ fi
 
 # ---- 4. 原子改名为正式备份（此前都没动过任何已有备份）----
 mv -f "$TMP" "$FINAL"
+chmod 600 "$FINAL" 2>/dev/null || true   # dump 含定位历史 + 加密 token，锁到仅本人可读
 HUMAN_SIZE=$(du -h "$FINAL" 2>/dev/null | cut -f1)
 log "✅ 备份成功：$FINAL（$HUMAN_SIZE）"
+
+# ---- 4.5 配置快照：默认把 docker-compose.yml（含 ENCRYPTION_KEY）一起备份，让这份备份能独立恢复 ----
+if [ "$INCLUDE_CONFIG" != "0" ]; then
+    cf=""
+    for cand in \
+        "$COMPOSE_FILE" \
+        "$SCRIPT_DIR/docker-compose.yml" \
+        "./docker-compose.yml" "./compose.yml" \
+        "$SCRIPT_DIR/../docker-compose.yml" \
+        "${HOME:-}/teslamate-chinese/docker-compose.yml"; do
+        if [ -n "$cand" ] && [ -f "$cand" ]; then cf="$cand"; break; fi
+    done
+    if [ -z "$cf" ]; then
+        log "⚠ 没找到 docker-compose.yml，本份备份不含密钥。恢复时需另备 ENCRYPTION_KEY（或设 COMPOSE_FILE=路径）"
+    elif cp -f "$cf" "$BACKUP_DIR/teslamate-compose-SECRET.yml" 2>/dev/null; then
+        chmod 600 "$BACKUP_DIR/teslamate-compose-SECRET.yml" 2>/dev/null || true
+        log "✅ 已快照配置（含密钥）：$BACKUP_DIR/teslamate-compose-SECRET.yml —— 这份备份可独立恢复"
+        log "⚠ 含密钥！备份目录务必私密，别公开分享（发论坛求助前删掉它）。不想包含：INCLUDE_CONFIG=0"
+    else
+        log "⚠ 配置快照复制失败（不影响数据库备份）。恢复时请另备 ENCRYPTION_KEY"
+    fi
+fi
 
 # ---- 5. 保留清理：仅本轮成功后执行，按时间保留最近 $KEEP 份 ----
 # 文件名为受控零填充时间戳（teslamate-YYYYmmdd_HHMM.dump），字典序即时间序，
@@ -121,4 +151,4 @@ if [ "$REMAIN" -gt "$KEEP" ]; then
     REMAIN=$KEEP
 fi
 log "===== 完成：现存 $REMAIN 份备份，本轮清理 $DELETED 份 ====="
-log "提醒：ENCRYPTION_KEY（docker-compose.yml / .env）请单独留底，否则恢复后 token 解不开。"
+[ "$INCLUDE_CONFIG" = "0" ] && log "提醒：你未包含配置（INCLUDE_CONFIG=0），ENCRYPTION_KEY 请单独留底，否则恢复后 token 解不开。"

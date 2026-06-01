@@ -1303,6 +1303,7 @@ docker compose start teslamate
 
 - 导出失败（`pg_dump` 报错 / 文件异常小 / 归档损坏）→ **立即中止，绝不产出空文件、绝不删除任何已有备份**；
 - 只有本轮确认成功，才清理超出保留份数的旧备份；
+- **默认连 `docker-compose.yml`（含 `ENCRYPTION_KEY`）一起快照**（存成 `teslamate-compose-SECRET.yml`），让这份备份能**独立恢复**——否则光有数据库 dump、没密钥，恢复后 token 解不开（详见下方「关于密钥与隐私」）；
 - 任何失败 `exit 1`（cron / 任务计划能据此报警），全程写日志到 `$BACKUP_DIR/backup.log`。
 
 **最省事：一键安装用户重跑安装脚本**
@@ -1324,7 +1325,7 @@ curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards
 BACKUP_DIR=~/teslamate-chinese/backups KEEP=7 bash ~/teslamate-chinese/backup.sh
 ```
 
-成功后会在 `BACKUP_DIR` 生成 `teslamate-YYYYmmdd_HHMM.dump`（`-Fc` 压缩格式），并自动只保留最近 `KEEP` 份。可配环境变量：`BACKUP_DIR`（默认 `./backups`）/ `KEEP`（默认 `4`）/ `DB_CONTAINER`（留空自动探测）。
+成功后会在 `BACKUP_DIR` 生成 `teslamate-YYYYmmdd_HHMM.dump`（`-Fc` 压缩格式）+ 一份 `teslamate-compose-SECRET.yml`（含密钥的配置，只留最新一份），并自动只保留最近 `KEEP` 份 dump。可配环境变量：`BACKUP_DIR`（默认 `./backups`）/ `KEEP`（默认 `4`）/ `DB_CONTAINER`（留空自动探测）/ `INCLUDE_CONFIG`（默认 `1`；设 `0` 则备份不含密钥）/ `COMPOSE_FILE`（`docker-compose.yml` 路径，留空自动找）。
 
 跑通后挂到定时任务，按环境二选一：
 
@@ -1347,9 +1348,9 @@ crontab -e
 0 3 * * *  BACKUP_DIR=$HOME/teslamate-chinese/backups KEEP=7 bash $HOME/teslamate-chinese/backup.sh >> $HOME/teslamate-chinese/backups/cron.log 2>&1
 ```
 
-> ⚠️ **ENCRYPTION_KEY 一定要单独留底**：本脚本只备份数据库。`ENCRYPTION_KEY`（在 `docker-compose.yml` / `.env`）请另存到密码管理器——丢了它，即使数据库恢复成功，Tesla token 也永远解密不出来，必须重新授权。
+> 🔐 **关于密钥与隐私**：默认每个备份目录里会有一份 `teslamate-compose-SECRET.yml`（就是你的 `docker-compose.yml`，含 `ENCRYPTION_KEY`）。好处是这份备份能**独立恢复**，你不必再手抄密钥。代价：**谁拿到这份备份就能解出你的 Tesla token（token 能控车）**——所以备份目录务必私密（自己的 NAS / 私有网盘即可），**别公开分享，发论坛求助前先把这个文件删掉**。完全不想包含密钥：备份命令加 `INCLUDE_CONFIG=0`（那就得自己单独留底 `ENCRYPTION_KEY`，否则恢复后 token 解不开、必须重新授权）。
 
-> 🔁 **恢复 + 演练**：本脚本产出 `-Fc` 格式，恢复要用 `pg_restore`（见上面「整机迁移」恢复步骤 5–6：先 `DROP SCHEMA` + 重建 extensions，再 `pg_restore`），**不要**用 `psql < xxx.sql`（那是 plain SQL 格式的恢复法，对 `.dump` 不适用）。强烈建议做完第一次备份后**立刻演练一次恢复到测试库**——没验证过能恢复的备份，不算备份。
+> 🔁 **恢复 + 演练**：数据库 dump 是 `-Fc` 格式，恢复要用 `pg_restore`（见上面「整机迁移」恢复步骤 5–6：先 `DROP SCHEMA` + 重建 extensions，再 `pg_restore`），**不要**用 `psql < xxx.sql`（那是 plain SQL 的恢复法，对 `.dump` 不适用）。新机器上先把 `teslamate-compose-SECRET.yml` 改回 `docker-compose.yml`（密钥就齐了）再恢复数据库。强烈建议做完第一次备份后**立刻演练一次恢复到测试库**——没验证过能恢复的备份，不算备份。
 
 ---
 

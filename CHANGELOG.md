@@ -1,5 +1,18 @@
 # 更新日志
 
+## [v1.7.9] - 2026-06-01
+
+### 🆕 备份默认自洽：连密钥一起备，避免「备份了却恢复不了」
+
+之前 `backup.sh` 故意不备份 `ENCRYPTION_KEY`，导致一个隐蔽的坑：用户辛苦做了每日备份，真出事（磁盘挂 / 重装）把 `docker-compose.yml` 一起搞没了，光剩数据库 dump **解不开、白备**。站在用户角度，最痛的失败就是「做对了备份却恢复不了」，本版默认堵上：
+
+- **`scripts/backup.sh` 默认连 `docker-compose.yml`（含 `ENCRYPTION_KEY`）一起快照**（存成 `teslamate-compose-SECRET.yml`，只留最新一份），让每份备份都能**独立恢复**，用户不必再手抄那串复杂的随机密钥；
+- **隐私警告 + 逃生口**：含密钥意味着拿到备份的人能解你的 Tesla token（token 能控车），脚本会提醒「备份目录务必私密、别公开分享」；安全顾虑大的用户可 `INCLUDE_CONFIG=0` 关闭（关了则需自己单独留底密钥）；
+- 自动查找 `docker-compose.yml`（`COMPOSE_FILE` 可显式指定），找不到则降级为纯数据库备份并提示；
+- **一键脚本 + 文档对齐**：`simple-deploy.sh` 装完凭据区加一句「这三项也都在 `docker-compose.yml` 里，没抄到可找回」（消除恐慌）；设置自动备份时说明备份已含密钥；`TROUBLESHOOTING.md#db-backup` 新增「关于密钥与隐私」+ 恢复时先把 `teslamate-compose-SECRET.yml` 改回 `docker-compose.yml`；README 同步。
+
+> 说明：`GRAFANA_PASS` 忘了可 `docker exec ... grafana cli admin reset-admin-password` 重置，不需备份；真正不可替代的只有 `ENCRYPTION_KEY`。
+
 ## [v1.7.8] - 2026-06-01
 
 ### 🐛 修复 + 🆕 一键脚本集成备份：之前的备份提示对一键用户是假的

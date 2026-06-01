@@ -167,7 +167,8 @@ setup_backup() {
         echo "  ✓ 已设每日 03:00 自动备份 → $BK_DIR（保留 7 份）"
         echo "    查看：crontab -l    日志：$BK_DIR/cron.log"
     fi
-    echo "  ⚠ ENCRYPTION_KEY 仍需单独留底（脚本不备份它），否则恢复后 token 解不开"
+    echo "  ℹ 备份会连 docker-compose.yml（含密钥）一起存 → 这份备份能独立恢复；"
+    echo "    请保证备份目录私密、别公开分享（不想含密钥：备份命令加 INCLUDE_CONFIG=0）"
 }
 
 # 检查 Docker 和 Docker Compose
@@ -579,6 +580,7 @@ echo "  GRAFANA_PASS   = $GRAFANA_PASS"
 echo ""
 echo "  📁 docker-compose.yml 备份位置：$INSTALL_DIR/docker-compose.yml"
 echo "     （已设 mode 600，仅当前用户可读）"
+echo "     ↑ 上面三项也都写在这个文件里，没抄到可随时从这里找回（只要这个目录还在）"
 echo ""
 echo "  ❌ ENCRYPTION_KEY 丢失 → 所有 Tesla Token 永远解密不出 → 必须重新授权"
 echo "  ❌ DATABASE_PASS 丢失 → 数据库迁移/恢复全部失败"

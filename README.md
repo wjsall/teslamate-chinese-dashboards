@@ -127,7 +127,7 @@
 > ```
 > 详见 [TeslaMate 官方 backup_restore](https://docs.teslamate.org/docs/maintenance/backup_restore) + [我们的 TROUBLESHOOTING「整机迁移」](TROUBLESHOOTING.md)。
 >
-> 想**定期自动备份**？一键安装（`simple-deploy.sh`）装时/升级时会问「设置每日自动备份？」，通用 Linux 选 Y 自动写好 crontab、群晖给 DSM 步骤。脚本是 `scripts/backup.sh`（导出失败自动中止、绝不删除已有备份、自动保留最近 N 份）。手动设置见 [TROUBLESHOOTING.md「定期自动备份数据库」](TROUBLESHOOTING.md#db-backup)。
+> 想**定期自动备份**？一键安装（`simple-deploy.sh`）装时/升级时会问「设置每日自动备份？」，通用 Linux 选 Y 自动写好 crontab、群晖给 DSM 步骤。脚本是 `scripts/backup.sh`（导出失败自动中止、绝不删除已有备份、自动保留最近 N 份），并**默认连含密钥的配置一起备份**，让备份能独立恢复（不必手抄 `ENCRYPTION_KEY`；备份目录请保持私密）。手动设置见 [TROUBLESHOOTING.md「定期自动备份数据库」](TROUBLESHOOTING.md#db-backup)。
 >
 > ### 升级出问题？完全可逆
 >
