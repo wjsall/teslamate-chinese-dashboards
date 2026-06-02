@@ -293,6 +293,14 @@ BEGIN
       (target_geofence_id, 13, 15, 0.6683, '夏尖', '2026-07-01', '2026-08-31'),
       (target_geofence_id, 18, 21, 0.6683, '冬尖', '2026-12-01', '2027-02-28');
     inserted := 4;
+  WHEN 'wuhan', '武汉' THEN
+    INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES
+      (target_geofence_id, 23, 7,  0.43, '谷'),
+      (target_geofence_id, 7,  17, 0.58, '平'),
+      (target_geofence_id, 17, 20, 0.68, '峰'),
+      (target_geofence_id, 20, 22, 0.78, '尖'),
+      (target_geofence_id, 22, 23, 0.68, '峰');
+    inserted := 5;
   ELSE
     inserted := 0;
   END CASE;
@@ -909,7 +917,8 @@ CREATE OR REPLACE FUNCTION list_city_templates() RETURNS TABLE (
     ('shenzhen',  '深圳'),
     ('guangzhou', '广州'),
     ('zhejiang',  '浙江/杭州'),
-    ('jiangsu',   '江苏/南京（含夏冬尖峰）')
+    ('jiangsu',   '江苏/南京（含夏冬尖峰）'),
+    ('wuhan',     '武汉')
   ) AS t(city_id, display_name);
 $$ LANGUAGE sql IMMUTABLE;
 

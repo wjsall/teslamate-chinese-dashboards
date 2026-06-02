@@ -1080,6 +1080,11 @@
                 "id": "jiangsu",
                 "value": "jiangsu",
                 "label": "江苏/南京"
+              },
+              {
+                "id": "wuhan",
+                "value": "wuhan",
+                "label": "武汉"
               }
             ]
           },
