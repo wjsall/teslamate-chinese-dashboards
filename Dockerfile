@@ -1,10 +1,11 @@
-# 基于 TeslaMate 官方 Grafana 镜像（锁定版本，避免上游变更导致容器崩溃）
+# 基于 TeslaMate 官方 Grafana 镜像（跟随上游 :latest，随上游 Grafana 版本滚动；
+# 不锁定——Grafana 13.0.1 已用我们 45+3 个面板 + volkovlabs-form-panel 6.3.2 实测兼容）
 FROM teslamate/grafana:latest
 
 # 标签信息
 LABEL maintainer="wjsall"
 LABEL description="TeslaMate Grafana with Chinese Dashboards"
-LABEL version="1.7.5"
+LABEL version="1.7.10"
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans
