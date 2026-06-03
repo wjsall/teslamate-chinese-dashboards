@@ -1,6 +1,6 @@
 # 更新日志
 
-## [v1.7.10] - 2026-06-03
+## [v1.7.8] - 2026-06-03
 
 ### 🆕 新增武汉/湖北居民充电分时电价模板（社区 PR，感谢 @zc8806）
 
@@ -14,9 +14,7 @@
 
 `Dockerfile` 注释原写「锁定版本」，但实际是 `FROM teslamate/grafana:latest`（跟随上游、不锁定），改为准确描述并把 `LABEL version` 补到当前版本。借此在 NAS 隔离环境用 **Grafana 13.0.1** 实测：45+3 个仪表盘全部 provision 成功、零面板类型/Angular/schema 报错，`volkovlabs-form-panel 6.3.2` 也正常装载 —— 上游将来发 G13 基础镜像时可平滑跟上。
 
-> 本版镜像同时交付自 v1.7.7 以来 v1.7.8 / v1.7.9 的改动（备份脚本接入一键安装、备份默认含密钥可独立恢复、三选一菜单等，详见下方对应段落）。**升级看到武汉选项**：重跑 `upgrade.sh` / 一键脚本补装 SQL + `docker compose pull` 拉新镜像。
-
-## [v1.7.9] - 2026-06-01
+> **升级看到武汉选项**：重跑 `upgrade.sh` / 一键脚本补装 SQL + `docker compose pull` 拉新镜像。本版还包含下方备份相关改进（一键集成、默认含密钥可独立恢复、三选一菜单）。
 
 ### 🆕 备份默认自洽：连密钥一起备，避免「备份了却恢复不了」
 
@@ -29,8 +27,6 @@
 - **一键脚本 + 文档对齐**：`simple-deploy.sh` 装完凭据区加一句「这三项也都在 `docker-compose.yml` 里，没抄到可找回」（消除恐慌）；设置自动备份时说明备份已含密钥；`TROUBLESHOOTING.md#db-backup` 新增「关于密钥与隐私」+ 恢复时先把 `teslamate-compose-SECRET.yml` 改回 `docker-compose.yml`；README 同步。
 
 > 说明：`GRAFANA_PASS` 忘了可 `docker exec ... grafana cli admin reset-admin-password` 重置，不需备份；真正不可替代的只有 `ENCRYPTION_KEY`。
-
-## [v1.7.8] - 2026-06-01
 
 ### 🐛 修复 + 🆕 一键脚本集成备份：之前的备份提示对一键用户是假的
 
