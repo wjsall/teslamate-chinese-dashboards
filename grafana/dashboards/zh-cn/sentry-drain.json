@@ -1,4 +1,22 @@
 {
+  "title": "⚡ 行车 vs 停车能耗（月度）",
+  "uid": "sentry-drain-cn",
+  "tags": [
+    "tesla",
+    "battery",
+    "efficiency"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "refresh": "",
+  "editable": true,
+  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
   "annotations": {
     "list": [
       {
@@ -10,14 +28,759 @@
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "标注与警报",
+        "name": "Annotations & Alerts",
         "type": "dashboard"
       }
     ]
   },
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "TeslaMate"
+        },
+        "definition": "车辆选择器（来自 cars 表）",
+        "includeAll": false,
+        "label": "车辆",
+        "name": "car_id",
+        "options": [],
+        "query": "SELECT\n    id as __value,\n    CASE WHEN COUNT(id) OVER (PARTITION BY name) > 1 AND name IS NOT NULL THEN CONCAT(name, ' - ', RIGHT(vin, 6)) ELSE COALESCE(name, CONCAT('VIN ', vin)) end as __text \nFROM cars\nORDER BY display_priority ASC, name ASC, vin ASC;",
+        "refresh": 1,
+        "regex": "",
+        "type": "query",
+        "regexApplyTo": "value"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "options": {
+        "mode": "markdown",
+        "content": "## ⚡ 行车 vs 停车能耗（月度）\n每月用电分 **🚗 行车** / **🅿️ 停车**；停车再分 **☀️ 醒着掉电**（停 >15 分钟没休眠）/ **😴 休眠掉电**（车待机休眠时的正常耗电）。\n> 「醒着掉电」混了坐车里、空调、预热、偶尔哨兵，分不清。判断哨兵看下方明细表的 **「空调状态」**：制热≈有人在车，制冷≈过热/A/C，空调关≈可能哨兵。"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "🚗 行车电耗 (kWh)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "SELECT ROUND(SUM((start_rated_range_km - end_rated_range_km) * c.efficiency)::numeric, 1) AS v\nFROM drives d JOIN cars c ON c.id = d.car_id\nWHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  AND (d.start_rated_range_km - d.end_rated_range_km) >= 0.1\n  AND $__timeFilter(d.start_date)",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "🅿️ 停车电耗 (kWh)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  )\nSELECT ROUND((SUM(drop_km) * (SELECT e FROM eff))::numeric, 1) AS v\nFROM clean WHERE $__timeFilter(ps)",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "🅿️ 停车占总能耗 (%)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  drv AS (\n    SELECT SUM((start_rated_range_km - end_rated_range_km) * (SELECT e FROM eff)) AS kwh\n    FROM drives WHERE car_id = $car_id AND end_date IS NOT NULL\n      AND (start_rated_range_km - end_rated_range_km) >= 0.1\n      AND $__timeFilter(start_date)\n  ),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  ),\n  pk AS (SELECT SUM(drop_km) * (SELECT e FROM eff) AS kwh FROM clean WHERE $__timeFilter(ps))\nSELECT ROUND(((SELECT kwh FROM pk) / NULLIF((SELECT kwh FROM drv) + (SELECT kwh FROM pk), 0) * 100)::numeric, 1) AS v",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "☀️ 醒着(未及时休眠)停车 (次)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  ),\n  park_online AS (\n    SELECT c.ps, c.pe, c.drop_km,\n      COALESCE(MAX(EXTRACT(EPOCH FROM (LEAST(s.end_date, c.pe) - GREATEST(s.start_date, c.ps))))\n               FILTER (WHERE s.state = 'online'), 0) / 3600.0 AS max_online_h\n    FROM clean c\n    LEFT JOIN states s ON s.car_id = $car_id AND s.end_date IS NOT NULL\n                       AND s.start_date < c.pe AND s.end_date > c.ps\n    GROUP BY c.ps, c.pe, c.drop_km\n  )\nSELECT COUNT(*) AS v FROM park_online WHERE max_online_h > 0.25 AND $__timeFilter(ps)",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 6,
+      "type": "piechart",
+      "title": "🥧 总能耗去向",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  drv AS (\n    SELECT SUM((start_rated_range_km - end_rated_range_km) * (SELECT e FROM eff)) AS kwh\n    FROM drives WHERE car_id = $car_id AND end_date IS NOT NULL\n      AND (start_rated_range_km - end_rated_range_km) >= 0.1\n      AND $__timeFilter(start_date)\n  ),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  )\nSELECT\n  ROUND((SELECT kwh FROM drv)::numeric, 1) AS \"🚗 行车\",\n  ROUND((COALESCE((SELECT SUM(drop_km) FROM clean WHERE $__timeFilter(ps)), 0) * (SELECT e FROM eff))::numeric, 1) AS \"🅿️ 停车\" ",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "🚗 行车"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "🅿️ 停车"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "pieType": "donut",
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "displayLabels": []
+      },
+      "pluginVersion": "12.4.0",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 8,
+        "h": 9
+      }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "📊 月度能耗：行车 vs 停车 (kWh)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  drive_m AS (\n    SELECT date_trunc('month', timezone('UTC', d.start_date), '$__timezone') AS m,\n           SUM((d.start_rated_range_km - d.end_rated_range_km) * (SELECT e FROM eff)) AS kwh\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n      AND (d.start_rated_range_km - d.end_rated_range_km) >= 0.1\n      AND $__timeFilter(d.start_date)\n    GROUP BY 1\n  ),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  ),\n  park_m AS (\n    SELECT date_trunc('month', timezone('UTC', ps), '$__timezone') AS m,\n           SUM(drop_km * (SELECT e FROM eff)) AS kwh\n    FROM clean WHERE $__timeFilter(ps) GROUP BY 1\n  )\nSELECT to_char(COALESCE(dr.m, pk.m), 'YYYY-MM') AS \"月份\",\n       ROUND(COALESCE(dr.kwh, 0)::numeric, 1) AS \"行车电耗\",\n       ROUND(COALESCE(pk.kwh, 0)::numeric, 1) AS \"停车电耗\"\nFROM drive_m dr FULL JOIN park_m pk ON dr.m = pk.m\nORDER BY 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "kWh",
+            "axisPlacement": "auto",
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "unit": "none",
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "行车电耗"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "停车电耗"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "月份",
+        "showValue": "auto",
+        "stacking": "normal",
+        "barWidth": 0.9,
+        "groupWidth": 0.7,
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        },
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 16,
+        "h": 9
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "🅿️ 月度停车拆分：醒着掉电 vs 休眠掉电 (kWh)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  ),\n  park_online AS (\n    SELECT c.ps, c.pe, c.drop_km,\n      COALESCE(MAX(EXTRACT(EPOCH FROM (LEAST(s.end_date, c.pe) - GREATEST(s.start_date, c.ps))))\n               FILTER (WHERE s.state = 'online'), 0) / 3600.0 AS max_online_h\n    FROM clean c\n    LEFT JOIN states s ON s.car_id = $car_id AND s.end_date IS NOT NULL\n                       AND s.start_date < c.pe AND s.end_date > c.ps\n    GROUP BY c.ps, c.pe, c.drop_km\n  ),\n  m AS (\n    SELECT date_trunc('month', timezone('UTC', ps), '$__timezone') AS m,\n           SUM(drop_km) FILTER (WHERE max_online_h >  0.25) AS awake_km,\n           SUM(drop_km) FILTER (WHERE max_online_h <= 0.25) AS sleep_km\n    FROM park_online WHERE $__timeFilter(ps) GROUP BY 1\n  )\nSELECT to_char(m, 'YYYY-MM') AS \"月份\",\n       ROUND((COALESCE(awake_km, 0) * (SELECT e FROM eff))::numeric, 1) AS \"☀️ 醒着掉电\",\n       ROUND((COALESCE(sleep_km, 0) * (SELECT e FROM eff))::numeric, 1) AS \"😴 休眠掉电\"\nFROM m ORDER BY 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "kWh",
+            "axisPlacement": "auto",
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "unit": "none",
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "☀️ 醒着掉电"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "😴 休眠掉电"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "月份",
+        "showValue": "auto",
+        "stacking": "normal",
+        "barWidth": 0.9,
+        "groupWidth": 0.7,
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        },
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 9
+      },
+      "description": "醒着掉电 = 停车 >15 分钟没休眠时掉的电（你坐车里/空调/预热/哨兵的混合）；休眠掉电 = 车正常休眠待机时的耗电。"
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "🔍 醒着停车明细（停 >15 分钟没休眠）",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "rawSql": "WITH eff AS (SELECT efficiency AS e FROM cars WHERE id = $car_id),\n  gaps AS (\n    SELECT d.end_date AS ps, d.end_rated_range_km AS r0,\n           LEAD(d.start_date)           OVER (ORDER BY d.start_date) AS pe,\n           LEAD(d.start_rated_range_km) OVER (ORDER BY d.start_date) AS r1\n    FROM drives d\n    WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n  ),\n  clean AS (\n    SELECT g.ps, g.pe, GREATEST(g.r0 - g.r1, 0) AS drop_km\n    FROM gaps g\n    WHERE g.pe IS NOT NULL AND g.pe > g.ps\n      AND NOT EXISTS (\n        SELECT 1 FROM charging_processes cp\n        WHERE cp.car_id = $car_id AND cp.start_date >= g.ps AND cp.start_date < g.pe)\n  ),\n  park_online AS (\n    SELECT c.ps, c.pe, c.drop_km,\n      COALESCE(MAX(EXTRACT(EPOCH FROM (LEAST(s.end_date, c.pe) - GREATEST(s.start_date, c.ps))))\n               FILTER (WHERE s.state = 'online'), 0) / 3600.0 AS max_online_h\n    FROM clean c\n    LEFT JOIN states s ON s.car_id = $car_id AND s.end_date IS NOT NULL\n                       AND s.start_date < c.pe AND s.end_date > c.ps\n    GROUP BY c.ps, c.pe, c.drop_km\n  )\nSELECT\n  to_char(timezone('$__timezone', timezone('UTC', ps)), 'YYYY-MM-DD HH24:MI') AS \"停车开始\",\n  ROUND((EXTRACT(EPOCH FROM (pe - ps)) / 3600)::numeric, 1) AS \"停车时长(h)\",\n  ROUND((max_online_h * 60)::numeric, 0) AS \"醒着(分钟)\",\n  ROUND(((cs.n_clim::numeric / NULLIF(cs.n, 0)) * max_online_h * 60)::numeric, 0) AS \"空调约开(分钟)\",\n  ROUND(cs.out_t::numeric, 0) AS \"室温℃\",\n  CASE\n    WHEN cs.n_clim::float / NULLIF(cs.n, 0) < 0.15 THEN '空调基本没开·可能哨兵'\n    WHEN cs.in_clim > cs.out_clim + 2 THEN '制热·可能有人在车'\n    ELSE '制冷·过热或开AC'\n  END AS \"判断\",\n  ROUND((drop_km * (SELECT e FROM eff))::numeric, 2) AS \"停车电耗(kWh)\"\nFROM park_online\nLEFT JOIN LATERAL (\n  SELECT COUNT(*) AS n,\n         COUNT(*) FILTER (WHERE p.is_climate_on) AS n_clim,\n         AVG(p.outside_temp) AS out_t,\n         AVG(p.inside_temp)  FILTER (WHERE p.is_climate_on) AS in_clim,\n         AVG(p.outside_temp) FILTER (WHERE p.is_climate_on) AS out_clim\n  FROM positions p\n  WHERE p.car_id = $car_id AND p.date >= park_online.ps AND p.date <= park_online.pe\n) cs ON TRUE\nWHERE max_online_h > 0.25 AND $__timeFilter(ps)\nORDER BY drop_km DESC\nLIMIT 30",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "停车电耗(kWh)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 3
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "判断"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "制热·可能有人在车": {
+                        "color": "orange",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "制冷·过热或开AC": {
+                        "color": "blue",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "空调基本没开·可能哨兵": {
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "停车电耗(kWh)",
+            "desc": true
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 10
+      },
+      "description": "「空调约开(分钟)」= 估算空调实际开了多久（≠醒着时长）。判断：空调开得久且制热≈有人在车；制冷≈过热/AC；空调基本没开但车长时间醒着≈可能哨兵或车不休眠。"
+    }
+  ],
   "links": [
     {
       "asDropdown": true,
@@ -31,887 +794,28 @@
     {
       "asDropdown": true,
       "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
       "tags": [
         "battery"
       ],
+      "targetBlank": false,
       "title": "电池",
-      "type": "dashboards"
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
     },
     {
       "asDropdown": false,
       "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
       "tags": [],
       "targetBlank": true,
       "title": "中文文档",
+      "tooltip": "",
       "type": "link",
       "url": "https://github.com/wjsall/teslamate-chinese-dashboards"
     }
-  ],
-  "panels": [
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 100,
-      "panels": [],
-      "title": "停车掉电概览",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "fixed"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none",
-          "displayName": "停车次数(次)"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 1
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT COUNT(*) AS park_count\nFROM sessions\nWHERE next_start IS NOT NULL\n  AND next_start > end_date\n  AND $__timeFilter(end_date);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "blue",
-            "mode": "fixed"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "percent",
-          "decimals": 1,
-          "displayName": "平均掉电(%)"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 1
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT ROUND(AVG(GREATEST(end_battery_level - next_soc, 0))::numeric, 1) AS avg_drain\nFROM sessions\nWHERE next_start IS NOT NULL\n  AND next_start > end_date\n  AND $__timeFilter(end_date);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "orange",
-            "mode": "fixed"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              }
-            ]
-          },
-          "unit": "percent",
-          "decimals": 1,
-          "displayName": "最大掉电(%)"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 1
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT MAX(GREATEST(end_battery_level - next_soc, 0)) AS max_drain\nFROM sessions\nWHERE next_start IS NOT NULL\n  AND next_start > end_date\n  AND $__timeFilter(end_date);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "purple",
-            "mode": "fixed"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none",
-          "decimals": 1
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/",
-          "values": true
-        },
-        "textMode": "value_and_name"
-      },
-      "title": "",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT\n  ROUND(AVG(EXTRACT(EPOCH FROM (next_start - end_date))/3600)::numeric, 1) AS \"平均时长(h)\",\n  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (next_start - end_date))/3600)::numeric, 1) AS \"中位时长(h)\"\nFROM sessions\nWHERE next_start IS NOT NULL\n  AND next_start > end_date\n  AND $__timeFilter(end_date);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "id": 101,
-      "panels": [],
-      "title": "掉电趋势",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "线性 回归 平均掉电%"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    8,
-                    8
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
-              },
-              {
-                "id": "custom.showPoints",
-                "value": "never"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "title": "月度平均停车掉电趋势（%）",
-      "type": "timeseries",
-      "transformations": [
-        {
-          "id": "regression",
-          "options": {
-            "modelType": "linear",
-            "xFieldName": "Time",
-            "yFieldName": "平均掉电%",
-            "predictionCount": 100
-          }
-        }
-      ],
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT\n  date_trunc('month', timezone('UTC', end_date), '$__timezone') AS time,\n  ROUND(AVG(GREATEST(end_battery_level - next_soc, 0))::numeric, 2) AS \"平均掉电%\"\nFROM sessions\nWHERE next_start IS NOT NULL\n  AND next_start > end_date\n  AND $__timeFilter(end_date)\nGROUP BY 1\nORDER BY 1;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
-      "id": 102,
-      "panels": [],
-      "title": "掉电分布",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "停车次数",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 1,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "id": 6,
-      "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 200
-      },
-      "title": "掉电区间分布（停车次数）",
-      "type": "barchart",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n),\nbuckets AS (\n  SELECT\n    GREATEST(end_battery_level - next_soc, 0) AS drain\n  FROM sessions\n  WHERE next_start IS NOT NULL AND next_start > end_date AND $__timeFilter(end_date)\n)\nSELECT\n  (FLOOR(drain / 5) * 5)::int::text || '~' || (FLOOR(drain / 5) * 5 + 5)::int::text || '%' AS drain_range,\n  COUNT(*) AS park_count\nFROM buckets\nGROUP BY FLOOR(drain / 5)\nORDER BY FLOOR(drain / 5);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "停车次数",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 1,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 15
-      },
-      "id": 7,
-      "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 200
-      },
-      "title": "停车时长分布 (次，按停车区间)",
-      "type": "barchart",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n),\nbuckets AS (\n  SELECT\n    EXTRACT(EPOCH FROM (next_start - end_date))/3600 AS hours\n  FROM sessions\n  WHERE next_start IS NOT NULL AND next_start > end_date AND $__timeFilter(end_date)\n)\nSELECT\n  CASE\n    WHEN hours < 1 THEN '< 1小时'\n    WHEN hours < 4 THEN '1~4小时'\n    WHEN hours < 8 THEN '4~8小时'\n    WHEN hours < 12 THEN '8~12小时'\n    WHEN hours < 24 THEN '12~24小时'\n    WHEN hours < 48 THEN '1~2天'\n    ELSE '> 2天'\n  END AS duration_range,\n  COUNT(*) AS park_count\nFROM buckets\nGROUP BY\n  CASE\n    WHEN hours < 1 THEN 1\n    WHEN hours < 4 THEN 2\n    WHEN hours < 8 THEN 3\n    WHEN hours < 12 THEN 4\n    WHEN hours < 24 THEN 5\n    WHEN hours < 48 THEN 6\n    ELSE 7\n  END,\n  CASE\n    WHEN hours < 1 THEN '< 1小时'\n    WHEN hours < 4 THEN '1~4小时'\n    WHEN hours < 8 THEN '4~8小时'\n    WHEN hours < 12 THEN '8~12小时'\n    WHEN hours < 24 THEN '12~24小时'\n    WHEN hours < 48 THEN '1~2天'\n    ELSE '> 2天'\n  END\nORDER BY\n  CASE\n    WHEN hours < 1 THEN 1\n    WHEN hours < 4 THEN 2\n    WHEN hours < 8 THEN 3\n    WHEN hours < 12 THEN 4\n    WHEN hours < 24 THEN 5\n    WHEN hours < 48 THEN 6\n    ELSE 7\n  END;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      },
-      "id": 103,
-      "panels": [],
-      "title": "最耗电停车记录",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 15
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "停车开始"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "停车结束"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "停车时长(小时)"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 130
-              },
-              {
-                "id": "unit",
-                "value": "h"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "停车前SOC%"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 110
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "停车后SOC%"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 110
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "掉电%"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 90
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 5
-                    },
-                    {
-                      "color": "red",
-                      "value": 15
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "id": 8,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "掉电%"
-          }
-        ]
-      },
-      "title": "最耗电停车 TOP20（时间范围内）",
-      "type": "table",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sessions AS (\n  SELECT\n    d.end_date,\n    d.end_address_id,\n    d.end_geofence_id,\n    p_end.battery_level AS end_battery_level,\n    LEAD(d.start_date) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_start,\n    LEAD(p_start.battery_level) OVER (PARTITION BY d.car_id ORDER BY d.start_date) AS next_soc\n  FROM drives d\n  LEFT JOIN positions p_end ON p_end.id = d.end_position_id\n  LEFT JOIN positions p_start ON p_start.id = d.start_position_id\n  WHERE d.car_id = $car_id AND d.end_date IS NOT NULL\n)\nSELECT\n  TO_CHAR((s.end_date AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone'), 'YYYY-MM-DD HH24:MI') AS \"停车开始\",\n  TO_CHAR((s.next_start AT TIME ZONE 'UTC' AT TIME ZONE '$__timezone'), 'YYYY-MM-DD HH24:MI') AS \"停车结束\",\n  ROUND(EXTRACT(EPOCH FROM (s.next_start - s.end_date))/3600, 1) AS \"停车时长(小时)\",\n  s.end_battery_level AS \"停车前SOC%\",\n  s.next_soc AS \"停车后SOC%\",\n  GREATEST(s.end_battery_level - s.next_soc, 0) AS \"掉电%\",\n  COALESCE(g.name, a.display_name, '未知地点') AS \"停车地点\"\nFROM sessions s\nLEFT JOIN addresses a ON a.id = s.end_address_id\nLEFT JOIN geofences g ON g.id = s.end_geofence_id\nWHERE s.next_start IS NOT NULL\n  AND s.next_start > s.end_date\n  AND $__timeFilter(s.end_date)\nORDER BY GREATEST(s.end_battery_level - s.next_soc, 0) DESC\nLIMIT 20;",
-          "refId": "A"
-        }
-      ]
-    }
-  ],
-  "refresh": "",
-  "schemaVersion": 41,
-  "tags": [
-    "tesla",
-    "battery"
-  ],
-  "templating": {
-    "list": [
-      {
-        "current": {},
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "TeslaMate"
-        },
-        "definition": "SELECT id AS __value, name AS __text FROM cars ORDER BY id",
-        "hide": 0,
-        "includeAll": false,
-        "label": "车辆",
-        "multi": false,
-        "name": "car_id",
-        "options": [],
-        "query": "SELECT id AS __value, name AS __text FROM cars ORDER BY id",
-        "refresh": 2,
-        "regex": "",
-        "sort": 0,
-        "type": "query"
-      }
-    ]
-  },
-  "time": {
-    "from": "now-90d",
-    "to": "now"
-  },
-  "timepicker": {},
-  "timezone": "browser",
-  "title": "停车掉电分析",
-  "uid": "sentry-drain-cn",
-  "version": 2,
-  "weekStart": ""
+  ]
 }
