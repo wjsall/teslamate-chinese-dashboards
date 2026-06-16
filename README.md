@@ -508,7 +508,7 @@ REPO_REF=v1.6.2 bash migrate-from-official.sh
 - ✅ Linux (Ubuntu/CentOS/Debian等)
 - ✅ macOS (Intel/Apple Silicon)
 - ✅ Windows (WSL2)
-- ✅ 树莓派 (ARM64)
+- ✅ 树莓派 **ARM64（64 位系统）** —— TeslaMate **v4.0 起已停止 ARMv7（32 位）支持**，老树莓派（Pi 3/4 装的 32 位 OS）需刷成 64 位系统才能升到 v4.0+
 
 ## 📚 相关链接
 
