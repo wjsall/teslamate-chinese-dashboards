@@ -84,7 +84,7 @@ CREATE OR REPLACE FUNCTION _tou_delete_season(
   v_to DATE
 ) RETURNS VOID AS $$
   DELETE FROM tou_rates
-  WHERE geofence_id = p_geofence_id
+  WHERE geofence_id IS NOT DISTINCT FROM p_geofence_id
     AND apply_to_dc = FALSE
     AND valid_from IS NOT DISTINCT FROM v_from
     AND valid_to   IS NOT DISTINCT FROM v_to;
@@ -252,7 +252,7 @@ DECLARE
   inserted INT := 0;
 BEGIN
   -- 先清掉这个 geofence 的 AC TOU 配置（保留 DC，避免误删）
-  DELETE FROM tou_rates WHERE geofence_id = target_geofence_id AND apply_to_dc = FALSE;
+  DELETE FROM tou_rates WHERE geofence_id IS NOT DISTINCT FROM target_geofence_id AND apply_to_dc = FALSE;
 
   CASE LOWER(TRIM(city_name))
   WHEN 'beijing', '北京' THEN
@@ -750,7 +750,7 @@ WITH expanded AS (
     h.hr
   FROM tou_rates r
   CROSS JOIN generate_series(0, 23) h(hr)
-  WHERE r.geofence_id = p_geofence_id
+  WHERE r.geofence_id IS NOT DISTINCT FROM p_geofence_id
     AND r.apply_to_dc = FALSE
     AND (
       (r.hour_start < r.hour_end AND h.hr >= r.hour_start AND h.hr < r.hour_end)
@@ -782,7 +782,7 @@ month_check AS (
   SELECT m.mo,
     EXISTS (
       SELECT 1 FROM tou_rates r
-      WHERE r.geofence_id = p_geofence_id
+      WHERE r.geofence_id IS NOT DISTINCT FROM p_geofence_id
         AND r.apply_to_dc = FALSE
         AND _tou_in_season(make_date(2024, m.mo, 15), r.valid_from, r.valid_to)
     ) AS has_rate

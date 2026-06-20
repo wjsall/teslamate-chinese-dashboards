@@ -102,7 +102,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "TeslaMate"
           },
-          "rawSql": "\nWITH hours AS (\n  SELECT generate_series(0, 23) AS h\n),\nactive AS (\n  SELECT hour_start, hour_end, rate, label, valid_from, valid_to\n  FROM tou_rates\n  WHERE apply_to_dc = FALSE\n    AND geofence_id = NULLIF('$geofence_filter', '')::INT\n    AND _tou_in_season((NOW() AT TIME ZONE '$__timezone')::DATE, valid_from, valid_to)\n)\nSELECT\n  lpad(h.h::TEXT, 2, '0') || ' 时' AS \"时点\",\n  COALESCE(\n    (SELECT rate\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    0\n  ) AS \"单价\",\n  COALESCE(\n    (SELECT label\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    '未配置'\n  ) AS \"标签\"\nFROM hours h\nORDER BY h.h\n",
+          "rawSql": "\nWITH hours AS (\n  SELECT generate_series(0, 23) AS h\n),\nactive AS (\n  SELECT hour_start, hour_end, rate, label, valid_from, valid_to\n  FROM tou_rates\n  WHERE apply_to_dc = FALSE\n    AND geofence_id IS NOT DISTINCT FROM NULLIF('$geofence_filter', '')::INT\n    AND _tou_in_season((NOW() AT TIME ZONE '$__timezone')::DATE, valid_from, valid_to)\n)\nSELECT\n  lpad(h.h::TEXT, 2, '0') || ' 时' AS \"时点\",\n  COALESCE(\n    (SELECT rate\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    0\n  ) AS \"单价\",\n  COALESCE(\n    (SELECT label\n     FROM active\n     WHERE (\n       (hour_start <= hour_end AND h.h >= hour_start AND h.h < hour_end) OR\n       (hour_start >  hour_end AND (h.h >= hour_start OR h.h < hour_end))\n     )\n     ORDER BY (CASE WHEN valid_from IS NOT NULL THEN 0 ELSE 1 END), rate DESC\n     LIMIT 1),\n    '未配置'\n  ) AS \"标签\"\nFROM hours h\nORDER BY h.h\n",
           "format": "table"
         }
       ],
@@ -945,7 +945,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "\nSELECT apply_tou_simple(\n  NULLIF('${payload.geofence_id}', '')::INT,\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.valley_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_3}', ''), 'undefined')),\n  '${payload.valley_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.peak_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_3}', ''), 'undefined')),\n  '${payload.peak_rate}',\n  '${payload.mid_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.sharp_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.sharp_range_2}', ''), 'undefined')),\n  '${payload.sharp_rate}',\n  COALESCE(NULLIF(NULLIF('${payload.deep_range_1}', ''), 'undefined'), ''),\n  '${payload.deep_rate}',\n  '${payload.from_month}', '${payload.from_day}',\n  '${payload.to_month}',   '${payload.to_day}'\n) AS inserted\n"
+            "rawSql": "\nSELECT apply_tou_simple(\n  NULLIF(NULLIF('${payload.geofence_id}', ''), 'undefined')::INT,\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.valley_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.valley_range_3}', ''), 'undefined')),\n  '${payload.valley_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.peak_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_2}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.peak_range_3}', ''), 'undefined')),\n  '${payload.peak_rate}',\n  '${payload.mid_rate}',\n  CONCAT_WS(',',\n    NULLIF(NULLIF('${payload.sharp_range_1}', ''), 'undefined'),\n    NULLIF(NULLIF('${payload.sharp_range_2}', ''), 'undefined')),\n  '${payload.sharp_rate}',\n  COALESCE(NULLIF(NULLIF('${payload.deep_range_1}', ''), 'undefined'), ''),\n  '${payload.deep_rate}',\n  '${payload.from_month}', '${payload.from_day}',\n  '${payload.to_month}',   '${payload.to_day}'\n) AS inserted\n"
           },
           "payloadMode": "all",
           "code": "",
@@ -1119,7 +1119,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "SELECT apply_city_template('${payload.city}', NULLIF('${payload.geofence_id}', '')::INT) AS inserted"
+            "rawSql": "SELECT apply_city_template('${payload.city}', NULLIF(NULLIF('${payload.geofence_id}', ''), 'undefined')::INT) AS inserted"
           },
           "payloadMode": "all",
           "code": "",
@@ -1255,7 +1255,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "UPDATE tou_rates SET rate = NULLIF('${payload.new_rate}', '')::NUMERIC WHERE id = NULLIF('${payload.rate_id}', '')::INT"
+            "rawSql": "UPDATE tou_rates SET rate = NULLIF(NULLIF('${payload.new_rate}', ''), 'undefined')::NUMERIC WHERE id = NULLIF(NULLIF('${payload.rate_id}', ''), 'undefined')::INT"
           },
           "payloadMode": "all",
           "code": "",
@@ -1402,7 +1402,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "DELETE FROM tou_rates WHERE id = NULLIF('${payload.rate_id}', '')::INT AND '${payload.confirm}' = 'yes'"
+            "rawSql": "DELETE FROM tou_rates WHERE id = NULLIF(NULLIF('${payload.rate_id}', ''), 'undefined')::INT AND '${payload.confirm}' = 'yes'"
           },
           "payloadMode": "all",
           "code": "",
@@ -1694,7 +1694,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "SELECT * FROM set_default_charging_rate(NULLIF('${payload.default_rate}', '')::NUMERIC)"
+            "rawSql": "SELECT * FROM set_default_charging_rate(NULLIF(NULLIF('${payload.default_rate}', ''), 'undefined')::NUMERIC)"
           },
           "payloadMode": "all",
           "code": "",

@@ -1832,7 +1832,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "-- 算法与 set_default_charging_rate (install-tou.sql) 保持一致：GREATEST(added,used) × rate\nUPDATE charging_processes SET cost = ROUND((GREATEST(charge_energy_added, charge_energy_used) * NULLIF('${payload.unit_price}', '')::NUMERIC)::NUMERIC, 2) WHERE id = NULLIF('${payload.cp_id}', '')::INT AND car_id = $car_id"
+            "rawSql": "-- 算法与 set_default_charging_rate (install-tou.sql) 保持一致：GREATEST(added,used) × rate\nUPDATE charging_processes SET cost = ROUND((GREATEST(charge_energy_added, charge_energy_used) * NULLIF(NULLIF('${payload.unit_price}', ''), 'undefined')::NUMERIC)::NUMERIC, 2) WHERE id = NULLIF(NULLIF('${payload.cp_id}', ''), 'undefined')::INT AND car_id = $car_id"
           },
           "payloadMode": "all",
           "code": "",
