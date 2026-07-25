@@ -177,10 +177,10 @@ done
 
 ### 提交前本地检查
 
-改动 `grafana/dashboards/` 下的 JSON 或 `sql/`/安装脚本前，提交 PR 前先在本地跑一遍这 3 个检查（PR CI 会跑这 3 项 lint；push main 时会先跑 lint、全绿后再构建镜像；本地先过能少一轮来回）：
+改动 `grafana/dashboards/` 下的 JSON 或 `sql/`/安装脚本前，提交 PR 前先在本地跑一遍这 4 个检查（PR CI 会跑这 4 项 lint；push main 时会先跑 lint、全绿后再构建镜像；本地先过能少一轮来回）：
 
 ```bash
-bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash scripts/check-dashboards-clean.sh
+bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash scripts/check-sql-revision.sh && bash scripts/check-dashboards-clean.sh
 ```
 
 ## 📋 发布流程

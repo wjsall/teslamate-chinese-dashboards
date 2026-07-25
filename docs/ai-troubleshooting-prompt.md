@@ -48,17 +48,19 @@ a3) 镜像旧版没有该仪表盘 → 拉新镜像：`docker compose pull grafa
 a4) **仅适用于手动挂载本地 `dashboards` 目录的场景**（如群晖 NAS 用户 scp 上传 JSON）：仪表盘 JSON 文件 owner 错（grafana 容器 uid 472 读不了，日志报 `permission denied`）→ `docker exec --user root teslamate-grafana-1 chown 472:472 /dashboards/<file>.json`。**simple-deploy.sh 一键部署用户的仪表盘在镜像内，不会有这个问题，不要无脑跑这条 chown。**
 
 **B. 仪表盘能打开，但里面的面板报 `panel not found`（面板级，国内迁移/升级高频）：**
-b1) 多半 grafana volume 覆盖了镜像里装好的第三方 plugin。最常见症状是「⚡ 分时电价配置」5 个 form panel 全报 panel not found，根因 grafana volume `teslamate-grafana-data` 挂载点 `/var/lib/grafana` 覆盖了 Dockerfile 装在 `/var/lib/grafana/plugins/volkovlabs-form-panel` 的目录（从官方 grafana 迁移 / 旧版升级都会踩）。
-   确诊：`docker exec teslamate-grafana-1 ls /var/lib/grafana/plugins | grep volkov` —— 看不到 volkovlabs-form-panel 就是。
-   **修复路径 A（推荐，无外网，国内首选）**：从镜像层 `docker cp` plugin 到 volume：
+b1) 新版镜像（issue #20/#21 修复后）插件已经装在 volume 外的 `/opt/grafana-plugins`，不会再有这个问题——先确认：`docker compose pull grafana && docker compose up -d --force-recreate grafana` 升级到新版镜像即可根治。
+   仍在用旧版镜像的用户：多半是 grafana volume 覆盖了镜像里装好的第三方 plugin。最常见症状是「⚡ 分时电价配置」5 个 form panel 全报 panel not found，根因 grafana volume `teslamate-grafana-data` 挂载点 `/var/lib/grafana` 覆盖了旧版 Dockerfile 装在 `/var/lib/grafana/plugins/volkovlabs-form-panel` 的目录（从官方 grafana 迁移 / 旧版升级都会踩）。
+   确诊：新版镜像看 `docker exec teslamate-grafana-1 ls /opt/grafana-plugins | grep volkov`；旧版镜像看 `docker exec teslamate-grafana-1 ls /var/lib/grafana/plugins | grep volkov` —— 看不到 volkovlabs-form-panel 就是。
+   **修复路径 A（推荐，无外网，国内首选，适用于仍在用旧版镜像的容器）**：从镜像层 `docker cp` plugin 到 volume（新版 `:latest` 镜像里插件在 `/opt/grafana-plugins`，旧版容器仍读 `/var/lib/grafana/plugins`）：
    ```
+   docker pull bswlhbhmt816/teslamate-chinese-dashboards:latest
    docker create --name volkov-tmp bswlhbhmt816/teslamate-chinese-dashboards:latest
-   docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkov && docker rm volkov-tmp
+   docker cp volkov-tmp:/opt/grafana-plugins/volkovlabs-form-panel /tmp/volkov && docker rm volkov-tmp
    docker cp /tmp/volkov teslamate-grafana-1:/var/lib/grafana/plugins/volkovlabs-form-panel
    docker exec --user root teslamate-grafana-1 chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel
    docker compose restart grafana && rm -rf /tmp/volkov
    ```
-   **修复路径 B（需 grafana.com 国内通畅）**：`docker exec --user root teslamate-grafana-1 grafana cli plugins install volkovlabs-form-panel 6.3.2 && docker compose restart grafana`
+   **修复路径 B（需 grafana.com 国内通畅）**：`grafana cli plugins install` 默认固定装到 `/var/lib/grafana/plugins`，不会读 `GF_PATHS_PLUGINS`（新老镜像都一样），所以要显式指定同一个目录再 chown，两者路径必须一致：`docker exec --user root teslamate-grafana-1 sh -c 'grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel 6.3.2 && chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel' && docker compose restart grafana`
 b2) panel 用了项目没装的别的第三方 plugin → 看 panel 的 type 字段，去 grafana.com plugins 查名字
 
 **问题 2：面板显示 No data / 数据为空**

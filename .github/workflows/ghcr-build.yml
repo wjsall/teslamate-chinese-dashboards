@@ -11,10 +11,18 @@ on:
       - main
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * 1'  # 每周一凌晨 2 点自动重新构建，拉取最新基础镜像修复漏洞
+    # 每周一凌晨 2 点：只读巡检上游 teslamate/grafana:latest 的 digest 是否变化
+    # （见下方 base-image-canary job）。基础镜像现在锁定 digest（见 Dockerfile），
+    # 这个 cron **不再触发任何镜像构建/推送**——锁定后同一 commit 重建 base image
+    # 恒定，重新构建没有意义。发现上游有新 digest 时会自动开 issue，不自动升级、
+    # 不自动发版，交给人工确认兼容后按常规发版流程走。
+    - cron: '0 2 * * 1'
 
 jobs:
   lint:
+    # schedule 触发只跑只读的 base-image-canary（见下），不构建/不发布，lint 门在
+    # 这条路径上没有下游消费者，跳过以节省 CI 分钟数。
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,12 +37,17 @@ jobs:
       - name: SQL 安装文件引用一致性
         run: bash scripts/check-sql-trio.sh
 
+      - name: SQL 对象契约 / SQL_COMPAT_REVISION 强制门（issue #33 同类教训）
+        run: bash scripts/check-sql-revision.sh
+
       - name: Dashboard JSON 环境残留脏值
         run: bash scripts/check-dashboards-clean.sh
 
   build:
     needs: lint
-    if: github.event_name != 'pull_request'
+    # schedule 不再构建/推送镜像（base image 锁 digest 后，同一 commit 重建内容恒定，
+    # 周期性重建没有意义）——那条路径改由下面的 base-image-canary 只读巡检覆盖。
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -77,7 +90,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Resolve image version
         id: version
@@ -110,3 +123,688 @@ jobs:
             VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # 冒烟测试：四条部署路径 + 旧卷遮蔽插件回归（issue #20/#21 根因）
+  #
+  # 共同设计原则（这些冒烟 job 需要真实 docker daemon 起多容器编排，能否在本地跑
+  # 取决于当前环境是否有可用的 docker daemon；靠这些注释交代清楚设计意图，方便本地
+  # 或 NAS 上手工验证时对照）：
+  #   - 只在非 pull_request 事件跑（push main / push tag / workflow_dispatch / schedule），
+  #     跟现有 build job 的 `if` 条件一致。原因两个：① 控制 PR 反馈时长——容器编排类测试
+  #     比 lint 慢一个数量级；② SQL_REF/REPO_REF 用 ${{ github.sha }} 现拉当前提交的 SQL，
+  #     对 push 到 main / push tag 这个 SHA 一定能被 raw.githubusercontent.com 解析，但对
+  #     fork 提的 pull_request，merge commit 是否总能这样解析没有实测确认过，干脆不在
+  #     PR 上跑，避免把环境不确定性误判成代码有问题。
+  #   - 每个 job 自己用 docker/build-push-action 在本 job 里现建一份镜像（cache-from 复用
+  #     build job 写的 GHA 缓存，跑得不慢），绝不去 Docker Hub / ghcr.io 拉旧版本镜像——
+  #     避免"假绿"：如果测试用的镜像不是这次改动产出的，测了个寂寞。
+  #     唯一例外是"冒烟③官方迁移"：migrate-from-official.sh 内部会 `docker compose pull`
+  #     grafana 镜像，纯本地镜像没法被 pull，所以那个 job 额外把本地镜像推到 ghcr.io 一个
+  #     临时 tag（仍是这次改动产出的镜像，只是多绕一次注册表）。
+  #   - 都不需要真实 Tesla 账号：只验证 Grafana/SQL/插件层面；teslamate 容器允许因为没
+  #     token 一直报"登录失败"重连，不影响 diagnose.sh --verify 判定的任何一项。
+  #   - 每条路径跑在独立 job = 独立 runner，天然互不干扰，不需要额外清理即可安全并行。
+  #   - "冒烟②旧版升级"需要在 GitHub Actions 的 detached HEAD 检出状态下跑
+  #     scripts/upgrade.sh 的 `git pull --rebase`——这是 CI harness 侧的适配（建一个跟踪
+  #     origin/main 的本地分支），不是改 upgrade.sh 本身；这个适配点没有在真实 GitHub
+  #     Actions 环境跑过，是本次唯一没有直接先例可循的部分，请在第一次真实 CI 运行时
+  #     重点看这个 job 的日志。
+  # ============================================================================
+
+  smoke-fresh-install:
+    name: "冒烟①全新安装"
+    needs: lint
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 本地构建这次改动的镜像（不经任何注册表）
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: teslamate-cn-ci:local
+          cache-from: type=gha
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+
+      - name: 非交互跑 simple-deploy.sh（GRAFANA_IMAGE/SQL_REF 均指向本次构建产物/本次提交）
+        env:
+          GRAFANA_IMAGE: teslamate-cn-ci:local
+          SQL_REF: ${{ github.sha }}
+        run: bash simple-deploy.sh < /dev/null
+
+      - name: 等 Grafana 就绪（最多 150 秒）
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; exit 0; }
+            sleep 5
+          done
+          echo "::warning::Grafana 150 秒内没就绪，继续跑 diagnose 让它给出具体原因" 
+
+      - name: diagnose --verify 必须 HEALTHY
+        run: |
+          cd "$HOME/teslamate-chinese"
+          OUT=$(bash "$GITHUB_WORKSPACE/scripts/diagnose.sh" --verify) || true
+          echo "$OUT"
+          echo "$OUT" | grep -qx 'RESULT=HEALTHY'
+
+      - name: 失败时收集容器日志
+        if: failure()
+        run: |
+          cd "$HOME/teslamate-chinese" 2>/dev/null || exit 0
+          docker compose ps
+          docker compose logs --tail 300
+
+  smoke-upgrade-from-old:
+    name: "冒烟②旧版升级"
+    needs: lint
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository（要 tag 历史，用来找"最新已发布版本"）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 本地构建这次改动的镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: teslamate-cn-ci:local
+          cache-from: type=gha
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+
+      - name: 解析最新已发布 tag
+        id: oldver
+        run: |
+          # 排除当前 ref 自己：tag push 触发时（github.ref = refs/tags/vX.Y.Z），
+          # actions/checkout + fetch-depth: 0 会把刚推的这个 tag 也拉下来，若不排除，
+          # `head -1` 选中的就是"正在构建、还没跑完的这次发布"本身——拿它当"升级前的旧
+          # 基线"去 pull，而对应的多架构镜像要等本工作流并行的 build job（10+ 分钟）跑完
+          # 才存在，几乎必然 manifest unknown 导致本 job 失败。
+          # push main 时 GITHUB_REF_NAME=main，不匹配任何 v* tag，不会误排除。
+          GITTAG=$(git tag --list 'v*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1)
+          if [ -z "$GITTAG" ]; then
+            echo "❌ 仓库里没有任何 v* tag，无法测试升级路径" >&2
+            exit 1
+          fi
+          echo "git_tag=$GITTAG" >> "$GITHUB_OUTPUT"
+          echo "img_tag=${GITTAG#v}" >> "$GITHUB_OUTPUT"
+          echo "找到最新已发布版本：$GITTAG（Docker Hub tag：${GITTAG#v}）"
+
+      - name: 部署旧版本作为升级前基线（镜像 + SQL 均锁定在旧 tag）
+        env:
+          GRAFANA_IMAGE: "bswlhbhmt816/teslamate-chinese-dashboards:${{ steps.oldver.outputs.img_tag }}"
+          SQL_REF: "${{ steps.oldver.outputs.git_tag }}"
+        run: bash simple-deploy.sh < /dev/null
+
+      - name: 等 Grafana 就绪
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; exit 0; }
+            sleep 5
+          done
+          echo "::warning::Grafana 150 秒内没就绪"
+
+      - name: 灌入合成数据（不需要真实 Tesla 账号，只为验证升级不丢数据）
+        run: |
+          DB=$(cd "$HOME/teslamate-chinese" && docker compose ps -q database)
+          docker exec -i "$DB" psql -U teslamate -d teslamate <<'SQL'
+          INSERT INTO cars (eid, vid, model, efficiency, inserted_at, updated_at)
+          VALUES (990001, 990001, '3', 0.153, now(), now());
+
+          INSERT INTO drives (start_date, end_date, distance, duration_min, car_id)
+          SELECT now() - interval '2 day', now() - interval '2 day' + interval '20 min', 8.2, 18, id
+          FROM cars WHERE eid = 990001
+          UNION ALL
+          SELECT now() - interval '1 day', now() - interval '1 day' + interval '15 min', 10.5, 15, id
+          FROM cars WHERE eid = 990001;
+          SQL
+          BEFORE=$(docker exec -i "$DB" psql -U teslamate -d teslamate -tAc 'SELECT count(*) FROM drives')
+          echo "升级前 drives 行数：$BEFORE"
+          echo "BEFORE_DRIVES=$BEFORE" >> "$GITHUB_ENV"
+
+      - name: 让本地 checkout 处于可 `git pull --rebase` 的分支状态（CI harness 适配，非改动 upgrade.sh）
+        run: |
+          # scripts/upgrade.sh 内部跑裸 `git pull --rebase`，GitHub Actions 默认 checkout
+          # 是 detached HEAD，会报 "You are not currently on a branch"。这里建一个跟踪
+          # origin/main 的本地分支——workflow 的 push 触发器本就只认 main 分支，tag 触发
+          # 时对应的提交也总是从 main 打出来的（本项目发版流程：先 push main 再打 tag），
+          # 所以 origin/main 对这两种触发场景都是安全、可预期的 upstream。
+          git fetch origin main --depth=1
+          git checkout -B ci-upgrade-test
+          git branch --set-upstream-to=origin/main ci-upgrade-test
+
+      - name: 跑 scripts/upgrade.sh（本次提交的 SQL，本地检出，不走网络拉取）
+        run: bash scripts/upgrade.sh
+
+      - name: 把 Grafana 镜像切到本次构建产物（模拟"升级完 SQL 后再手动换新镜像"的真实流程）
+        run: |
+          cd "$HOME/teslamate-chinese"
+          sed -i.bak -E "s|^([[:space:]]+image:[[:space:]]*)bswlhbhmt816/teslamate-chinese-dashboards:.*|\1teslamate-cn-ci:local|" docker-compose.yml
+          rm -f docker-compose.yml.bak
+          grep -A1 '  grafana:' docker-compose.yml | grep image:
+          docker compose up -d --no-deps grafana
+
+      - name: 等 Grafana 重启就绪
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; exit 0; }
+            sleep 5
+          done
+          echo "::warning::Grafana 150 秒内没就绪"
+
+      - name: diagnose --verify 必须 HEALTHY，且 drives 行数不能减少
+        run: |
+          cd "$HOME/teslamate-chinese"
+          OUT=$(bash "$GITHUB_WORKSPACE/scripts/diagnose.sh" --verify) || true
+          echo "$OUT"
+          echo "$OUT" | grep -qx 'RESULT=HEALTHY'
+
+          DB=$(docker compose ps -q database)
+          AFTER=$(docker exec -i "$DB" psql -U teslamate -d teslamate -tAc 'SELECT count(*) FROM drives')
+          echo "升级后 drives 行数：$AFTER（升级前：$BEFORE_DRIVES）"
+          if [ "$AFTER" -lt "$BEFORE_DRIVES" ]; then
+            echo "::error::升级后 drives 行数从 $BEFORE_DRIVES 降到 $AFTER，疑似丢数据"
+            exit 1
+          fi
+
+      - name: 失败时收集容器日志
+        if: failure()
+        run: |
+          cd "$HOME/teslamate-chinese" 2>/dev/null || exit 0
+          docker compose ps
+          docker compose logs --tail 300
+
+  smoke-migrate-official:
+    name: "冒烟③官方迁移（issue #20 事故路径）"
+    needs: lint
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # migrate-from-official.sh 内部会 docker compose pull，纯本地镜像拉不到，
+      # 所以把本次构建产物临时推一份到 ghcr 供它拉。
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送本次改动的镜像到临时 ci-test tag
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: "ghcr.io/${{ github.repository }}:ci-migrate-${{ github.run_id }}"
+          cache-from: type=gha
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+
+      - name: 起官方 TeslaMate + 官方 Grafana 栈（不含我们的中文镜像）
+        run: |
+          mkdir -p "$HOME/official-stack"
+          KEY=$(openssl rand -hex 32)
+          cat > "$HOME/official-stack/docker-compose.yml" <<EOF
+          services:
+            teslamate:
+              image: teslamate/teslamate:latest
+              restart: always
+              cap_drop:
+                - all
+              ports:
+                - "4000:4000"
+              volumes:
+                - ./import:/opt/app/import
+              environment:
+                - ENCRYPTION_KEY=${KEY}
+                - DATABASE_USER=teslamate
+                - DATABASE_PASS=teslamate_ci_pass
+                - DATABASE_NAME=teslamate
+                - DATABASE_HOST=database
+                - MQTT_HOST=mosquitto
+
+            database:
+              image: postgres:18-trixie
+              restart: always
+              volumes:
+                - teslamate-db:/var/lib/postgresql
+              environment:
+                - POSTGRES_USER=teslamate
+                - POSTGRES_PASSWORD=teslamate_ci_pass
+                - POSTGRES_DB=teslamate
+
+            grafana:
+              image: teslamate/grafana:latest
+              restart: always
+              ports:
+                - "3000:3000"
+              volumes:
+                - teslamate-grafana-data:/var/lib/grafana
+              environment:
+                - DATABASE_USER=teslamate
+                - DATABASE_PASS=teslamate_ci_pass
+                - DATABASE_NAME=teslamate
+                - DATABASE_HOST=database
+
+            mosquitto:
+              image: eclipse-mosquitto:2
+              restart: always
+              command: mosquitto -c /mosquitto-no-auth.conf
+              volumes:
+                - mosquitto-conf:/mosquitto/config
+                - mosquitto-data:/mosquitto/data
+
+          volumes:
+            teslamate-db:
+            teslamate-grafana-data:
+            mosquitto-conf:
+            mosquitto-data:
+          EOF
+          mkdir -p "$HOME/official-stack/import"
+          export COMPOSE_PROJECT_NAME=teslamate
+          echo "COMPOSE_PROJECT_NAME=teslamate" >> "$GITHUB_ENV"
+          docker compose -f "$HOME/official-stack/docker-compose.yml" up -d
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "官方栈 Grafana 就绪"; break; }
+            sleep 5
+          done
+
+      - name: 非交互跑 migrate-from-official.sh（NEW_IMAGE/REPO_REF 均指向本次改动产物）
+        env:
+          ASSUME_YES: "1"
+          NEW_IMAGE: "ghcr.io/${{ github.repository }}:ci-migrate-${{ github.run_id }}"
+          REPO_REF: ${{ github.sha }}
+        run: |
+          COMPOSE_FILE="$HOME/official-stack/docker-compose.yml" bash migrate-from-official.sh
+
+      - name: 等 Grafana 切换后就绪
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; exit 0; }
+            sleep 5
+          done
+          echo "::warning::Grafana 150 秒内没就绪"
+
+      - name: diagnose --verify 必须 HEALTHY
+        run: |
+          OUT=$(bash scripts/diagnose.sh --verify) || true
+          echo "$OUT"
+          echo "$OUT" | grep -qx 'RESULT=HEALTHY'
+
+      - name: 失败时收集容器日志
+        if: failure()
+        run: |
+          docker compose -f "$HOME/official-stack/docker-compose.yml" ps
+          docker compose -f "$HOME/official-stack/docker-compose.yml" logs --tail 300
+
+      # best-effort：GITHUB_TOKEN 能否删除 ghcr package version 没有做过实测确认
+      # （历史上这类删除常需要 PAT 而非 GITHUB_TOKEN），失败不影响本 job 的测试结论，
+      # 只是会在 ghcr 残留一个 ci-migrate-<run_id> 临时 tag，需要维护者用 PAT 或
+      # 网页 UI 定期清理。/user/... 端点假设包归属个人账号；若 wjsall 实际是
+      # organization，需要改成 /orgs/wjsall/packages/... —— 未确认，先按最常见的
+      # 个人账号场景写。
+      - name: 清理临时 ghcr tag（best-effort，见上方注释）
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PKG="${{ github.event.repository.name }}"
+          TAG="ci-migrate-${{ github.run_id }}"
+          gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
+            | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' \
+            | while read -r vid; do
+                [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" || true
+              done
+
+  smoke-manual-compose-degraded:
+    name: "冒烟④手动 compose 未跑 SQL → DEGRADED → 修复后 HEALTHY"
+    needs: lint
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 本地构建这次改动的镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: teslamate-cn-ci:local
+          cache-from: type=gha
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+
+      - name: 手动 compose 起栈（方法 B 模板，直接用我们的镜像，故意不跑 SQL 安装）
+        run: |
+          mkdir -p "$HOME/manual-stack/import"
+          KEY=$(openssl rand -hex 32)
+          cat > "$HOME/manual-stack/docker-compose.yml" <<EOF
+          services:
+            teslamate:
+              image: teslamate/teslamate:latest
+              restart: always
+              cap_drop:
+                - all
+              ports:
+                - "4000:4000"
+              volumes:
+                - ./import:/opt/app/import
+              environment:
+                - ENCRYPTION_KEY=${KEY}
+                - DATABASE_USER=teslamate
+                - DATABASE_PASS=teslamate_ci_pass
+                - DATABASE_NAME=teslamate
+                - DATABASE_HOST=database
+                - MQTT_HOST=mosquitto
+
+            database:
+              image: postgres:18-trixie
+              restart: always
+              volumes:
+                - teslamate-db:/var/lib/postgresql
+              environment:
+                - POSTGRES_USER=teslamate
+                - POSTGRES_PASSWORD=teslamate_ci_pass
+                - POSTGRES_DB=teslamate
+
+            grafana:
+              image: teslamate-cn-ci:local
+              restart: always
+              ports:
+                - "3000:3000"
+              volumes:
+                - teslamate-grafana-data:/var/lib/grafana
+              environment:
+                - DATABASE_USER=teslamate
+                - DATABASE_PASS=teslamate_ci_pass
+                - DATABASE_NAME=teslamate
+                - DATABASE_HOST=database
+                - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
+
+            mosquitto:
+              image: eclipse-mosquitto:2
+              restart: always
+              command: mosquitto -c /mosquitto-no-auth.conf
+              volumes:
+                - mosquitto-conf:/mosquitto/config
+                - mosquitto-data:/mosquitto/data
+
+          volumes:
+            teslamate-db:
+            teslamate-grafana-data:
+            mosquitto-conf:
+            mosquitto-data:
+          EOF
+          echo "COMPOSE_PROJECT_NAME=teslamate" >> "$GITHUB_ENV"
+          COMPOSE_PROJECT_NAME=teslamate docker compose -f "$HOME/manual-stack/docker-compose.yml" up -d
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; break; }
+            sleep 5
+          done
+
+      - name: diagnose --verify 必须是 DEGRADED，且 REASONS 含 sql_revision_mismatch
+        run: |
+          set +e
+          OUT=$(bash scripts/diagnose.sh --verify)
+          CODE=$?
+          set -e
+          echo "$OUT"
+          [ "$CODE" -eq 2 ] || { echo "::error::期待退出码 2 (DEGRADED)，实际 $CODE"; exit 1; }
+          echo "$OUT" | grep -qx 'RESULT=DEGRADED' || { echo "::error::期待 RESULT=DEGRADED"; exit 1; }
+          echo "$OUT" | grep '^REASONS=' | grep -q 'sql_revision_mismatch' \
+            || { echo "::error::REASONS 里没有 sql_revision_mismatch"; exit 1; }
+
+      - name: 执行修复：本地跑三组兼容性 SQL + 记录 revision（对照 TROUBLESHOOTING.md#repair-sql-install）
+        run: |
+          DB=$(docker compose -f "$HOME/manual-stack/docker-compose.yml" ps -q database)
+          for f in sql/install-coord-functions.sql sql/install-unit-functions.sql sql/install-tou.sql; do
+            echo "→ 装 $f"
+            docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 < "$f"
+          done
+          REV=$(grep -m1 '^SQL_COMPAT_REVISION=' config/versions.env | cut -d= -f2 | tr -d '[:space:]\r')
+          docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 <<SQL
+          CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
+              id              INTEGER PRIMARY KEY DEFAULT 1,
+              sql_revision    INTEGER NOT NULL,
+              updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+              project_version TEXT,
+              CONSTRAINT teslamate_cn_extension_meta_singleton CHECK (id = 1)
+          );
+          INSERT INTO teslamate_cn_extension_meta (id, sql_revision, updated_at, project_version)
+          VALUES (1, ${REV}, now(), 'ci-test')
+          ON CONFLICT (id) DO UPDATE SET
+              sql_revision = EXCLUDED.sql_revision,
+              updated_at   = EXCLUDED.updated_at;
+          SQL
+
+      - name: diagnose --verify 修复后必须 HEALTHY
+        run: |
+          OUT=$(bash scripts/diagnose.sh --verify) || true
+          echo "$OUT"
+          echo "$OUT" | grep -qx 'RESULT=HEALTHY'
+
+      - name: 失败时收集容器日志
+        if: failure()
+        run: |
+          docker compose -f "$HOME/manual-stack/docker-compose.yml" ps
+          docker compose -f "$HOME/manual-stack/docker-compose.yml" logs --tail 300
+
+  smoke-plugin-volume-shadow:
+    name: "冒烟⑤旧卷遮蔽插件回归（issue #20/#21 根因）"
+    needs: lint
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 本地构建这次改动的镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: teslamate-cn-ci:local
+          cache-from: type=gha
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+
+      - name: 用官方镜像预先"污染"一个持久卷（模拟从官方栈迁移过来的旧卷）
+        run: |
+          docker volume create shadow-test-grafana-data
+          # 用官方 teslamate/grafana 镜像 create（不需要 start）一次，触发 Docker 把镜像内
+          # /var/lib/grafana 的内容拷进这个此前为空的卷——这一步之后卷就"预先存在且非空"了，
+          # 复现 issue #20/#21 描述的"从官方栈迁移过来的旧卷"场景。
+          docker create --name shadow-seed -v shadow-test-grafana-data:/var/lib/grafana teslamate/grafana:latest
+          # 额外在旧卷里放一个"用户当年在旧路径自装的插件"标记目录，用来验证
+          # docker-entrypoint-wrapper.sh 的兼容软链逻辑真的执行了（不只是新路径没被覆盖）。
+          docker run --rm -v shadow-test-grafana-data:/var/lib/grafana busybox \
+            sh -c "mkdir -p /var/lib/grafana/plugins/fake-legacy-plugin && echo marker > /var/lib/grafana/plugins/fake-legacy-plugin/marker"
+          docker rm shadow-seed
+
+      - name: 用本次改动的镜像挂载这个旧卷启动，验证插件目录不被遮蔽
+        run: |
+          docker run -d --name shadow-test \
+            -v shadow-test-grafana-data:/var/lib/grafana \
+            teslamate-cn-ci:local
+          # docker-entrypoint-wrapper.sh 在 exec /run.sh 接管前完成软链，不依赖数据库，
+          # 几秒内就应该跑完；这里给点余量，且用 docker exec 直接查文件系统状态，
+          # 不依赖 grafana-server 本身是否因为没有数据库而后续退出。
+          for i in $(seq 1 15); do
+            docker exec shadow-test test -d /opt/grafana-plugins/volkovlabs-form-panel 2>/dev/null && break
+            sleep 2
+          done
+
+          echo "--- 检查 1：镜像自带插件（volume 外）不受旧卷内容影响 ---"
+          docker exec shadow-test test -d /opt/grafana-plugins/volkovlabs-form-panel \
+            && echo "✓ /opt/grafana-plugins/volkovlabs-form-panel 存在" \
+            || { echo "::error::/opt/grafana-plugins/volkovlabs-form-panel 缺失——插件被遮蔽了，issue #20/#21 回归！"; exit 1; }
+
+          echo "--- 检查 2：docker-entrypoint-wrapper.sh 把旧卷里的自装插件软链回新目录 ---"
+          docker exec shadow-test test -L /opt/grafana-plugins/fake-legacy-plugin \
+            && echo "✓ 旧卷自装插件已软链到新目录" \
+            || { echo "::error::旧卷里的 fake-legacy-plugin 没有被软链进 /opt/grafana-plugins，兼容逻辑回归！"; exit 1; }
+
+      - name: 失败时收集日志
+        if: failure()
+        run: docker logs shadow-test 2>&1 | tail -100 || true
+
+      - name: 清理
+        if: always()
+        run: |
+          docker rm -f shadow-test 2>/dev/null || true
+          docker volume rm shadow-test-grafana-data 2>/dev/null || true
+
+  # ============================================================================
+  # 基础镜像 digest 巡检（只读 canary，方案 B）
+  #
+  # 背景：Dockerfile 的 `FROM teslamate/grafana:latest@sha256:...` 现在锁定 digest
+  # （可审计构建输入），代价是原本 schedule 触发"拉取最新基础镜像修复漏洞"的目的
+  # 失效了——同一 commit 重建，锁定的 digest 恒定不变，周期性重建没有意义。
+  #
+  # 方案选择（A：删掉 schedule / B：改成只读巡检）：选 B。理由——项目是一人维护，
+  # B 把"上游出新版了吗"这件事自动化掉，人只需要在真有更新时看一眼 issue 并决定
+  # 要不要升级验证；A 则要求维护者自己记得定期手动检查，对一人维护更容易被忘记。
+  #
+  # 设计要点：
+  #   - 只比对 digest，不修改任何文件、不触发 build/push——不自动升级、不自动发版，
+  #     兼容性验证（45+3 个面板 + volkovlabs-form-panel）必须人工确认后才能改
+  #     Dockerfile、走常规发版流程（四道门 + 五个冒烟测试）。
+  #   - 用同一套 registry HTTP API（免 docker daemon，见本 job 步骤）取 manifest
+  #     list digest，且显式要求 accept manifest.list/index media type，确保比较的
+  #     是多架构 digest，不会被单平台 digest 污染判断。
+  #   - 避免重复开 issue：开之前按标题精确匹配现有 open issue，命中则追加评论；
+  #     不命中才新建。
+  #
+  # 与 Renovate 的关系：仓库根 renovate.json 也在盯 Dockerfile 里这同一个基础镜像的
+  # digest（enabledManagers 含 dockerfile + pinDigests），本 job 和 Renovate 目前是
+  # 两套独立巡检、功能有重叠。Renovate 真正启用跑起来之后（需要在 GitHub 上装
+  # Renovate App 或开 Mend hosted app），两边会各自开一条更新通知，属于重复噪音，
+  # 到时候可以考虑关掉本 job（或反过来关 Renovate 对这个包的规则），不必现在处理。
+  # ============================================================================
+
+  base-image-canary:
+    name: "基础镜像 digest 巡检（只读，不发布镜像）"
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 读取 Dockerfile 里锁定的 digest
+        id: locked
+        run: |
+          LOCKED=$(grep -oE 'teslamate/grafana:latest@sha256:[0-9a-f]{64}' Dockerfile | head -1 | sed -E 's/.*@//')
+          if [ -z "$LOCKED" ]; then
+            echo "::error::Dockerfile 里没找到锁定的 teslamate/grafana digest，FROM 行格式是不是变了？"
+            exit 1
+          fi
+          echo "digest=$LOCKED" >> "$GITHUB_OUTPUT"
+          echo "锁定 digest：$LOCKED"
+
+      - name: 查询上游 teslamate/grafana:latest 当前 digest（要求 manifest list/index，多架构）
+        id: upstream
+        run: |
+          TOKEN=$(curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:teslamate/grafana:pull" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+          UPSTREAM=$(curl -fsS \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json" \
+            -o /dev/null -D - \
+            "https://registry-1.docker.io/v2/teslamate/grafana/manifests/latest" \
+            | grep -i '^docker-content-digest:' | tr -d '\r' | awk '{print $2}')
+          if [ -z "$UPSTREAM" ]; then
+            echo "::error::没拿到上游 digest，registry API 响应异常，检查上面 curl 的输出"
+            exit 1
+          fi
+          echo "digest=$UPSTREAM" >> "$GITHUB_OUTPUT"
+          echo "上游当前 digest：$UPSTREAM"
+
+      - name: 一致则直接结束
+        if: steps.locked.outputs.digest == steps.upstream.outputs.digest
+        run: echo "锁定 digest 与上游一致，无需处理。"
+
+      - name: 不一致 → 开 issue（已有同名 open issue 则追加评论，不重复开）
+        if: steps.locked.outputs.digest != steps.upstream.outputs.digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOCKED: ${{ steps.locked.outputs.digest }}
+          UPSTREAM: ${{ steps.upstream.outputs.digest }}
+        run: |
+          TITLE="基础镜像 teslamate/grafana:latest 有新 digest 可更新"
+          EXISTING=$(gh issue list --state open --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+
+          BODY_FILE=$(mktemp)
+          {
+            echo "自动巡检（\`.github/workflows/ghcr-build.yml\` 的 \`base-image-canary\` job，每周一 02:00 UTC 跑一次）发现上游 \`teslamate/grafana:latest\` 的 digest 已变化。"
+            echo ""
+            echo "- 当前锁定（\`Dockerfile\`）：\`$LOCKED\`"
+            echo "- 上游最新：\`$UPSTREAM\`"
+            echo ""
+            echo "**下一步（人工确认后再改，不自动升级）：**"
+            echo "1. 确认新 digest 确实是多架构 manifest list（不是单平台）：\`docker manifest inspect teslamate/grafana@$UPSTREAM\`，应该看到 \`manifests\` 数组里含 \`linux/amd64\` 和 \`linux/arm64\` 两个平台。"
+            echo "2. 把 \`Dockerfile\` 里 \`FROM teslamate/grafana:latest@sha256:...\` 换成新 digest。"
+            echo "3. 按常规发版流程走 CI（四道门 lint + 五个冒烟测试）验证兼容后再合并/发版。"
+            echo "4. 处理完关闭本 issue。"
+            echo ""
+            echo "本 issue 由自动化创建，不代表项目本身有 bug。"
+          } > "$BODY_FILE"
+
+          if [ -n "$EXISTING" ]; then
+            echo "已存在同名 open issue #$EXISTING，追加评论"
+            gh issue comment "$EXISTING" --body-file "$BODY_FILE"
+          else
+            echo "开新 issue"
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi

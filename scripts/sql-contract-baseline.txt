@@ -1,0 +1,44 @@
+# scripts/sql-contract-baseline.txt
+# 自动生成——不要手改。跑 `bash scripts/check-sql-revision.sh --update-baseline` 重新生成。
+# 记录 sql/install-coord-functions.sql / install-unit-functions.sql / install-tou.sql
+# 三组 SQL 的对象契约快照（表列/函数签名/视图名/触发器/索引），配合
+# config/versions.env 的 SQL_COMPAT_REVISION 做 CI 强制门（issue #33 同类教训）。
+FORMAT_VERSION=1
+RECORDED_REVISION=1
+FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
+FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
+FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
+FUNCTION	_tou_clean_numeric	(IN:s:TEXT) RETURNS NUMERIC
+FUNCTION	_tou_delete_season	(IN:p_geofence_id:INT,IN:v_from:DATE,IN:v_to:DATE) RETURNS VOID
+FUNCTION	_tou_in_season	(IN:sample_date:DATE,IN:v_from:DATE,IN:v_to:DATE) RETURNS BOOLEAN
+FUNCTION	_tou_md_to_date	(IN:m:TEXT,IN:d:TEXT) RETURNS DATE
+FUNCTION	_tou_parse_ranges	(IN:p_str:TEXT) RETURNS TABLE(hr:INT)
+FUNCTION	apply_city_template	(IN:city_name:TEXT,IN:target_geofence_id:INT) RETURNS INT
+FUNCTION	apply_tou_pattern	(IN:p_geofence_id:INT,IN:p_pattern:TEXT,IN:p_rate_g:TEXT=D,IN:p_rate_p:TEXT=D,IN:p_rate_f:TEXT=D,IN:p_rate_j:TEXT=D,IN:p_rate_d:TEXT=D,IN:p_from_month:TEXT=D,IN:p_from_day:TEXT=D,IN:p_to_month:TEXT=D,IN:p_to_day:TEXT=D) RETURNS INT
+FUNCTION	apply_tou_simple	(IN:p_geofence_id:INT,IN:p_valley_ranges:TEXT,IN:p_valley_rate:TEXT,IN:p_peak_ranges:TEXT=D,IN:p_peak_rate:TEXT=D,IN:p_mid_rate:TEXT=D,IN:p_sharp_ranges:TEXT=D,IN:p_sharp_rate:TEXT=D,IN:p_deep_ranges:TEXT=D,IN:p_deep_rate:TEXT=D,IN:p_from_month:TEXT=D,IN:p_from_day:TEXT=D,IN:p_to_month:TEXT=D,IN:p_to_day:TEXT=D) RETURNS INT
+FUNCTION	audit_tou_config	(IN:p_geofence_id:INT) RETURNS TABLE(severity:TEXT,season:TEXT,detail:TEXT)
+FUNCTION	backfill_all_tou	() RETURNS TABLE(processed:INT,updated:INT,skipped:INT)
+FUNCTION	compute_tou_cost	(IN:cp_id:INT) RETURNS NUMERIC
+FUNCTION	convert_celsius	(IN:n:NUMERIC,IN:unit:TEXT) RETURNS NUMERIC
+FUNCTION	convert_km	(IN:n:NUMERIC,IN:unit:TEXT) RETURNS NUMERIC
+FUNCTION	convert_m	(IN:n:DOUBLE PRECISION,IN:unit:TEXT) RETURNS DOUBLE PRECISION
+FUNCTION	convert_tire_pressure	(IN:n:NUMERIC,IN:unit:TEXT) RETURNS NUMERIC
+FUNCTION	dedup_tou_rates	() RETURNS TABLE(removed:INT)
+FUNCTION	effective_cost	(IN:cp_id:INT,IN:fallback:NUMERIC) RETURNS NUMERIC
+FUNCTION	is_outside_china	(IN:lat:DOUBLE PRECISION,IN:lng:DOUBLE PRECISION) RETURNS BOOLEAN
+FUNCTION	lat_for_map	(IN:map_url:TEXT,IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+FUNCTION	list_city_templates	() RETURNS TABLE(city_id:TEXT,display_name:TEXT)
+FUNCTION	lng_for_map	(IN:map_url:TEXT,IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+FUNCTION	lookup_tou_rate	(IN:sample_ts:TIMESTAMP,IN:cp_geofence_id:INT,IN:is_dc:BOOLEAN) RETURNS NUMERIC
+FUNCTION	set_default_charging_rate	(IN:p_rate:NUMERIC) RETURNS TABLE(message:TEXT)
+FUNCTION	set_tou_batch	(IN:p_geofence_id:INT,IN:s1_start:TEXT,IN:s1_end:TEXT,IN:s1_rate:TEXT,IN:s1_label:TEXT,IN:s2_start:TEXT=D,IN:s2_end:TEXT=D,IN:s2_rate:TEXT=D,IN:s2_label:TEXT=D,IN:s3_start:TEXT=D,IN:s3_end:TEXT=D,IN:s3_rate:TEXT=D,IN:s3_label:TEXT=D,IN:s4_start:TEXT=D,IN:s4_end:TEXT=D,IN:s4_rate:TEXT=D,IN:s4_label:TEXT=D,IN:s5_start:TEXT=D,IN:s5_end:TEXT=D,IN:s5_rate:TEXT=D,IN:s5_label:TEXT=D,IN:s6_start:TEXT=D,IN:s6_end:TEXT=D,IN:s6_rate:TEXT=D,IN:s6_label:TEXT=D,IN:p_valid_from:TEXT=D,IN:p_valid_to:TEXT=D) RETURNS INT
+FUNCTION	trigger_compute_tou	() RETURNS TRIGGER
+FUNCTION	uninstall_tou	() RETURNS TEXT
+FUNCTION	wgs84_to_gcj02_lat	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+FUNCTION	wgs84_to_gcj02_lng	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+INDEX	tou_rates_geofence_idx	ON tou_rates(GEOFENCE_ID)
+INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_START,HOUR_END,COALESCE(VALID_FROM,'0001-01-01'::DATE),COALESCE(VALID_TO,'9999-12-31'::DATE),APPLY_TO_DC)
+TABLE	charging_processes_tou_cost	(charging_process_id:INT,cost_tou:NUMERIC(10,4),energy_by_period:JSONB,computed_at:TIMESTAMPTZ,rates_signature:TEXT)
+TABLE	tou_rates	(id:SERIAL,geofence_id:INT,hour_start:INT,hour_end:INT,rate:NUMERIC(10,4),weekday_mask:SMALLINT,valid_from:DATE,valid_to:DATE,apply_to_dc:BOOLEAN,label:TEXT,timezone:TEXT,created_at:TIMESTAMPTZ)
+TRIGGER	tou_recalc	AFTER INSERT OR UPDATE OF END_DATE, COST ON CHARGING_PROCESSES FOR EACH ROW WHEN (NEW.END_DATE IS NOT NULL) EXECUTE FUNCTION TRIGGER_COMPUTE_TOU()
+VIEW	charging_processes_v	EXISTS

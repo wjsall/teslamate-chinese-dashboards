@@ -186,9 +186,11 @@ newgrp docker
 # 容器名不是 teslamate-database-1 时先 docker compose ps -q database 查实际名
 DB=$(docker compose ps -q database)
 [ -n "$DB" ] || { echo "❌ database 容器没起来"; exit 1; }
-# 默认跟 :latest 镜像同步；需要锁版本时先 export SQL_REF=v1.6.2
-REF=${SQL_REF:-main}
+# 默认自动解析最新正式 Release（与 :latest 镜像版本对齐，见「三种更新通道」）；
+# 想锁到具体版本或滚动 main 通道，先 export SQL_REF=v1.6.2 / SQL_REF=main
 set -o pipefail
+REF="${SQL_REF:-$(curl -fsSL --max-time 10 https://api.github.com/repos/wjsall/teslamate-chinese-dashboards/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')}"
+REF="${REF:-main}"  # 解析失败（网络问题/API 限流）兜底滚动通道，见「三种更新通道」
 for f in install-coord-functions install-unit-functions install-tou install-indexes; do
   if ! curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REF}/sql/${f}.sql" \
     | docker exec -i "$DB" psql -U teslamate -d teslamate; then
@@ -196,10 +198,28 @@ for f in install-coord-functions install-unit-functions install-tou install-inde
     exit 1
   fi
 done
+# 记录 SQL 兼容性 revision（issue #23/#29 事故预防机制），让 scripts/diagnose.sh 之后不再
+# 报 sql_revision_mismatch。四个文件都装成功才走到这一步，失败不影响上面已经修好的功能。
+REV=$(curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REF}/config/versions.env" \
+  | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r')
+if [ -n "$REV" ]; then
+  docker exec -i "$DB" psql -U teslamate -d teslamate <<SQL
+CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    sql_revision INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    project_version TEXT,
+    CONSTRAINT teslamate_cn_extension_meta_singleton CHECK (id = 1)
+);
+INSERT INTO teslamate_cn_extension_meta (id, sql_revision, updated_at, project_version)
+VALUES (1, ${REV}, now(), '${REF}')
+ON CONFLICT (id) DO UPDATE SET sql_revision = EXCLUDED.sql_revision, updated_at = EXCLUDED.updated_at, project_version = EXCLUDED.project_version;
+SQL
+fi
 docker compose restart grafana
 ```
 
-脚本使用 `CREATE OR REPLACE` / `IF NOT EXISTS`，可安全重跑；一键安装用户直接重跑 `simple-deploy.sh` 也会自动安装。默认 `REF=main` 与 `:latest` 同步；需要锁版本时先执行 `export SQL_REF=v1.6.2`，安全取舍见 [信任模型](#sql-trust-model)。装完刷新即恢复。
+脚本使用 `CREATE OR REPLACE` / `IF NOT EXISTS`，可安全重跑；一键安装用户直接重跑 `simple-deploy.sh` 也会自动安装。默认自动解析最新正式 Release（与 `:latest` 镜像版本对齐，同一个 ref）；需要锁到具体版本或切到滚动 main 通道，先执行 `export SQL_REF=v1.6.2` 或 `export SQL_REF=main`，三条通道详见 [信任模型](#sql-trust-model)。装完刷新即恢复。
 
 ### ❌ 单位换算面板报 `function convert_km(...) does not exist`
 
@@ -247,21 +267,26 @@ docker compose up -d grafana
 
 **症状**：跑完 `migrate-from-official.sh` 后，打开「⚡ 分时电价配置」时整个仪表盘显示 `panel not found`，仪表盘列表里能搜到、Grafana 日志全是 INFO 无 ERROR。**v1.7.2+ 的 migrate 脚本已经自动修，这一节给已经踩坑的用户自助修复。**
 
-**根因**：「⚡ 分时电价配置」里 5 个 panel 用 `volkovlabs-form-panel` 第三方插件。我们镜像 build 时把它装在 `/var/lib/grafana/plugins`，但这条路径**正好是 Grafana volume `teslamate-grafana-data` 的挂载点**。从官方迁移来的用户，他们的 volume 来自官方 grafana 镜像（没装 volkov），切镜像时 volume 覆盖镜像的 plugin 目录 → 镜像里装好的插件用不上。
+> **新版镜像已从架构上解决这个问题**（[issue #20](https://github.com/wjsall/teslamate-chinese-dashboards/issues/20)、[issue #21](https://github.com/wjsall/teslamate-chinese-dashboards/issues/21)）：插件目录改到了 `teslamate-grafana-data` volume 外的 `/opt/grafana-plugins`，不会再被旧卷覆盖。`docker compose pull grafana && docker compose up -d --force-recreate grafana` 拉到新版镜像即可根治，不需要走下面的手动步骤。**以下内容保留给还没升级、仍在用旧版镜像的用户自助修复。**
+
+**根因（旧版镜像）**：「⚡ 分时电价配置」里 5 个 panel 用 `volkovlabs-form-panel` 第三方插件。旧版镜像 build 时把它装在 `/var/lib/grafana/plugins`，但这条路径**正好是 Grafana volume `teslamate-grafana-data` 的挂载点**。从官方迁移来的用户，他们的 volume 来自官方 grafana 镜像（没装 volkov），切镜像时 volume 覆盖镜像的 plugin 目录 → 镜像里装好的插件用不上。
 
 > 下面命令里的 `teslamate-grafana-1` 是默认容器名。如果你用 `-p someproject` 起的，容器名会变成 `someproject-grafana-1`——按 `docker ps | grep grafana` 实际结果替换。
 
 **修复路径 A — 从我们镜像本地复制 plugin（推荐，国内用户首选，无外网依赖）**：
 
 ```bash
-# 1. 临时启动一个用我们镜像的容器（不挂 volume，纯镜像层）
+# 1. 先拉最新镜像（本地缓存的 :latest 很可能还是旧版，不重新拉 /opt/grafana-plugins 不存在）
+docker pull bswlhbhmt816/teslamate-chinese-dashboards:latest
+
+# 2. 临时启动一个用我们镜像的容器（不挂 volume，纯镜像层；新版镜像插件在 /opt/grafana-plugins）
 docker create --name volkov-tmp bswlhbhmt816/teslamate-chinese-dashboards:latest
 
-# 2. cp 出 plugin
-docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel
+# 3. cp 出 plugin
+docker cp volkov-tmp:/opt/grafana-plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel
 docker rm volkov-tmp
 
-# 3. cp 进运行中的 grafana 容器（写入 volume）+ 修 owner
+# 4. cp 进运行中的 grafana 容器（写入旧版镜像仍在读取的 /var/lib/grafana/plugins）+ 修 owner
 docker cp /tmp/volkovlabs-form-panel teslamate-grafana-1:/var/lib/grafana/plugins/
 docker exec --user root teslamate-grafana-1 chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel
 docker compose restart grafana
@@ -289,11 +314,23 @@ curl -fsSL -o migrate-from-official.sh \
 bash migrate-from-official.sh    # 识别到已在我们镜像 → 会问要不要重装 SQL + 修 plugin
 ```
 
-**确诊命令**（看不到 `volkovlabs-form-panel` 目录就是这个坑）：
+**确诊命令**（新版镜像看 `/opt/grafana-plugins`，旧版镜像看 `/var/lib/grafana/plugins`；看不到 `volkovlabs-form-panel` 目录就是这个坑）：
 
 ```bash
-docker exec teslamate-grafana-1 ls /var/lib/grafana/plugins
+docker exec teslamate-grafana-1 ls /opt/grafana-plugins 2>/dev/null || docker exec teslamate-grafana-1 ls /var/lib/grafana/plugins
 ```
+
+**如需安装额外的 Grafana 插件（新版镜像用户）**：请用命令行方式安装并重启容器，插件才能在下次 `docker compose pull && docker compose up -d`（重建容器）后继续保留：
+
+```bash
+docker exec --user root teslamate-grafana-1 \
+    grafana cli --pluginsDir /var/lib/grafana/plugins plugins install <插件名>
+docker compose restart grafana
+```
+
+**通过 Grafana 网页界面（Administration → Plugins）安装的插件，在容器重建后会丢失**，建议改用上面的命令行方式安装。
+
+**降级提醒**：如果你从新版镜像降级回旧版镜像，插件目录会回到旧位置，可能需要按本节上面的手动方案重新安装插件。
 
 ---
 
@@ -1550,38 +1587,71 @@ docker compose up -d         # 重新开始
 
 ## 🔒 SQL 远程拉取的信任模型
 
-升级路径中的所有「SQL 安装文件」（`install-coord-functions` / `install-unit-functions` / `install-tou` / `install-indexes`）都是从 GitHub 拉到本地用 `psql` 执行。这是**典型的 `curl | bash` 信任模型**：
+升级路径中的所有「SQL 安装文件」（`install-coord-functions` / `install-unit-functions` / `install-tou` / `install-indexes`）、`scripts/backup.sh` 和 `config/versions.env` 都是从 GitHub 拉到本地用 `psql`/`bash` 执行。这是**典型的 `curl | bash` 信任模型**：
 
 - ✅ **传输安全**：HTTPS + GitHub 证书，中间人无法篡改
 - ⚠️ **来源信任**：你信任 `wjsall/teslamate-chinese-dashboards` 仓库的内容
-- ⚠️ **维护者风险**：若维护者 GitHub 账号被盗，攻击者可推恶意 SQL → 所有用 `main` ref 的用户下次升级会拉到恶意脚本 → psql 执行 → **数据库层任意代码执行**
+- ⚠️ **维护者风险**：若维护者 GitHub 账号被盗，攻击者可推恶意 SQL → 下次升级拉到恶意脚本 → psql 执行 → **数据库层任意代码执行**
+
+### `TARGET_REF`：统一推导「这次装的镜像」和「这次装的 SQL」
+
+`simple-deploy.sh` / `migrate-from-official.sh` 内部有一个 `TARGET_REF` 开关，统一决定「这次装的 SQL / 配套脚本版本」，并据此推导镜像 tag，避免出现「正式版镜像 + main 分支未发布 SQL」的混搭。三条通道：
+
+| 通道 | 怎么用 | 行为 |
+|---|---|---|
+| **正式版（默认）** | 不传任何变量 | 脚本自动查 GitHub 最新 Release 拿到具体版本号（如 `v1.8.4`），SQL / `scripts/backup.sh` / `config/versions.env` 都从这个版本号对应的 tag 拉取；镜像 tag 写 `latest`（Docker Hub / GHCR 的 `latest` 只在打正式 tag 时更新，语义上就是"当前最新正式版"，且是可变 tag，此后 `docker compose pull` 会持续跟着新版本走，不会像钉死数字 tag 那样永久停在安装当次的版本） |
+| **指定版本** | `TARGET_REF=v1.8.4 bash simple-deploy.sh` | 镜像和 SQL 都锁定到这个具体版本号（镜像 tag 如 `:1.8.4`），不管当前最新版是什么，也不会跟着未来的 `docker compose pull` 自动升级 |
+| **滚动 main** | `TARGET_REF=main bash simple-deploy.sh` | 镜像和 SQL 都跟 main 分支最新构建（CI 每次 push main 都会构建一个 `:main` tag 镜像，拿最新 bug 修复最快，但未必经过完整发版验证） |
+
+**优先级**：单独设置 `SQL_REF` / `REPO_REF` / `GRAFANA_IMAGE` / `NEW_IMAGE` 这些具体变量，会覆盖 `TARGET_REF` 的推导结果——高级用户想让 SQL 和镜像分开锁定（例如镜像用某个 commit sha 构建的 GHCR tag、SQL 锁某个 commit SHA）时用这条路。不单独设置时，两者都跟着 `TARGET_REF` 走。
+
+```bash
+# 默认：自动解析最新正式 Release，镜像与 SQL 同版本
+bash simple-deploy.sh
+
+# 锁定到指定正式版
+TARGET_REF=v1.8.4 bash simple-deploy.sh
+
+# 滚动 main 通道（想抢先用某个未发布修复）
+TARGET_REF=main bash simple-deploy.sh
+
+# 高级：单独覆盖某个具体变量（优先级最高）
+SQL_REF=v1.6.2 GRAFANA_IMAGE=bswlhbhmt816/teslamate-chinese-dashboards:1.6.2 bash simple-deploy.sh
+REPO_REF=v1.6.2 NEW_IMAGE=bswlhbhmt816/teslamate-chinese-dashboards:1.6.2 bash migrate-from-official.sh
+```
+
+**GitHub API 不可达时的兜底**：解析最新 Release 走的是未认证 GitHub API（限速 60 次/小时/IP，NAS、公司共享出口 IP 容易触发），网络问题、限流或仓库暂无 Release 时，脚本会打印明确警告，SQL 这次回退到 `main` 滚动通道拉取，但镜像 tag 仍然写 `latest`（不会因为一次 API 抖动就把镜像永久固化成 `:main`，退化成"更不稳定的滚动通道"）——不会静默失败或卡住。想避开这个网络请求，直接传 `TARGET_REF=v1.8.4`（或 `main`）跳过解析。
+
+`git clone` 用户的 `scripts/upgrade.sh` 不用 `TARGET_REF`——它跑在本地 checkout 里，SQL 直接读本地文件（`git pull` 之后就是最新代码，没有远程 ref 的问题）；唯一的默认值是 `PROJECT_IMAGE`（仅用于插件修复兜底命令的提示文本），会按本地 `git describe --tags --exact-match` 自动判断：checkout 正好在某个正式版 tag 上就对应那个数字 tag，否则（本地在 main 分支上，领先于最新正式版）对应 `:main`。
 
 ### 想强化安全的用户：锁固定版本
 
-把所有命令里的 `main` 替换成具体 tag（如 `v1.6.2`）：
-
 ```bash
-# 原（默认，跟 :latest 镜像同步）
-curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/sql/install-tou.sql" | ...
+# 原（默认，自动解析最新正式 Release）
+curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.8.4/sql/install-tou.sql" | ...
 
-# 锁版本（推荐有安全洁癖的用户）
+# 锁死到某个具体版本（有安全洁癖的用户，不随发版自动变化）
 curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/v1.6.2/sql/install-tou.sql" | ...
 ```
 
-或者跑 `simple-deploy.sh` / `migrate-from-official.sh` 时传环境变量：
+或者跑 `simple-deploy.sh` / `migrate-from-official.sh` 时传 `TARGET_REF`（见上表）。锁版本后**升级到新功能需要手动改 ref 数字**（不会自动升）。这是**安全 vs 便利的 trade-off**，按你需求选。
 
-```bash
-SQL_REF=v1.6.2 bash simple-deploy.sh
-REPO_REF=v1.6.2 bash migrate-from-official.sh
-```
+### 为什么默认不是固定版本号
 
-锁版本后**升级到新功能需要手动改 ref 数字**（不会自动升）。这是**安全 vs 便利的 trade-off**，按你需求选。
-
-### 为什么默认是 `main` 而不是固定版本
-
-- 大部分用户希望"重跑脚本就能拿到最新 bug 修复 / 函数升级"，固定 ref 反而让 Watchtower 自动升镜像后 SQL 不同步
+- 大部分用户希望"重跑脚本就能拿到最新正式版"，固定 ref 反而要求每次发版都记得改文档/命令里的版本号——这正是我们要避免的模式（发版了但常用入口没跟着更新）
+- 默认解析「最新 Release」而不是「main 滚动分支」：稳定安装拿到的永远是**经过完整发版验证**的版本，而不是刚合并、可能还没跑完冒烟测试的 main 分支内容
+- 想要「重跑就拿最新未发布修复」的用户，显式传 `TARGET_REF=main` 即可，不作为默认行为
 - 维护者账号被盗概率低（GitHub 2FA），破坏面广（所有用户）—— **这条主要靠 GitHub 账号防御 + 你愿意时锁版本**
 - 仓库公开，每条 SQL commit 都可审计，社区和我（维护者）第一时间能看到异常 push
+
+### 取舍：锁定正式版之后，脚本 hotfix 不再是「push 即生效」
+
+在引入 `TARGET_REF` 之前，`simple-deploy.sh` / `migrate-from-official.sh` 默认都是从 `main` 拉取 SQL，纯脚本层面的 bug 修复只要 push 到 main 就对所有新用户立刻生效，不需要走发版流程。锁定到「最新正式 Release」之后，**默认通道的用户只有在下一次正式发版（打 tag）后才能拿到脚本 / SQL 层面的修复**——这是为了换取"镜像和 SQL 永远来自同一次经过验证的提交"这个更重要的一致性保证，但确实牺牲了 hotfix 的即时性。
+
+补偿路径：
+- **脚本 / SQL 的紧急修复走 patch 版发布**（`vX.Y.(Z+1)`），不再等到攒够功能才发版；小版本号 bump 的成本本来就很低。
+- **想抢先拿到还没发版的修复**，显式传 `TARGET_REF=main`（滚动通道），代价是失去"镜像与 SQL 严格对齐"的保证——这也是为什么滚动通道不作为默认。
+- 这条取舍只影响**远程拉取路径**（一键脚本 / 迁移脚本）；`git clone` 用户跑 `scripts/upgrade.sh` 永远拿到的是 `git pull` 之后的本地最新代码，不受这个限制。
 
 ### Cloudflare 镜像（避免直连 GitHub raw）
 

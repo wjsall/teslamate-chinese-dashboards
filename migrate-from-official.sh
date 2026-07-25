@@ -7,15 +7,125 @@
 #
 # 安全提示：脚本通过 https 拉远程 SQL（GitHub raw）。如担心仓库被劫持，
 # 把 REPO_REF 设成具体 commit SHA：REPO_REF=abc123... bash migrate-from-official.sh
+#
+# 非交互运行（CI / 自动化，无 tty）：ASSUME_YES=1 bash migrate-from-official.sh（或 --yes / -y）
+# 所有 y/N 确认点会走安全默认值（详见脚本内各确认点旁的注释），不设置时行为与交互模式完全一致。
 
 set -euo pipefail
 
 # ── 配置 ────────────────────────────────────────────────────────────
-NEW_IMAGE="bswlhbhmt816/teslamate-chinese-dashboards:latest"
-# REPO_REF 默认 main（跟 :latest 镜像同步）。要锁版本传 REPO_REF=v1.6.1 或 commit SHA
-REPO_REF="${REPO_REF:-main}"
+#
+# TARGET_REF：稳定迁移的统一版本 ref —— NEW_IMAGE / REPO_REF（SQL + config/versions.env）
+# 全部锁定同一个 ref，避免"正式版镜像 + main 分支 SQL"混搭（详见 README「三种更新通道」）。
+#
+# 三条通道：
+#   - 不传任何变量（默认）：自动解析 GitHub 最新正式 Release，NEW_IMAGE / REPO_REF 都锁定
+#     这个 tag。
+#   - TARGET_REF=v1.8.4：显式锁定到指定正式版。
+#   - TARGET_REF=main：滚动通道，两者都用 main 分支最新构建（CI 每次 push main 都会构建
+#     一个 :main tag 镜像，与只在打正式 tag 时更新的 :latest 相互独立）。
+#
+# 优先级：单独设置 NEW_IMAGE / REPO_REF 会覆盖 TARGET_REF 的推导结果（高级用户明确要
+# 混搭版本时用，或想让 SQL 与镜像版本严格匹配到某个 commit SHA）；不单独设置时两者都
+# 跟着 TARGET_REF 走。
+#
+# GitHub API 有速率限制（未认证 60 次/小时/IP）：解析失败（网络问题 / 限流 / 仓库暂无
+# Release）一律回退到 main 滚动通道，并显式提示用户，不静默假装成功。
+resolve_target_ref() {
+    if [[ -n "${TARGET_REF:-}" ]]; then
+        echo "ℹ️  TARGET_REF=${TARGET_REF}（用户指定，跳过自动解析）"
+        return 0
+    fi
+    echo "🔍 解析最新正式 Release 版本..."
+    local resp tag
+    resp=$(curl -fsSL --max-time 10 \
+        "https://api.github.com/repos/wjsall/teslamate-chinese-dashboards/releases/latest" 2>/dev/null) || resp=""
+    # `|| true` 必须：resp 为空或没有 tag_name 字段时 grep -m1 找不到匹配会返回 1，
+    # set -o pipefail 下会让整条管道判定失败，在 set -e 下直接终止脚本——不加这个会让
+    # "API 不可达时的兜底"本身在兜底判断前就被 set -e 杀掉，兜底逻辑永远跑不到。
+    tag=$(printf '%s' "$resp" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || true
+    if [[ -n "$tag" ]]; then
+        TARGET_REF="$tag"
+        echo "  ✓ 最新正式版：${TARGET_REF}（SQL 锁定这个 tag，镜像用 latest——两者内容对齐同一版本）"
+    else
+        TARGET_REF="main"
+        echo "  ⚠️ 无法解析 GitHub 最新 Release（网络问题、未认证 API 限流 60次/小时/IP，或仓库暂无 Release）"
+        echo "     SQL 本次回退到 main 滚动通道拉取（可能包含尚未正式发版的改动）；镜像仍锁定 latest"
+        echo "     （最新正式版），不会因为这次解析失败就把镜像永久钉进 main 滚动通道"
+        echo "     想锁定具体版本重跑：TARGET_REF=v1.8.4 bash migrate-from-official.sh"
+    fi
+}
+# 只有 TARGET_REF 的推导结果会被实际用到时才发起网络请求：NEW_IMAGE 和 REPO_REF 都已经
+# 被显式设置时（常见于 CI 冒烟测试，如 NEW_IMAGE=ghcr.io/.../ci-migrate-123
+# REPO_REF=$GITHUB_SHA），TARGET_REF 不会被用在任何地方，跳过 GitHub API 调用，
+# 避免给不需要它的调用方增加网络依赖 / API 限流风险。
+#
+# 记录 TARGET_REF 是否由用户显式传入——必须在 resolve_target_ref() 之前记，理由同
+# simple-deploy.sh 对应位置的注释：该函数在未显式传入时会把解析结果（或失败兜底值
+# "main"）写回 TARGET_REF 本身，之后就分不清"用户主动要 main 滚动通道"和"自动解析
+# 失败兜底成了 main"。
+_TARGET_REF_EXPLICIT=0
+[[ -n "${TARGET_REF:-}" ]] && _TARGET_REF_EXPLICIT=1
+if [[ -n "${NEW_IMAGE:-}" && -n "${REPO_REF:-}" ]]; then
+    TARGET_REF="${TARGET_REF:-unused-both-refs-explicit}"
+else
+    resolve_target_ref
+fi
+
+# 镜像 tag 推导（与 simple-deploy.sh 完全一致，理由见那边的详细注释）：
+# - 用户显式传 TARGET_REF=main（滚动通道）→ 镜像用 :main。
+# - 用户显式传 TARGET_REF=v1.8.4（钉具体版本）→ 镜像锁定该数字 tag，保证「镜像与 SQL
+#   严格对齐到同一版本」这个显式钉版本场景的承诺不被打破。
+# - 未显式传（默认通道，占绝大多数用户，不管自动解析成功还是失败回退 main 去拉 SQL）→
+#   镜像 tag 固定用 latest，避免钉死不可变数字 tag 后用户永久停在迁移时的版本（本脚本
+#   只在「官方源 → 我们镜像」那一次替换 image 行，此后重跑只走 SQL 升级分支，不会再改
+#   compose 里的 image，所以镜像 tag 必须是本身就会跟着新版本走的可变 tag），也避免一次
+#   GitHub API 抖动就把镜像永久钉进 main 滚动通道。
+if [[ "$_TARGET_REF_EXPLICIT" == "1" ]]; then
+    if [[ "$TARGET_REF" == "main" ]]; then
+        _DEFAULT_IMG_TAG="main"
+    else
+        _DEFAULT_IMG_TAG="${TARGET_REF#v}"
+    fi
+else
+    _DEFAULT_IMG_TAG="latest"
+fi
+
+NEW_IMAGE="${NEW_IMAGE:-bswlhbhmt816/teslamate-chinese-dashboards:${_DEFAULT_IMG_TAG}}"
+# 「已经在我们镜像上」的识别模式：从 NEW_IMAGE 去掉 :tag 后派生，并转义正则元字符。
+# 不能硬编码 bswlhbhmt816/... —— CI 用 NEW_IMAGE 覆盖成 ghcr.io/... 时，二次运行会识别不出
+# 「已是我们的镜像」，导致幂等性判断失效。
+OUR_IMAGE_RE=$(printf '%s' "${NEW_IMAGE%%:*}" | sed 's|[.[\*^$/]|\\&|g')
+# REPO_REF 默认跟随 TARGET_REF；单独设置可覆盖（例如锁到具体 commit SHA，连同 NEW_IMAGE
+# 一起锁成同一个版本号，才能保证 SQL 与镜像严格匹配）
+REPO_REF="${REPO_REF:-$TARGET_REF}"
 OFFICIAL_IMAGE_RE='teslamate/grafana(:[a-zA-Z0-9._-]*)?'
 COMPOSE_FILE="${COMPOSE_FILE:-}"
+
+# DRY_RUN=1：只打印本次会用到的所有远程 URL / 镜像 tag，不做任何 docker/系统改动。
+# 用于验证"稳定迁移时所有远程 URL 指向同一 ref"（Gate F，见 README 三种通道说明）。
+# 放在 tty 检测之前，这样非交互 (curl|bash 风格) 也能直接拿到结果，不需要 ASSUME_YES。
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "TARGET_REF=${TARGET_REF}"
+    echo "NEW_IMAGE=${NEW_IMAGE}"
+    echo "REPO_REF=${REPO_REF}"
+    echo "urls:"
+    echo "  https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-coord-functions.sql"
+    echo "  https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql"
+    echo "  https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql"
+    echo "  https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql"
+    echo "  https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/config/versions.env"
+    exit 0
+fi
+
+# 非交互模式：ASSUME_YES=1（或 --yes / -y 参数）表示所有确认点走默认答案，不再等 tty 输入。
+# 用于 CI 冒烟测试等无终端场景；不设置时完全不影响交互行为。
+ASSUME_YES="${ASSUME_YES:-0}"
+for _arg in "$@"; do
+    case "$_arg" in
+        --yes|-y) ASSUME_YES=1 ;;
+    esac
+done
 
 # 失败步骤累计（最后汇总）：FAILED_STEPS 影响退出码，WARN_STEPS 仅告警不影响退出码
 FAILED_STEPS=()
@@ -163,7 +273,14 @@ check_pg_version() {
         echo "由于会有仪表盘报错，脚本退出。先升级 PG 再回来。"
         exit 1
     fi
-    read -rp "继续迁移而不升级 PG（推荐升级后再来）？ [y/N] " pg_skip </dev/tty
+    # ASSUME_YES 默认走"继续"：PG 16/17 本项目所有仪表盘均可正常运行（仅与官方栈版本不一致），
+    # 不是数据风险项，符合"非交互默认走安全值"——这里的安全值就是不中断迁移。
+    if [[ "$ASSUME_YES" == "1" ]]; then
+        pg_skip="y"
+        echo "继续迁移而不升级 PG（推荐升级后再来）？ [y/N] y（ASSUME_YES=1 非交互默认：PG $major 功能完整，继续）"
+    else
+        read -rp "继续迁移而不升级 PG（推荐升级后再来）？ [y/N] " pg_skip </dev/tty
+    fi
     if [[ "$pg_skip" != "y" && "$pg_skip" != "Y" ]]; then
         echo "已取消，先升级 PG 到 18。"
         exit 0
@@ -201,6 +318,68 @@ install_sql() {
     return 1
 }
 
+# 三组兼容性 SQL（coord-sql / unit-sql / tou-sql）是否全部装成功——用于判断能不能记录
+# SQL 兼容性 revision。FAILED_STEPS 是全局数组，可能混着别的失败项（如 volkov-plugin），
+# 所以必须逐个 key 精确比对，不能只看数组是否为空。indexes-sql 不在这三个 key 里，
+# 与 simple-deploy.sh / scripts/upgrade.sh 的口径一致（性能索引不算进这个 revision）。
+sql_trio_ok() {
+    # 用 case + 空格分隔字符串匹配而不是数组遍历：Synology/老系统常见的 bash 3.2 在
+    # set -u 下遍历「已声明但零元素」的数组会报 unbound variable，字符串匹配没有这个坑
+    # （CLAUDE.md「Bash 3.2 兼容」条款同类教训）。
+    case " ${FAILED_STEPS[*]:-} " in
+        *" coord-sql "*|*" unit-sql "*|*" tou-sql "*) return 1 ;;
+    esac
+    return 0
+}
+
+# SQL 兼容性 revision 记录（issue #23/#29 事故预防：镜像更新了但 SQL 没装的机制性校验）
+#
+# 只在三组兼容性 SQL 全部成功（sql_trio_ok）时调用。写入 teslamate_cn_extension_meta 表，
+# scripts/diagnose.sh 用它比对镜像要求的 revision（config/versions.env，随镜像一起装进
+# /opt/teslamate-cn/versions.env）和数据库里实际装到的 revision，不一致就报 DEGRADED。
+#
+# CREATE TABLE IF NOT EXISTS 是自愈的关键：老用户的数据库压根没有这张表，本函数第一次
+# 跑起来时会自动建表 + 写入当前 revision，不需要任何手动迁移步骤、不会报错。
+#
+# 单一事实源是仓库里的 config/versions.env；本脚本是 curl-piped 单文件脚本，不能 source
+# 本地文件，现场用同一个 REPO_REF 拉取，跟拉 SQL 文件同一套信任模型，避免在这里手动硬编码
+# 数字造成漂移。
+write_sql_compat_revision() {
+    if [[ -z "${DB_CONTAINER:-}" ]]; then
+        return 1
+    fi
+    local rev ver_safe
+    rev=$(curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/config/versions.env" 2>/dev/null \
+        | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r') || true
+    if [[ -z "$rev" ]]; then
+        echo "⚠️  拉取 SQL 兼容性 revision 失败（网络问题？），跳过记录——不影响刚装好的 SQL 功能本身"
+        return 1
+    fi
+    ver_safe="${REPO_REF//\'/}"
+    if docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQLEOF
+CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    sql_revision    INTEGER NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    project_version TEXT,
+    CONSTRAINT teslamate_cn_extension_meta_singleton CHECK (id = 1)
+);
+INSERT INTO teslamate_cn_extension_meta (id, sql_revision, updated_at, project_version)
+VALUES (1, ${rev}, now(), '${ver_safe}')
+ON CONFLICT (id) DO UPDATE SET
+    sql_revision    = EXCLUDED.sql_revision,
+    updated_at      = EXCLUDED.updated_at,
+    project_version = EXCLUDED.project_version;
+SQLEOF
+    then
+        echo "✓ SQL 兼容性 revision 已记录（${rev}）"
+        return 0
+    else
+        echo "⚠️  SQL 兼容性 revision 记录失败（不影响刚装好的 SQL 功能本身，diagnose 之后可能误报过期）"
+        return 1
+    fi
+}
+
 # Pinned volkov-form-panel 版本，需与 Dockerfile 同步（也是 scripts/upgrade.sh 的来源）
 VOLKOV_FORM_PANEL_VERSION="6.3.2"
 
@@ -215,16 +394,22 @@ wait_grafana_ready() {
     return 1
 }
 
-# 确保 volkovlabs-form-panel 插件已装到 Grafana volume
+# 确保 volkovlabs-form-panel 插件已装到 Grafana 实际读取的插件目录
 #
-# 背景：Dockerfile 把 plugin 装在 /var/lib/grafana/plugins，但该路径正是 grafana volume
-# 挂载点。从官方迁移用户的旧 volume（来自 teslamate/grafana）覆盖镜像里的 plugin 目录
-# → 5 个 form panel 报「panel not found」。本函数检测 + 自愈。
+# 背景：修复 issue #20/#21 前 Dockerfile 把 plugin 装在 /var/lib/grafana/plugins，该路径
+# 正是 grafana volume 挂载点。从官方迁移用户的旧 volume（来自 teslamate/grafana）覆盖镜像
+# 里的 plugin 目录 → 5 个 form panel 报「panel not found」。修复后插件挪到 volume 外的
+# /opt/grafana-plugins（GF_PATHS_PLUGINS 覆盖），新镜像不会再被 volume 覆盖；本函数仍保留
+# 检测 + 自愈，兼容还在跑老镜像的用户（此函数有两个调用点：一个是刚 pull 完 $NEW_IMAGE 之后
+# 调用，另一个是「已经在我们镜像上」分支，可能还没 pull 最新版）。
 #
 # 注意 1：调用必须用 `|| true` 包，否则失败时触发 set -e + on_error trap
 # 注意 2：grafana 容器探测逻辑与 scripts/upgrade.sh 同款，volkov 版本号变更需同步更新两处
 # 注意 3：`grafana cli plugins install` 走 grafana.com，国内网络偶尔超时；
 #         失败时保留 stderr 让用户能看到真实错误（与 install_sql 同款约定）
+# 注意 4：插件目录不硬编码——现场用 `docker exec` 读容器自己的 GF_PATHS_PLUGINS（新镜像=
+#         /opt/grafana-plugins；老镜像没设这个 env，grafana 自身默认值就是
+#         /var/lib/grafana/plugins），新老镜像都能测准、装对地方。
 ensure_volkov_plugin() {
     local grafana_ct
     grafana_ct=$(cd "$COMPOSE_DIR" && $DC ps -q grafana 2>/dev/null | head -1 || true)
@@ -252,16 +437,22 @@ ensure_volkov_plugin() {
         return 1
     fi
 
-    if docker exec "$grafana_ct" test -d /var/lib/grafana/plugins/volkovlabs-form-panel 2>/dev/null; then
+    # 容器实际配置的插件目录（见上方注意 4）
+    local plugin_dir
+    plugin_dir=$(docker exec "$grafana_ct" sh -c 'echo "${GF_PATHS_PLUGINS:-/var/lib/grafana/plugins}"' 2>/dev/null) || true
+    plugin_dir="${plugin_dir:-/var/lib/grafana/plugins}"
+
+    if docker exec "$grafana_ct" test -d "${plugin_dir}/volkovlabs-form-panel" 2>/dev/null \
+       || docker exec "$grafana_ct" test -d /var/lib/grafana/plugins/volkovlabs-form-panel 2>/dev/null; then
         echo "✓ volkov-form-panel 已就位"
         return 0
     fi
 
-    echo "⚠️  Grafana volume 缺 volkov-form-panel 插件（迁移用户常踩的 volume 覆盖坑）"
-    echo "    正在装到 volume（--user root 仅本次 docker exec，命令退出后恢复 grafana user）..."
+    echo "⚠️  Grafana 插件目录（${plugin_dir}）缺 volkov-form-panel（迁移/老镜像用户常踩的 volume 覆盖坑）"
+    echo "    正在装（--user root 仅本次 docker exec，命令退出后恢复 grafana user）..."
     # 保留 stderr：网络超时 / signature 错 / 磁盘满都能看到真实原因
     if docker exec --user root "$grafana_ct" \
-            grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel "$VOLKOV_FORM_PANEL_VERSION" >/dev/null; then
+            grafana cli --pluginsDir "$plugin_dir" plugins install volkovlabs-form-panel "$VOLKOV_FORM_PANEL_VERSION" >/dev/null; then
         if $DC restart grafana >/dev/null 2>&1; then
             echo "✓ volkov-form-panel 已装好，grafana 已重启"
             return 0
@@ -274,15 +465,16 @@ ensure_volkov_plugin() {
     echo "⚠️  自动装插件失败（grafana.com 国内常超时）。两条修复路："
     echo
     echo "  路径 A — 从镜像本地复制（推荐，无外网依赖）："
+    echo "    docker pull $NEW_IMAGE"
     echo "    docker create --name volkov-tmp $NEW_IMAGE"
-    echo "    docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel"
+    echo "    docker cp volkov-tmp:/opt/grafana-plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel"
     echo "    docker rm volkov-tmp"
-    echo "    docker cp /tmp/volkovlabs-form-panel $grafana_ct:/var/lib/grafana/plugins/"
-    echo "    docker exec --user root $grafana_ct chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel"
+    echo "    docker cp /tmp/volkovlabs-form-panel $grafana_ct:${plugin_dir}/"
+    echo "    docker exec --user root $grafana_ct chown -R 472:472 ${plugin_dir}/volkovlabs-form-panel"
     echo "    $DC restart grafana && rm -rf /tmp/volkovlabs-form-panel"
     echo
     echo "  路径 B — 重试 grafana cli（看真实错误）："
-    echo "    docker exec --user root $grafana_ct grafana cli --pluginsDir /var/lib/grafana/plugins plugins install volkovlabs-form-panel $VOLKOV_FORM_PANEL_VERSION"
+    echo "    docker exec --user root $grafana_ct grafana cli --pluginsDir ${plugin_dir} plugins install volkovlabs-form-panel $VOLKOV_FORM_PANEL_VERSION"
     echo "    $DC restart grafana"
     FAILED_STEPS+=("volkov-plugin")
     return 1
@@ -328,12 +520,15 @@ echo "🇨🇳 TeslaMate 中文仪表盘迁移脚本（从官方源 → 我们�
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 
-# 1. tty 检测（防 curl|bash 误用）
-if [[ ! -t 0 ]]; then
+# 1. tty 检测（防 curl|bash 误用）；ASSUME_YES=1（或 --yes/-y）可跳过，用于 CI / 自动化
+if [[ ! -t 0 && "$ASSUME_YES" != "1" ]]; then
     echo "❌ 检测到 stdin 不是终端，可能是 curl|bash 跑的。"
     echo "   请先 wget 下来再 bash 执行（脚本中段需要 y/N 确认）："
     echo "   wget https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/migrate-from-official.sh"
     echo "   bash migrate-from-official.sh"
+    echo
+    echo "   或非交互运行（CI / 自动化，所有确认走安全默认值）："
+    echo "   ASSUME_YES=1 bash migrate-from-official.sh"
     exit 1
 fi
 
@@ -354,10 +549,17 @@ if grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OFFICIAL_IMAGE_RE}" "$COMPOSE_
     CURRENT_IMAGE=$(grep -m1 -oE "^[[:space:]]+image:[[:space:]]*${OFFICIAL_IMAGE_RE}" "$COMPOSE_FILE" \
         | sed 's|^[[:space:]]*image:[[:space:]]*||')
     echo "✓ 检测到官方 grafana 镜像：$CURRENT_IMAGE"
-elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*bswlhbhmt816/teslamate-chinese-dashboards" "$COMPOSE_FILE"; then
+elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FILE"; then
     echo "ℹ️  你已经在我们的镜像上了，image 不需要改。"
     echo
-    read -rp "要重装/升级 SQL（坐标函数 + 单位换算 + 分时电价 + 性能索引）+ 修补 volkov 插件吗？ [y/N] " sql_confirm </dev/tty
+    # ASSUME_YES 默认走"重装"：SQL 安装脚本 + 插件修补均幂等（重复跑不丢数据/不报错），
+    # 是这条路径里唯一有实际意义的动作，跳过等于整条路径空跑，故不算危险操作。
+    if [[ "$ASSUME_YES" == "1" ]]; then
+        sql_confirm="y"
+        echo "要重装/升级 SQL（坐标函数 + 单位换算 + 分时电价 + 性能索引）+ 修补 volkov 插件吗？ [y/N] y（ASSUME_YES=1 非交互默认：重装，SQL/插件安装均幂等）"
+    else
+        read -rp "要重装/升级 SQL（坐标函数 + 单位换算 + 分时电价 + 性能索引）+ 修补 volkov 插件吗？ [y/N] " sql_confirm </dev/tty
+    fi
     if [[ "$sql_confirm" == "y" || "$sql_confirm" == "Y" ]]; then
         cd "$COMPOSE_DIR"
         # 先修 volkov 插件兜底（若 grafana volume 缺，自动装；同样适用于先前版本没跑这段的迁移用户）
@@ -375,6 +577,7 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*bswlhbhmt816/teslamate-chinese
         install_sql "性能优化索引（positions 表 car_id+date btree）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql" \
             "indexes-sql" "warning" || true
+        if sql_trio_ok; then write_sql_compat_revision || true; fi
     fi
     echo
     if [[ ${#FAILED_STEPS[@]} -eq 0 ]]; then
@@ -414,7 +617,15 @@ echo
 echo "⚠️  TeslaMate / Postgres / MQTT 容器完全不动。ENCRYPTION_KEY、Tesla token、"
 echo "    所有数据 0 丢失。万一不满意：把 image 改回去重启 grafana 即回滚。"
 echo
-read -rp "继续？ [y/N] " confirm </dev/tty
+# ASSUME_YES 默认走"继续"：上面 5 步预览已明确写出全部动作，且脚本自身保证
+# 数据零丢失/完全可逆（备份 mode 600 + TeslaMate/Postgres/MQTT 容器不动），
+# 是整个脚本唯一的核心动作，跳过等于脚本空转，故不算危险操作。
+if [[ "$ASSUME_YES" == "1" ]]; then
+    confirm="y"
+    echo "继续？ [y/N] y（ASSUME_YES=1 非交互默认：执行迁移，见上方 5 步预览）"
+else
+    read -rp "继续？ [y/N] " confirm </dev/tty
+fi
 [[ "$confirm" == "y" || "$confirm" == "Y" ]] || { echo "已取消，没动任何东西。"; exit 0; }
 
 # 7. 备份（mode 600 避免 ENCRYPTION_KEY 全局可读）
@@ -459,6 +670,9 @@ install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
 install_sql "性能优化索引（positions 表 car_id+date btree）" \
     "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql" \
     "indexes-sql" "warning" || true
+
+# 10b. 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见 sql_trio_ok 定义处注释）
+if sql_trio_ok; then write_sql_compat_revision || true; fi
 
 # 11. 完成 / 部分完成 汇总
 trap - ERR  # 后面只是 echo，不需要再触发 on_error

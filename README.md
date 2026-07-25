@@ -63,7 +63,7 @@
 curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/main/simple-deploy.sh | bash
 ```
 
-脚本会识别现有安装并进入升级模式：拉取镜像、更新四组 SQL 对象、检查 `volkovlabs-form-panel` 插件并重启 Grafana；不会重置 `ENCRYPTION_KEY` 或其他配置。安装或升级时的自动备份选项（含密钥 / 不含密钥 / 不启用，含群晖 DSM 设置）见 [定期自动备份数据库](TROUBLESHOOTING.md#db-backup)。
+脚本会识别现有安装并进入升级模式：拉取镜像、更新四组 SQL 对象、检查 `volkovlabs-form-panel` 插件并重启 Grafana；不会重置 `ENCRYPTION_KEY` 或其他配置。镜像与 SQL 默认锁定同一个最新正式版（可用 `TARGET_REF` 切通道，见 [SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)）。安装或升级时的自动备份选项（含密钥 / 不含密钥 / 不启用，含群晖 DSM 设置）见 [定期自动备份数据库](TROUBLESHOOTING.md#db-backup)。
 
 <a id="upgrade-method-b"></a>
 
@@ -95,7 +95,7 @@ curl -fsSLO https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboard
 bash migrate-from-official.sh
 ```
 
-[`migrate-from-official.sh`](migrate-from-official.sh) 是唯一正常迁移入口。它会预检 Docker daemon 与 Compose CLI（v1/v2），查找 `docker-compose.yml` / `compose.yml`，以 mode 600 备份含 `ENCRYPTION_KEY` 的配置，再更换 Grafana 镜像、探测 database 容器并安装四组 SQL 对象；TeslaMate、PostgreSQL、MQTT 和车辆数据不动。脚本末尾会给出 `cp + $DC up -d` 回滚命令。
+[`migrate-from-official.sh`](migrate-from-official.sh) 是唯一正常迁移入口。它会预检 Docker daemon 与 Compose CLI（v1/v2），查找 `docker-compose.yml` / `compose.yml`，以 mode 600 备份含 `ENCRYPTION_KEY` 的配置，再更换 Grafana 镜像、探测 database 容器并安装四组 SQL 对象；TeslaMate、PostgreSQL、MQTT 和车辆数据不动。镜像与 SQL 默认锁定同一个最新正式版（`TARGET_REF` 可切通道，同 `simple-deploy.sh`）。脚本末尾会给出 `cp + $DC up -d` 回滚命令。
 
 如果曾手动修改仪表盘，迁移前先在 Grafana 中进入「仪表盘 → ⋮ → Export」导出 JSON；迁移会加载本项目版本。脚本无法运行时才使用 [手动迁移兜底](TROUBLESHOOTING.md#manual-migration-fallback)。
 
@@ -265,11 +265,23 @@ bash migrate-from-official.sh
 
 ## 📦 镜像信息
 
+三种 tag 语义不同，装之前先分清楚：
+
+| Tag | 触发方式 | 说明 |
+|-----|---------|------|
+| `vX.Y.Z`（如 `:1.8.4`） | 打 `vX.Y.Z` git tag 时构建 | **不可变正式版**——同一个数字永远指向同一个镜像 digest，最适合生产环境锁版本。 |
+| `latest` | 打 `vX.Y.Z` git tag 时构建 | **最新正式版**，跟 `vX.Y.Z` 是同一次构建产物，随每次正式发版更新；两次正式版之间不会变。Watchtower 用它。 |
+| `main` | 每次 push 到 `main` 分支时构建 | **main 分支滚动构建**，包含已合并但尚未正式发版的改动，更新更频繁但未必经过完整发版验证；只建议想抢先用某个未发布修复的用户手动切（`TARGET_REF=main`）。 |
+
+（`latest` 曾经被 main 分支的每次 push 覆盖，`v1.8.4` 之前的镜像存在 `latest` 与正式版 tag digest 不一致的情况；这个问题已在 CI 配置里修正，`latest` 现在只在打正式 tag 时更新。）
+
+一键脚本 / 迁移脚本默认走这样的组合：**镜像写 `latest`**（`docker compose pull` 之后能持续跟着新版本走，不会停在安装时的版本），**SQL / 配套脚本锁定安装当下自动解析出的最新正式 Release 具体版本号**（如 `v1.8.4`），保证这次装的 SQL 一定和这次装的镜像内容匹配；也可以用 `TARGET_REF` 显式切通道（钉死到指定版本，或切到 main 滚动通道），详见 [SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
+
 | 镜像地址 | 说明 |
 |----------|------|
-| `ghcr.io/wjsall/teslamate-chinese-dashboards:latest` | 最新稳定版（GitHub Container Registry） |
+| `ghcr.io/wjsall/teslamate-chinese-dashboards:latest` | 最新正式版（GitHub Container Registry） |
 | `bswlhbhmt816/teslamate-chinese-dashboards:latest` | Docker Hub 镜像（中国大陆推荐） |
-| `ghcr.io/wjsall/teslamate-chinese-dashboards:sha-xxxxx` | 特定版本 |
+| `ghcr.io/wjsall/teslamate-chinese-dashboards:sha-xxxxx` | 特定 commit |
 
 镜像构建状态：[![Build and Push to GitHub Container Registry](https://github.com/wjsall/teslamate-chinese-dashboards/actions/workflows/ghcr-build.yml/badge.svg)](https://github.com/wjsall/teslamate-chinese-dashboards/actions/workflows/ghcr-build.yml)
 
@@ -305,8 +317,8 @@ services:
 
 ## 🔒 SQL 远程拉取的信任模型
 
-升级路径会从 GitHub 拉取四个 SQL 安装文件并交给 `psql` 执行；默认 `main` 与 `:latest` 同步，也可锁定 tag。
-传输安全、来源与维护者风险、版本锁定方式，以及第三方/自建镜像的信任边界见 [故障排查手册：SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
+升级路径会从 GitHub 拉取四个 SQL 安装文件并交给 `psql` 执行。`simple-deploy.sh` / `migrate-from-official.sh` 内置 `TARGET_REF` 开关，默认自动解析**最新正式 Release**，让镜像 tag 和 SQL 版本锁定同一个 ref（不会出现"正式版镜像 + main 分支未发布 SQL"的混搭）；也支持 `TARGET_REF=v1.8.4` 锁定到指定版本，或 `TARGET_REF=main` 切到滚动通道。
+三条通道详情、优先级规则、GitHub API 不可达时的兜底行为、传输安全与维护者风险，以及第三方/自建镜像的信任边界见 [故障排查手册：SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
 
 <a id="requirements"></a>
 

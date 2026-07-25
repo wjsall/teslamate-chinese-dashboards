@@ -10,17 +10,177 @@ set -o pipefail
 # 与 README/QUICKSTART/TROUBLESHOOTING 文档里所有 docker exec 命令一致
 export COMPOSE_PROJECT_NAME=teslamate
 
-# SQL 文件拉取的 git ref（默认 main，跟着 :latest 镜像滚动 + 拿 bug 修复最快）。
-# 安全敏感用户想锁固定版本：SQL_REF=v1.6.4 bash simple-deploy.sh
+# ============================================================
+# TARGET_REF：稳定安装的统一版本 ref —— 镜像 / SQL / backup.sh / config/versions.env
+# 全部锁定同一个 ref，不会出现"正式版镜像 + main 分支 SQL"的混搭（详见 README「三种更新通道」）。
+#
+# 三条通道：
+#   - 不传任何变量（默认）：自动解析 GitHub 最新正式 Release，SQL_REF / GRAFANA_IMAGE
+#     都锁定这个 tag，镜像与 SQL 保证同版本。
+#   - TARGET_REF=v1.8.4：显式锁定到指定正式版（不管当前最新版是多少）。
+#   - TARGET_REF=main：滚动通道，SQL 与镜像都用 main 分支最新构建（CI 每次 push main 都
+#     会构建一个 :main tag 镜像，与只在打正式 tag 时更新的 :latest 相互独立）。
+#
+# 优先级：单独设置 SQL_REF / GRAFANA_IMAGE 会覆盖 TARGET_REF 的推导结果（高级用户明确
+# 要混搭版本时用，例如 CI 冒烟测试拿 SQL_REF=$GITHUB_SHA 配本次构建产物）；不单独设置
+# 时两者都跟着 TARGET_REF 走。
+#
+# GitHub API 有速率限制（未认证 60 次/小时/IP）：解析失败（网络问题 / 限流 / 仓库暂无
+# Release）一律回退到 main 滚动通道，并显式提示用户，不静默假装成功。
+resolve_target_ref() {
+    if [ -n "${TARGET_REF:-}" ]; then
+        echo "ℹ️  TARGET_REF=${TARGET_REF}（用户指定，跳过自动解析）"
+        return 0
+    fi
+    echo "🔍 解析最新正式 Release 版本..."
+    local resp tag
+    resp=$(curl -fsSL --max-time 10 \
+        "https://api.github.com/repos/wjsall/teslamate-chinese-dashboards/releases/latest" 2>/dev/null) || resp=""
+    # `|| true` 必须：resp 为空或没有 tag_name 字段时 grep -m1 找不到匹配会返回 1，
+    # set -o pipefail 下会让整条管道判定失败，在 set -e 下直接终止脚本——不加这个会让
+    # "API 不可达时的兜底"本身在兜底判断前就被 set -e 杀掉，兜底逻辑永远跑不到。
+    tag=$(printf '%s' "$resp" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || true
+    if [ -n "$tag" ]; then
+        TARGET_REF="$tag"
+        echo "  ✓ 最新正式版：${TARGET_REF}（SQL 锁定这个 tag，镜像用 latest——两者内容对齐同一版本）"
+    else
+        TARGET_REF="main"
+        echo "  ⚠️ 无法解析 GitHub 最新 Release（网络问题、未认证 API 限流 60次/小时/IP，或仓库暂无 Release）"
+        echo "     SQL 本次回退到 main 滚动通道拉取（可能包含尚未正式发版的改动）；镜像仍锁定 latest"
+        echo "     （最新正式版），不会因为这次解析失败就把镜像永久钉进 main 滚动通道"
+        echo "     想锁定具体版本重跑：TARGET_REF=v1.8.4 bash simple-deploy.sh"
+    fi
+}
+# 只有 TARGET_REF 的推导结果会被实际用到时才发起网络请求：SQL_REF 和 GRAFANA_IMAGE
+# 都已经被显式设置时（常见于 CI 冒烟测试，如 GRAFANA_IMAGE=teslamate-cn-ci:local
+# SQL_REF=$GITHUB_SHA），TARGET_REF 不会被用在任何地方，跳过 GitHub API 调用，
+# 避免给不需要它的调用方增加网络依赖 / API 限流风险。
+#
+# 记录 TARGET_REF 是否由用户显式传入——必须在 resolve_target_ref() 之前记，因为该函数
+# 在未显式传入时会把解析结果（或失败兜底值 "main"）写回 TARGET_REF 本身，之后就再也
+# 分不清"用户主动要 main 滚动通道"和"自动解析失败兜底成了 main"。下面推导镜像 tag
+# 要用这个区分（见下方注释）。
+_TARGET_REF_EXPLICIT=0
+[ -n "${TARGET_REF:-}" ] && _TARGET_REF_EXPLICIT=1
+if [ -n "${SQL_REF:-}" ] && [ -n "${GRAFANA_IMAGE:-}" ]; then
+    TARGET_REF="${TARGET_REF:-unused-both-refs-explicit}"
+else
+    resolve_target_ref
+fi
+
+# 镜像 tag 推导：
+# - 用户显式传 TARGET_REF=main（滚动通道）→ 镜像用 :main，与同通道的 main 分支 SQL 配对。
+# - 用户显式传 TARGET_REF=v1.8.4（钉具体版本）→ 镜像锁定该数字 tag，保证「镜像与 SQL
+#   严格对齐到同一版本」这个显式钉版本场景的承诺（TROUBLESHOOTING.md「SQL 远程拉取的
+#   信任模型」文档过的行为，不能破）。
+# - 未显式传（默认通道，占绝大多数用户）→ 不管自动解析成功（拿到具体版本号）还是失败
+#   （resolve_target_ref 内部回退到 main 去拉 SQL），镜像 tag 都固定用 latest。
+#   原因：
+#   1）Docker Hub/GHCR 的 latest 只在打正式 tag 时才更新（ghcr-build.yml
+#      type=raw,value=latest 只在 tag push 时 enable），语义上就是"当前最新正式版"，
+#      与自动解析出的版本号等价。
+#   2）latest 是可变 tag——升级模式的 `$DC pull` 之后会持续跟着新版本走；如果像早期
+#      实现那样把解析出的具体版本号（如 :1.9.0）写进 compose，那是不可变 tag，装完
+#      即永久停在当次版本，用户此后再怎么 pull 镜像都不会变，只有 SQL 会通过 upgrade
+#      模式重新解析 TARGET_REF 往前走，造成镜像与 SQL 脱节、diagnose.sh 的 SQL revision
+#      校验会指向错误的修复方向（应换镜像却提示重装 SQL）。
+#   3）解析失败兜底到 main 只影响这一次的 SQL 来源，镜像仍锁 latest 不会退化——避免一次
+#      GitHub API 抖动（未认证限流 60 次/小时/IP，NAS/公司共享出口 IP 很容易触发）就把
+#      用户从「最新正式版」这个更稳的默认通道永久错误地钉进「main 滚动通道」镜像。
+if [ "$_TARGET_REF_EXPLICIT" = "1" ]; then
+    if [ "$TARGET_REF" = "main" ]; then
+        _DEFAULT_IMG_TAG="main"
+    else
+        _DEFAULT_IMG_TAG="${TARGET_REF#v}"
+    fi
+else
+    _DEFAULT_IMG_TAG="latest"
+fi
+
+# SQL 文件拉取的 git ref（默认跟随 TARGET_REF；单独设置 SQL_REF 可覆盖，用于想让 SQL
+# 和镜像版本分开锁定的高级场景，或 CI 冒烟测试拿具体 commit SHA）。
 # 详见 README「SQL 远程拉取的信任模型」
-SQL_REF="${SQL_REF:-main}"
+SQL_REF="${SQL_REF:-$TARGET_REF}"
 SQL_BASE="https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${SQL_REF}/sql"
-# 仓库根 raw 基址（拉 scripts/backup.sh 等非 SQL 文件用）
+# 仓库根 raw 基址（拉 scripts/backup.sh、config/versions.env 等非 SQL 文件用，与 SQL_REF
+# 用同一个 ref——这两类文件必须来自同一次提交，否则 SQL_COMPAT_REVISION 校验会读到
+# 不匹配的期望值）
 REPO_BASE="https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${SQL_REF}"
 
 # 端口配置（支持环境变量覆盖，端口冲突时用：TM_PORT=14000 GF_PORT=13000 bash simple-deploy.sh）
 TM_PORT="${TM_PORT:-4000}"
 GF_PORT="${GF_PORT:-3000}"
+
+# Grafana 镜像（默认通道用 :latest，显式 TARGET_REF 时跟随上面推导出的 tag，见上方
+# _DEFAULT_IMG_TAG 说明；单独设置 GRAFANA_IMAGE 可覆盖，例如 CI 冒烟测试想验证本次构建
+# 产物而非已发布镜像：GRAFANA_IMAGE=ghcr.io/wjsall/teslamate-chinese-dashboards:pr-123
+# bash simple-deploy.sh）
+GRAFANA_IMAGE="${GRAFANA_IMAGE:-bswlhbhmt816/teslamate-chinese-dashboards:${_DEFAULT_IMG_TAG}}"
+
+# DRY_RUN=1：只打印本次会用到的所有远程 URL / 镜像 tag，不做任何 docker/系统改动。
+# 用于验证"稳定安装时所有远程 URL 指向同一 ref"（Gate F，见 README 三种通道说明）。
+if [ "${DRY_RUN:-0}" = "1" ]; then
+    echo "TARGET_REF=${TARGET_REF}"
+    echo "SQL_REF=${SQL_REF}"
+    echo "GRAFANA_IMAGE=${GRAFANA_IMAGE}"
+    echo "SQL_BASE=${SQL_BASE}"
+    echo "REPO_BASE=${REPO_BASE}"
+    echo "urls:"
+    echo "  ${SQL_BASE}/install-coord-functions.sql"
+    echo "  ${SQL_BASE}/install-unit-functions.sql"
+    echo "  ${SQL_BASE}/install-tou.sql"
+    echo "  ${SQL_BASE}/install-indexes.sql"
+    echo "  ${REPO_BASE}/scripts/backup.sh"
+    echo "  ${REPO_BASE}/config/versions.env"
+    exit 0
+fi
+
+# SQL 兼容性 revision 记录（issue #23/#29 事故预防：镜像更新了但 SQL 没装的机制性校验）
+#
+# 只在坐标函数 + 单位换算函数 + 分时电价三组 SQL **全部**安装成功后调用（不含性能索引，
+# 索引失败是 WARN，不影响这个 revision）。写入 teslamate_cn_extension_meta 表，
+# scripts/diagnose.sh 用它比对镜像要求的 revision（config/versions.env，随镜像一起装进
+# /opt/teslamate-cn/versions.env）和数据库里实际装到的 revision，不一致就报 DEGRADED。
+#
+# CREATE TABLE IF NOT EXISTS 是自愈的关键：老用户的数据库压根没有这张表，本函数第一次
+# 跑起来时会自动建表 + 写入当前 revision，不需要任何手动迁移步骤、不会报错。
+#
+# 单一事实源是仓库里的 config/versions.env；本脚本是 curl-piped 单文件脚本，不能 source
+# 本地文件，现场用同一个 SQL_REF 从 REPO_BASE 拉取，跟拉 SQL 文件同一套信任模型，避免在
+# 这里手动硬编码数字造成漂移。
+write_sql_compat_revision() {
+    local db_container="$1"
+    local rev ver_safe
+    rev=$(curl -fsSL "$REPO_BASE/config/versions.env" 2>/dev/null \
+        | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r') || true
+    if [ -z "$rev" ]; then
+        echo "  ⚠ 拉取 SQL 兼容性 revision 失败（网络问题？），跳过记录——不影响刚装好的 SQL 功能本身"
+        return 1
+    fi
+    ver_safe="${SQL_REF//\'/}"
+    if docker exec -i "$db_container" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQLEOF
+CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    sql_revision    INTEGER NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    project_version TEXT,
+    CONSTRAINT teslamate_cn_extension_meta_singleton CHECK (id = 1)
+);
+INSERT INTO teslamate_cn_extension_meta (id, sql_revision, updated_at, project_version)
+VALUES (1, ${rev}, now(), '${ver_safe}')
+ON CONFLICT (id) DO UPDATE SET
+    sql_revision    = EXCLUDED.sql_revision,
+    updated_at      = EXCLUDED.updated_at,
+    project_version = EXCLUDED.project_version;
+SQLEOF
+    then
+        echo "  ✓ SQL 兼容性 revision 已记录（${rev}）"
+        return 0
+    else
+        echo "  ⚠ SQL 兼容性 revision 记录失败（不影响刚装好的 SQL 功能本身，diagnose 之后可能误报过期）"
+        return 1
+    fi
+}
 
 echo "=============================================="
 echo "  TeslaMate 中文版 — Tesla 车主数据看板"
@@ -347,6 +507,11 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
             UPGRADE_SQL_OK=0
         fi
 
+        # 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见函数定义处注释）
+        if [ "$UPGRADE_SQL_OK" -eq 1 ]; then
+            write_sql_compat_revision "$DB_CONTAINER" || true
+        fi
+
         echo "  → 安装/更新性能优化索引（v1.6.1+）"
         if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
             echo "  ✓ 索引已就绪（电池健康/天气-能耗等查询提速）"
@@ -538,6 +703,9 @@ sed_inplace "s/INSERT_GRAFANA_PASSWORD_HERE/$GRAFANA_PASS/"    docker-compose.ym
 # 端口映射（默认 4000/3000，TM_PORT/GF_PORT 环境变量可覆盖）
 sed_inplace "s|- 4000:4000|- ${TM_PORT}:4000|" docker-compose.yml
 sed_inplace "s|- 3000:3000|- ${GF_PORT}:3000|" docker-compose.yml
+# Grafana 镜像（默认 bswlhbhmt816/teslamate-chinese-dashboards:latest，GRAFANA_IMAGE 环境变量可覆盖；
+# heredoc 是 quoted 'EOF' 不会展开变量，跟端口一样用生成后 sed 替换的方式支持覆盖）
+sed_inplace "s|image: bswlhbhmt816/teslamate-chinese-dashboards:latest|image: ${GRAFANA_IMAGE}|" docker-compose.yml
 
 # 限制 docker-compose.yml 文件权限（含 ENCRYPTION_KEY + DB 密码 + 后续 Tesla token）
 chmod 600 docker-compose.yml
@@ -598,6 +766,11 @@ if [ "$DB_READY" -eq 1 ]; then
     else
         echo "  ⚠ 分时电价安装失败，TOU 仪表盘可能不可用"
         SQL_OK=0
+    fi
+
+    # 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见函数定义处注释）
+    if [ "$SQL_OK" -eq 1 ]; then
+        write_sql_compat_revision "$DB_CONTAINER" || true
     fi
 
     if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then

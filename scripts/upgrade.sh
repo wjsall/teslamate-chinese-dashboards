@@ -32,6 +32,54 @@ NC="\033[0m"
 FAILED_STEPS=()
 WARN_STEPS=()
 
+# 三组兼容性 SQL（坐标函数/单位换算函数/分时电价）是否全部装成功——用于判断能不能记录
+# SQL 兼容性 revision（issue #23/#29 事故预防机制）。不算性能索引，与 simple-deploy.sh /
+# migrate-from-official.sh 口径一致。用 case + 空格分隔字符串匹配而不是数组遍历：
+# 老 bash（如 Synology 的 3.2）在 set -e 下遍历「已声明但零元素」的数组可能报错，
+# 字符串匹配没有这个坑（CLAUDE.md「Bash 3.2 兼容」条款同类教训）。
+sql_trio_ok() {
+    case " ${FAILED_STEPS[*]:-} " in
+        *" 坐标函数 "*|*" 单位换算函数 "*|*" 分时电价 "*) return 1 ;;
+    esac
+    return 0
+}
+
+# SQL 兼容性 revision 记录：写入 teslamate_cn_extension_meta 表，scripts/diagnose.sh 用它
+# 比对镜像要求的 revision（config/versions.env，随镜像一起装进 /opt/teslamate-cn/versions.env）
+# 和数据库里实际装到的 revision。CREATE TABLE IF NOT EXISTS 是自愈的关键：老用户的数据库
+# 压根没有这张表，本函数第一次跑起来时会自动建表 + 写入当前 revision，不需要任何手动迁移步骤。
+write_sql_compat_revision() {
+    if [ -z "$SQL_COMPAT_REVISION" ]; then
+        echo -e "${YELLOW}  ⚠ 本地检出没有 config/versions.env，跳过记录 SQL 兼容性 revision${NC}"
+        return 1
+    fi
+    local project_version
+    project_version=$(git describe --tags --always 2>/dev/null || echo "unknown")
+    project_version="${project_version//\'/}"
+    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQLEOF
+CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    sql_revision    INTEGER NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    project_version TEXT,
+    CONSTRAINT teslamate_cn_extension_meta_singleton CHECK (id = 1)
+);
+INSERT INTO teslamate_cn_extension_meta (id, sql_revision, updated_at, project_version)
+VALUES (1, ${SQL_COMPAT_REVISION}, now(), '${project_version}')
+ON CONFLICT (id) DO UPDATE SET
+    sql_revision    = EXCLUDED.sql_revision,
+    updated_at      = EXCLUDED.updated_at,
+    project_version = EXCLUDED.project_version;
+SQLEOF
+    then
+        echo -e "${GREEN}  ✓ SQL 兼容性 revision 已记录（${SQL_COMPAT_REVISION}）${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}  ⚠ SQL 兼容性 revision 记录失败（不影响刚装好的 SQL 功能本身，diagnose 之后可能误报过期）${NC}"
+        return 1
+    fi
+}
+
 # ============================================================
 # 0. 检查工作目录
 # ============================================================
@@ -57,6 +105,16 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     exit 1
 fi
 git pull --rebase
+
+# SQL 兼容性 revision 的单一事实源：config/versions.env。本脚本跑在本地仓库检出里
+# （工作目录检查已确认），git pull 之后直接 source 就能拿到跟刚拉的 SQL 一致的 revision，
+# 不用像 curl-piped 的 simple-deploy.sh / migrate-from-official.sh 那样现场再拉一次。
+# 兼容老检出还没有这个文件的情况（不存在时 SQL_COMPAT_REVISION 留空，后面写入步骤会跳过）。
+SQL_COMPAT_REVISION=""
+if [ -f "config/versions.env" ]; then
+    # shellcheck source=config/versions.env
+    source "config/versions.env"
+fi
 
 # ============================================================
 # 2. 检测 PostgreSQL 容器名
@@ -139,6 +197,11 @@ else
     fi
 fi
 
+# 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见 sql_trio_ok 定义处注释）
+if sql_trio_ok; then
+    write_sql_compat_revision || true
+fi
+
 # ============================================================
 # 6. 安装性能优化索引（v1.6.1+）
 # ============================================================
@@ -162,14 +225,43 @@ fi
 echo -e "${BLUE}[7/8] 检查 Grafana 插件...${NC}"
 # Pinned 版本与 Dockerfile / migrate-from-official.sh 同步
 VOLKOV_FORM_PANEL_VERSION="6.3.2"
-PROJECT_IMAGE="bswlhbhmt816/teslamate-chinese-dashboards:latest"
+
+# PROJECT_IMAGE 默认值必须和"本地代码版本"对应，不能再硬编码 :latest —— :latest 现在
+# 只在打正式 tag 时更新（不再随 main 每次 push 变化，见 CLAUDE.md「构建产物版本注入」
+# 条款 / issue #33），若本地 git pull 已经领先最新正式版（在 main 滚动分支上），
+# :latest 会比本地检出旧，插件本地复制兜底命令会从一个落后的镜像里拷插件。
+# 本脚本运行在 git clone 检出里，"版本"就是当前 checkout 状态，不需要像 curl-piped 的
+# simple-deploy.sh / migrate-from-official.sh 那样引入 TARGET_REF 去解析远程 ref——
+# 直接问本地 git 就知道：刚 pull 完，如果 HEAD 正好在某个 vX.Y.Z tag 上，就精确对应
+# 那个数字 tag；否则说明本地在 main 分支上领先于最新正式版，默认到 :main
+# （CI 每次 push main 都会构建这个 tag，与只在打 tag 时更新的 :latest 相互独立，
+# 见 .github/workflows/ghcr-build.yml）。
+# 注意：这只是给"插件从镜像本地复制"兜底命令（见下方 docker pull $PROJECT_IMAGE）挑一个
+# 大概率正确的默认镜像，不会拿它去自动 pull/替换任何服务——运行镜像版本始终由用户自己
+# docker-compose.yml 的 image: 行决定，本脚本不碰它。
+_LOCAL_TAG=""
+if command -v git >/dev/null 2>&1; then
+    _LOCAL_TAG=$(git describe --tags --exact-match 2>/dev/null || true)
+fi
+if [ -n "$_LOCAL_TAG" ]; then
+    _DEFAULT_PROJECT_IMG_TAG="${_LOCAL_TAG#v}"
+else
+    _DEFAULT_PROJECT_IMG_TAG="main"
+fi
+PROJECT_IMAGE="${PROJECT_IMAGE:-bswlhbhmt816/teslamate-chinese-dashboards:${_DEFAULT_PROJECT_IMG_TAG}}"
 GRAFANA_CONTAINER=$(detect_grafana_container)
 if [ -n "$GRAFANA_CONTAINER" ]; then
-    if docker exec "$GRAFANA_CONTAINER" test -d /var/lib/grafana/plugins/volkovlabs-form-panel 2>/dev/null; then
+    # 容器实际配置的插件目录：新版镜像（issue #20/#21 修复后）用 GF_PATHS_PLUGINS=
+    # /opt/grafana-plugins（volume 外，不会被 volume 覆盖）；老镜像没设这个 env，grafana
+    # 自身默认值就是 /var/lib/grafana/plugins——现场读容器自己的 env，新老镜像都能测准、装对地方。
+    PLUGIN_DIR=$(docker exec "$GRAFANA_CONTAINER" sh -c 'echo "${GF_PATHS_PLUGINS:-/var/lib/grafana/plugins}"' 2>/dev/null) || true
+    PLUGIN_DIR="${PLUGIN_DIR:-/var/lib/grafana/plugins}"
+    if docker exec "$GRAFANA_CONTAINER" test -d "${PLUGIN_DIR}/volkovlabs-form-panel" 2>/dev/null \
+       || docker exec "$GRAFANA_CONTAINER" test -d /var/lib/grafana/plugins/volkovlabs-form-panel 2>/dev/null; then
         echo -e "${GREEN}  ✓ volkovlabs-form-panel 已装${NC}"
     else
-        echo -e "${YELLOW}  ⚠ 分时电价配置仪表盘需要 volkovlabs-form-panel 插件${NC}"
-        echo -e "${YELLOW}    根因：grafana volume 覆盖了镜像里装好的 plugin 目录${NC}"
+        echo -e "${YELLOW}  ⚠ 分时电价配置仪表盘需要 volkovlabs-form-panel 插件（插件目录：${PLUGIN_DIR}）${NC}"
+        echo -e "${YELLOW}    根因：老版本镜像把插件装进了 grafana volume 内部，旧卷会覆盖它${NC}"
         install_plugin="n"
         if [ -t 0 ]; then
             if ! read -r -p "  是否现在安装？[Y/n]: " -n 1 install_plugin; then
@@ -185,7 +277,7 @@ if [ -n "$GRAFANA_CONTAINER" ]; then
         if [[ ! $install_plugin =~ ^[Nn]$ ]]; then
             # 保留 stderr（与 install_sql 同款约定：让用户看到真实错误，如 grafana.com 国内超时）
             if docker exec --user root "$GRAFANA_CONTAINER" \
-                    grafana cli plugins install volkovlabs-form-panel "$VOLKOV_FORM_PANEL_VERSION" >/dev/null; then
+                    grafana cli --pluginsDir "$PLUGIN_DIR" plugins install volkovlabs-form-panel "$VOLKOV_FORM_PANEL_VERSION" >/dev/null; then
                 echo -e "${GREEN}  ✓ 插件已装（重启后生效）${NC}"
             else
                 echo -e "${RED}  ✗ grafana cli 装失败（grafana.com 国内常超时）${NC}"
@@ -194,15 +286,16 @@ if [ -n "$GRAFANA_CONTAINER" ]; then
                 echo "  两条修复路径任选其一："
                 echo
                 echo "  路径 A — 从镜像本地复制（推荐，无外网依赖）："
+                echo "    docker pull $PROJECT_IMAGE"
                 echo "    docker create --name volkov-tmp $PROJECT_IMAGE"
-                echo "    docker cp volkov-tmp:/var/lib/grafana/plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel"
+                echo "    docker cp volkov-tmp:/opt/grafana-plugins/volkovlabs-form-panel /tmp/volkovlabs-form-panel"
                 echo "    docker rm volkov-tmp"
-                echo "    docker cp /tmp/volkovlabs-form-panel $GRAFANA_CONTAINER:/var/lib/grafana/plugins/"
-                echo "    docker exec --user root $GRAFANA_CONTAINER chown -R 472:472 /var/lib/grafana/plugins/volkovlabs-form-panel"
+                echo "    docker cp /tmp/volkovlabs-form-panel $GRAFANA_CONTAINER:${PLUGIN_DIR}/"
+                echo "    docker exec --user root $GRAFANA_CONTAINER chown -R 472:472 ${PLUGIN_DIR}/volkovlabs-form-panel"
                 echo "    docker restart $GRAFANA_CONTAINER && rm -rf /tmp/volkovlabs-form-panel"
                 echo
                 echo "  路径 B — 重试 grafana cli 看真实错误："
-                echo "    docker exec --user root $GRAFANA_CONTAINER grafana cli plugins install volkovlabs-form-panel $VOLKOV_FORM_PANEL_VERSION"
+                echo "    docker exec --user root $GRAFANA_CONTAINER grafana cli --pluginsDir ${PLUGIN_DIR} plugins install volkovlabs-form-panel $VOLKOV_FORM_PANEL_VERSION"
                 echo "    docker restart $GRAFANA_CONTAINER"
             fi
         else

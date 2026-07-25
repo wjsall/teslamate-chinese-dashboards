@@ -149,6 +149,7 @@ bash simple-deploy.sh
 ```
 
 脚本会自动：
+- 先解析最新正式版本，让镜像和 SQL 锁定同一个版本（想指定版本或滚动通道见 [SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)）
 - 创建 `~/teslamate-chinese/` 工作目录
 - 生成 `docker-compose.yml` 配置文件
 - **生成随机的 ENCRYPTION_KEY**（用来加密 Tesla Token 的密钥）
