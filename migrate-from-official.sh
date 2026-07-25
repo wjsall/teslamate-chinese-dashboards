@@ -292,6 +292,39 @@ check_pg_version() {
 # level: critical（默认，计入 FAILED_STEPS，影响最终退出码）｜ warning（计入 WARN_STEPS，仅告警，不影响退出码）
 # 索引（indexes-sql）失败走 warning，与 simple-deploy.sh / scripts/upgrade.sh 的「索引仅告警」口径一致；
 # 坐标 / 单位换算 / 分时电价三件仍是 critical。
+# 等 TeslaMate 自己的 Ecto 迁移跑完，再装我们的 SQL。
+# 理由同 simple-deploy.sh：install-tou.sql 依赖 charging_processes（TeslaMate 迁移建的），
+# 而 install-unit-functions.sql 抢先建 convert_* 会让上游那条不带 OR REPLACE 的迁移撞
+# duplicate_function、TeslaMate 起不来。判据：等 charging_processes 出现，再等
+# schema_migrations 行数连续 8 次采样（24 秒）不变——窗口取短了会在一条耗时长的迁移
+# 中途误判成已完成。
+wait_teslamate_migrated() {
+    local db="$1" u="$2" d="$3"
+    local i cur last="" stable=0
+    for i in $(seq 1 60); do
+        if docker exec "$db" psql -U "$u" -d "$d" -tAc \
+            "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
+            break
+        fi
+        sleep 3
+    done
+    for i in $(seq 1 60); do
+        cur=$(docker exec "$db" psql -U "$u" -d "$d" -tAc \
+            "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
+            stable=$((stable + 1))
+            if [ "$stable" -ge 8 ]; then
+                return 0
+            fi
+        else
+            stable=0
+        fi
+        last="$cur"
+        sleep 3
+    done
+    return 1
+}
+
 install_sql() {
     local label="$1" url="$2" key="$3" level="${4:-critical}"
     echo
@@ -302,7 +335,10 @@ install_sql() {
         return 1
     fi
     # 留 stderr 让用户看到真实错误（schema 不兼容 / auth 失败 等）
-    if curl -fsSL "$url" | docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" >/dev/null; then
+    # ON_ERROR_STOP=1 必须：psql 默认某条语句失败也照样 exit 0，会让「✓ 装好」印在
+    # 一次实际失败的安装上（2026-07 冒烟①实测到的假绿）。四个 install-*.sql 都是幂等的
+    # （CREATE OR REPLACE / IF NOT EXISTS / DROP TRIGGER IF EXISTS），重复跑不会有语句报错。
+    if curl -fsSL "$url" | docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -v ON_ERROR_STOP=1 >/dev/null; then
         echo "✓ ${label}装好"
         return 0
     fi
@@ -344,7 +380,37 @@ sql_trio_ok() {
 # 单一事实源是仓库里的 config/versions.env；本脚本是 curl-piped 单文件脚本，不能 source
 # 本地文件，现场用同一个 REPO_REF 拉取，跟拉 SQL 文件同一套信任模型，避免在这里手动硬编码
 # 数字造成漂移。
+# 三组兼容性 SQL 的对象是否真的在库里——记 revision 之前的最后一道校验。
+# psql 的退出码不够：默认不是 ON_ERROR_STOP 时语句失败也 exit 0（2026-07 冒烟①实测到
+# 「✓ 已装」+ revision=1 但 tou_rates 根本没建的假绿）。安装调用都加了 ON_ERROR_STOP=1，
+# 这里再直接问库一遍作为第二道闸。谓词与 scripts/diagnose.sh 第 4 节语义一致（同样的三组对象、
+# 同样的哨兵），但不是逐字相同：curl-piped 单文件脚本不能 source 公共库，各自内联了一份。
+# 改任一处务必同步全部四处（simple-deploy.sh / migrate-from-official.sh / upgrade.sh / diagnose.sh）。
+sql_trio_objects_present() {
+    local u="${DB_USER:-teslamate}" d="${DB_NAME:-teslamate}"
+    [[ -n "${DB_CONTAINER:-}" ]] || return 1
+    docker exec "$DB_CONTAINER" psql -U "$u" -d "$d" -tAc \
+        "SELECT count(DISTINCT proname) FROM pg_proc WHERE proname IN ('lat_for_map','lng_for_map','wgs84_to_gcj02_lat','wgs84_to_gcj02_lng','is_outside_china')" \
+        2>/dev/null | grep -qx 5 || return 1
+    # 只数 proname 是查不出东西的：convert_km/convert_celsius/convert_m/convert_tire_pressure
+    # 这四个名字上游 TeslaMate 自己的迁移就会建（这正是"抢先建会撞车"的前提），所以任何迁移
+    # 完成的库上那个计数都恒等于 4——这一腿等于没查。改查我们这版独有的特征：只有我们的
+    # convert_tire_pressure 支持 kPa/kpa 单位。它又是 install-unit-functions.sql 的最后一个
+    # 函数，装到它就说明整份文件都装完了，正好当哨兵。
+    docker exec "$DB_CONTAINER" psql -U "$u" -d "$d" -tAc \
+        "SELECT count(*) FROM pg_proc WHERE proname = 'convert_tire_pressure' AND prosrc LIKE '%kPa%'" \
+        2>/dev/null | grep -qE '^[1-9][0-9]*$' || return 1
+    docker exec "$DB_CONTAINER" psql -U "$u" -d "$d" -tAc \
+        "SELECT 1 FROM pg_class WHERE relname='tou_rates'" \
+        2>/dev/null | grep -qx 1 || return 1
+    return 0
+}
+
 write_sql_compat_revision() {
+    if ! sql_trio_objects_present; then
+        echo "⚠️  三组兼容性 SQL 的对象没在库里查到，不记录 revision（跑 scripts/diagnose.sh 看缺哪一组）"
+        return 1
+    fi
     if [[ -z "${DB_CONTAINER:-}" ]]; then
         return 1
     fi
@@ -565,6 +631,12 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FIL
         # 先修 volkov 插件兜底（若 grafana volume 缺，自动装；同样适用于先前版本没跑这段的迁移用户）
         ensure_volkov_plugin || true
         detect_db_container || true
+        if [[ -n "${DB_CONTAINER:-}" ]]; then
+            echo "→ 等 TeslaMate 完成自身数据库迁移（已在跑的实例通常几秒就确认）"
+            if ! wait_teslamate_migrated "$DB_CONTAINER" "${DB_USER:-teslamate}" "${DB_NAME:-teslamate}"; then
+                echo "⚠️  没能确认迁移已完成，仍继续装 SQL；若分时电价装失败，等 TeslaMate 起来后重跑本脚本"
+            fi
+        fi
         install_sql "坐标转换函数（地图轨迹纠偏）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-coord-functions.sql" \
             "coord-sql" || true

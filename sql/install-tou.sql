@@ -505,6 +505,15 @@ EXECUTE FUNCTION trigger_compute_tou();
 -- 注：本视图不能直接替换 dashboards 的 FROM charging_processes，
 -- PG 视图不传递底层表 PK 函数依赖到下游 GROUP BY，会破坏所有 GROUP BY cp.id 的聚合 SQL。
 -- 视图作为只读展示/对账查询用 OK；批量替换底表请用 trigger 或逐面板 JOIN旁路表。
+-- 必须先 DROP 再建，不能只用 CREATE OR REPLACE：视图选了 cp.*，建视图时 * 会被展开成
+-- 当时的列并固化下来。等 TeslaMate 将来给 charging_processes 加一列（历史上 cost、
+-- charge_energy_used 都是后加的），新列在展开后排在 cost_effective 之前，而
+-- CREATE OR REPLACE VIEW 只允许在列表末尾追加列，于是报
+--   ERROR: cannot change name of view column "cost_effective" to "<新列>"
+-- 重装因此在这里中断，本文件后面的 effective_cost 等对象（11 个仪表盘在用）全都装不上，
+-- 而且重跑还是同样的错，用户不手动删视图就永远修不好。DROP 掉重建没有这个问题。
+-- 不加 CASCADE：本视图没有下游依赖对象（仅仪表盘按需查询），CASCADE 反而可能误删用户自建对象。
+DROP VIEW IF EXISTS charging_processes_v;
 CREATE OR REPLACE VIEW charging_processes_v AS
 SELECT
   cp.*,

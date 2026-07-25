@@ -160,6 +160,11 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    # simple-deploy.sh 内部 export COMPOSE_PROJECT_NAME=teslamate（保证容器名与文档一致）。
+    # job 这边不跟着设，后续步骤裸跑 docker compose 时项目名会退回目录名 teslamate-chinese，
+    # `docker compose ps -q database` 返回空 → 拿不到容器（2026-07 冒烟②就是这样挂的）。
+    env:
+      COMPOSE_PROJECT_NAME: teslamate
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -214,6 +219,11 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: read
+    # simple-deploy.sh 内部 export COMPOSE_PROJECT_NAME=teslamate（保证容器名与文档一致）。
+    # job 这边不跟着设，后续步骤裸跑 docker compose 时项目名会退回目录名 teslamate-chinese，
+    # `docker compose ps -q database` 返回空 → 拿不到容器（2026-07 冒烟②就是这样挂的）。
+    env:
+      COMPOSE_PROJECT_NAME: teslamate
     steps:
       - name: Checkout repository（要 tag 历史，用来找"最新已发布版本"）
         uses: actions/checkout@v4
@@ -291,9 +301,13 @@ jobs:
           # origin/main 的本地分支——workflow 的 push 触发器本就只认 main 分支，tag 触发
           # 时对应的提交也总是从 main 打出来的（本项目发版流程：先 push main 再打 tag），
           # 所以 origin/main 对这两种触发场景都是安全、可预期的 upstream。
-          git fetch origin main --depth=1
-          git checkout -B ci-upgrade-test
-          git branch --set-upstream-to=origin/main ci-upgrade-test
+          # upstream 指向「本次被测的这个 commit」，不是 origin/main：tag 构建时 HEAD 通常是
+          # origin/main 的祖先，把 upstream 设成 main 会让 upgrade.sh 内部的 git pull --rebase
+          # 快进到 main，于是装的是 main 的 SQL 而不是这个 tag 的 SQL——发版冒烟测的就不是
+          # 发版内容了。指向被测 commit 时 pull --rebase 是个 no-op，正好满足脚本要求。
+          git fetch origin "+${GITHUB_SHA}:refs/remotes/origin/ci-target"
+          git checkout -B ci-upgrade-test "${GITHUB_SHA}"
+          git branch --set-upstream-to=origin/ci-target ci-upgrade-test
 
       - name: 跑 scripts/upgrade.sh（本次提交的 SQL，本地检出，不走网络拉取）
         run: bash scripts/upgrade.sh
@@ -469,25 +483,35 @@ jobs:
           docker compose -f "$HOME/official-stack/docker-compose.yml" ps
           docker compose -f "$HOME/official-stack/docker-compose.yml" logs --tail 300
 
-      # best-effort：GITHUB_TOKEN 能否删除 ghcr package version 没有做过实测确认
-      # （历史上这类删除常需要 PAT 而非 GITHUB_TOKEN），失败不影响本 job 的测试结论，
-      # 只是会在 ghcr 残留一个 ci-migrate-<run_id> 临时 tag，需要维护者用 PAT 或
-      # 网页 UI 定期清理。/user/... 端点假设包归属个人账号；若 wjsall 实际是
-      # organization，需要改成 /orgs/wjsall/packages/... —— 未确认，先按最常见的
-      # 个人账号场景写。
-      - name: 清理临时 ghcr tag（best-effort，见上方注释）
+      # 清理临时 ghcr tag。仓库 owner 是个人账号（已确认 owner.type = User），所以端点用
+      # /user/... 或 /users/wjsall/... 都对得上；真正不确定的是身份：workflow 里的
+      # GITHUB_TOKEN 是 github-actions[bot]，/user/... 会解析到 bot 自己的包，很可能删不掉。
+      # 删除 ghcr package version 一般需要带 delete:packages 的 PAT。
+      #
+      # 所以这里删完必须回验：删不掉就明确 ::warning:: 报出残留的 tag 名，而不是让它静默累积
+      # ——「清理步骤绿了」不等于「东西删掉了」。要根治：给仓库加一个带 delete:packages 的
+      # PAT secret（如 GHCR_CLEANUP_TOKEN），下面会自动优先用它。
+      - name: 清理临时 ghcr tag（删不掉会显式告警，不静默残留）
         if: always()
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           PKG="${{ github.event.repository.name }}"
           TAG="ci-migrate-${{ github.run_id }}"
-          gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
-            | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' \
-            | while read -r vid; do
-                [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" || true
-              done
+          list_ids() {
+            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
+              | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' 2>/dev/null
+          }
+          for vid in $(list_ids); do
+            [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" >/dev/null 2>&1 || true
+          done
+          # 回验：还查得到（或压根查不动 API）就报出来
+          if [ -n "$(list_ids)" ]; then
+            echo "::warning::ghcr 临时 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需要人工或配 GHCR_CLEANUP_TOKEN 清理"
+          else
+            echo "临时 tag ${TAG} 已清理（或本 token 无权查询，无法确认——见上方注释）"
+          fi
 
   smoke-manual-compose-degraded:
     name: "冒烟④手动 compose 未跑 SQL → DEGRADED → 修复后 HEALTHY"
@@ -683,6 +707,16 @@ jobs:
           done
 
           echo "--- 检查 1：镜像自带插件（volume 外）不受旧卷内容影响 ---"
+          # 先确认容器还活着：没有数据库/环境变量时 grafana-server 有可能直接退出，
+          # 那样下面所有 docker exec 都会失败，报出来的却是「插件被遮蔽了」，
+          # 会把排查方向带偏到一个根本不存在的回归上。
+          ST=$(docker inspect -f '{{.State.Status}}' shadow-test 2>/dev/null || echo missing)
+          if [ "$ST" != "running" ]; then
+            echo "::error::shadow-test 容器状态=$ST（不是 running），这一轮无法判定插件是否被遮蔽。容器日志："
+            docker logs --tail 50 shadow-test 2>&1 || true
+            exit 1
+          fi
+
           docker exec shadow-test test -d /opt/grafana-plugins/volkovlabs-form-panel \
             && echo "✓ /opt/grafana-plugins/volkovlabs-form-panel 存在" \
             || { echo "::error::/opt/grafana-plugins/volkovlabs-form-panel 缺失——插件被遮蔽了，issue #20/#21 回归！"; exit 1; }

@@ -157,7 +157,21 @@ echo ""
 echo "3. 端口监听"
 check_port_listen() {
     local port=$1
-    # 优先 lsof（macOS / Linux 都准），其次 ss（Linux），最后 netstat（仅 GNU 准）
+    # 真正要回答的问题是「这个端口能不能连上」，所以先直接连一次——这是唯一
+    # 不受 Docker 网络实现影响的判据。Docker 28 默认可以不起 docker-proxy 用户态
+    # 进程（nftables 直接转发），这时端口工作正常，但 lsof/ss 看不到任何 LISTEN
+    # socket；只看监听表会把一套健康的部署判成 container_down（CI 实测：curl
+    # /api/health 成功，同一时刻 lsof 报没监听）。
+    if command -v curl >/dev/null 2>&1; then
+        # 任何 HTTP 响应（含 401/404）都说明端口是通的；连不上时 curl 返回空
+        local code
+        # --noproxy 必须：curl 不会自动为 127.0.0.1 绕过 http_proxy/all_proxy。国内用户
+        # 为了拉 GitHub 常在 shell 里 export 代理，那时这个探测会打到代理上、拿回代理自己的
+        # 404，把「服务其实没起来」判成「端口正常」——比原来的 lsof 盲区更糟。
+        code=$(curl -sS --noproxy '*' -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" 2>/dev/null)
+        [ -n "$code" ] && [ "$code" != "000" ] && return 0
+    fi
+    # 连不上再看监听表，用来区分「端口没开」和「开了但这次请求失败」
     if command -v lsof >/dev/null 2>&1; then
         lsof -iTCP:"$port" -sTCP:LISTEN -P -n >/dev/null 2>&1
     elif command -v ss >/dev/null 2>&1; then
@@ -222,10 +236,14 @@ else
         fi
 
         # 单位换算函数（v1.8.0+）
+        # 不能只数函数名：convert_km/convert_celsius/convert_m/convert_tire_pressure 这四个名字
+        # 上游 TeslaMate 自己的迁移就会建，任何迁移完成的库上都齐，按名字数永远是「已装」——
+        # 这条检查等于没做。改查我们这版独有的特征：只有我们的 convert_tire_pressure 支持
+        # kPa/kpa。它是 install-unit-functions.sql 里最后一个函数，装到它 = 整份装完。
         UNIT_MISSING=0
         if docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc \
-            "SELECT count(DISTINCT proname) FROM pg_proc WHERE proname IN ('convert_km','convert_celsius','convert_m','convert_tire_pressure')" \
-            2>/dev/null | grep -qx 4; then
+            "SELECT count(*) FROM pg_proc WHERE proname = 'convert_tire_pressure' AND prosrc LIKE '%kPa%'" \
+            2>/dev/null | grep -qE '^[1-9][0-9]*$'; then
             ok "单位换算函数已装（里程/温度/海拔/胎压可用）"
         else
             UNIT_MISSING=1
@@ -236,7 +254,7 @@ else
 
         # TOU 表（v1.5.0+）
         TOU_MISSING=0
-        if docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc "SELECT 1 FROM pg_class WHERE relname='tou_rates'" 2>/dev/null | grep -q 1; then
+        if docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc "SELECT 1 FROM pg_class WHERE relname='tou_rates'" 2>/dev/null | grep -qx 1; then
             TOU_CNT=$(docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc "SELECT count(*) FROM tou_rates" 2>/dev/null)
             ok "分时电价表已装（${TOU_CNT} 条规则）"
         else
@@ -382,7 +400,25 @@ if tesla_api_reachable https://owner-api.vn.cloud.tesla.cn; then
     ok "国内 owner-api.vn.cloud.tesla.cn 可达"
 elif tesla_api_reachable https://owner-api.teslamotors.com; then
     ok "国际 owner-api.teslamotors.com 可达"
-    warn_r "国内 owner-api.vn.cloud.tesla.cn 不通（如果你是国内账号需排查 DNS / 网络）" datasource_unreachable
+    # 国内网关不通算不算问题，取决于这套部署用的是哪个地域的账号：
+    #   - 配了 TESLA_API_HOST=...tesla.cn（国内账号）→ 它就是这套部署唯一的数据来源，
+    #     不通就是真故障，记进 REASONS。
+    #   - 没配（国际账号，也是绝大多数海外网络环境）→ 本来就连不上国内网关，
+    #     记进 REASONS 会把一套完全健康的部署判成 DEGRADED，只做提示。
+    # 判据取自 teslamate 容器实际生效的环境变量，不猜。
+    TM_CONTAINER=$(detect_service_container teslamate)
+    TESLA_CN_CONFIGURED=0
+    if [ -n "$TM_CONTAINER" ] && docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        "$TM_CONTAINER" 2>/dev/null | grep -qiE '^TESLA_(API|AUTH|WSS)_HOST=.*tesla\.cn'; then
+        TESLA_CN_CONFIGURED=1
+    fi
+    if [ "$TESLA_CN_CONFIGURED" = "1" ]; then
+        fail_r "国内 owner-api.vn.cloud.tesla.cn 不通，而这套部署配的正是国内账号网关（拿不到车辆数据）" datasource_unreachable
+        echo "    修：排查 DNS / 网络能否解析并访问 owner-api.vn.cloud.tesla.cn"
+    else
+        warn "国内 owner-api.vn.cloud.tesla.cn 不通（这套部署用的是国际账号网关，不影响使用；"
+        echo "    若你其实是国内账号，需要在 compose 里配 TESLA_API_HOST 并排查网络）"
+    fi
 else
     fail_r "Tesla API 服务器都不通（容器拿不到车辆数据）" datasource_unreachable
 fi

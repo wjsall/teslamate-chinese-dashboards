@@ -78,7 +78,17 @@ cmd_install() {
         exit 1
     fi
     echo -e "${BLUE}[1/1] 安装 分时电价函数 + 表...${NC}"
-    psql_exec < "$SQL_DIR/install-tou.sql" | tail -5
+    # -v ON_ERROR_STOP=1 + 不走管道：psql 默认某条语句失败也 exit 0，而管道又会让 $? 变成
+    # tail 的退出码——两层都会把一次失败的安装印成「✓ 已安装」（同类假绿见 simple-deploy.sh
+    # 的 sql_trio_objects_present 注释）。install-tou.sql 是幂等的，遇错即停不影响重复安装。
+    local out rc=0
+    out=$(psql_exec -v ON_ERROR_STOP=1 < "$SQL_DIR/install-tou.sql" 2>&1) || rc=$?
+    printf '%s\n' "$out" | tail -5
+    if [ "$rc" -ne 0 ]; then
+        echo -e "${RED}  ✗ 分时电价安装失败（上面是 psql 的最后几行输出）${NC}"
+        echo "  常见原因：TeslaMate 的表还没建好（新装的实例请等它启动完成再跑）、数据库用户权限不足"
+        exit 1
+    fi
     echo -e "${GREEN}  ✓ 分时电价系统已安装${NC}"
     echo ""
     echo "下一步: bash $0 import <city> <geofence_name>"

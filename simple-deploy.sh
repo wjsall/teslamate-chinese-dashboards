@@ -135,6 +135,101 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
     exit 0
 fi
 
+# SQL 安装的 stderr 落盘：加了 ON_ERROR_STOP=1 之后，psql 的 ERROR 行就是排查唯一线索，
+# 不能再像以前那样一起丢进 /dev/null（用户只看到「⚠ 装失败」，既没法自查也没法贴 issue）。
+SQL_ERR_LOG="${TMPDIR:-/tmp}/teslamate-cn-sql-install.log"
+: > "$SQL_ERR_LOG"
+
+# 等 TeslaMate 自己的数据库迁移跑完，再装我们的 SQL。
+#
+# 必须等的两个硬理由（2026-07 冒烟①实测踩到）：
+#   1. install-tou.sql 里有 `REFERENCES charging_processes` / 建在该表上的触发器。
+#      TeslaMate 建这张表是它启动时跑 Ecto 迁移做的事——迁移没跑完就装，整个
+#      分时电价 SQL 直接失败，用户看到的是「⚡ 分时电价配置」仪表盘全空。
+#   2. install-unit-functions.sql 建的 convert_km/convert_m 等函数，上游 TeslaMate
+#      迁移里也会 `CREATE FUNCTION` 建同名的。我们用的是 CREATE OR REPLACE 所以
+#      抢先建不会报错，但轮到上游迁移时它是不带 OR REPLACE 的裸 CREATE，
+#      撞上 duplicate_function 直接让 TeslaMate 的迁移崩掉。
+# 顺序反过来（等它建完我们再 OR REPLACE）两个问题都不存在，所以这里只需要等。
+#
+# 主判据是 TeslaMate 自己的 HTTP 端口起没起来：Phoenix 是在迁移全部跑完之后才开始监听的，
+# 拿到任何 HTTP 响应就等于迁移已经结束，这个信号既准又快。
+#
+# 次判据（HTTP 探不到时才用，例如端口没映射到宿主机）：schema_migrations 行数在一段时间内
+# 不再变化。这个判据只能"大概"判断——Ecto 每条迁移单独提交自己的 version 行，所以一条耗时
+# 很久的迁移（老用户大库上的回填 / 建索引，跑几分钟的都有）期间行数是冻结的。窗口取短了会在
+# 迁移中途误判成"跑完了"，恰好在唯一会出事的人群（老用户大库）上失效，所以窗口给到 24 秒，
+# 并且只作为兜底。
+wait_teslamate_migrated() {
+    local db_container="$1"
+    local i cur last="" stable=0 code
+
+    # ① 等上游核心表出现（最多 180 秒；镜像已拉好的情况下通常 10-30 秒）
+    for i in $(seq 1 60); do
+        if docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+            "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
+            break
+        fi
+        [ $((i % 10)) -eq 0 ] && echo "    …仍在等 TeslaMate 建表（已等 $((i * 3)) 秒）"
+        sleep 3
+    done
+
+    # ② 主判据：TeslaMate 的 HTTP 端口能应答（最多 180 秒）
+    #    次判据：schema_migrations 行数连续 8 次采样（24 秒）不变
+    for i in $(seq 1 60); do
+        if command -v curl >/dev/null 2>&1; then
+            code=$(curl -sS --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' \
+                "http://127.0.0.1:${TM_PORT}/" 2>/dev/null)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+                return 0
+            fi
+        fi
+        cur=$(docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+            "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
+            stable=$((stable + 1))
+            if [ "$stable" -ge 8 ]; then
+                return 0
+            fi
+        else
+            stable=0
+        fi
+        last="$cur"
+        [ $((i % 10)) -eq 0 ] && echo "    …仍在等 TeslaMate 完成迁移（已等 $((i * 3)) 秒，大库首次迁移会久一些）"
+        sleep 3
+    done
+    return 1
+}
+
+# 三组兼容性 SQL 的对象是否真的在库里——记 revision 之前的最后一道校验。
+#
+# 为什么不能只信 psql 的退出码：psql 默认不是 ON_ERROR_STOP，脚本里某条语句失败它
+# 照样 exit 0。本项目 2026-07 冒烟①就是这么假绿的——「✓ 分时电价表已装」印出来了、
+# revision 也记了 1，实际 tou_rates 压根没建成。安装调用现在都加了 ON_ERROR_STOP=1，
+# 这里再按对象查一遍作为第二道闸：revision 的全部意义就是「库里到底有没有」，
+# 那就直接问库，不要转手信任任何中间信号。
+# 谓词与 scripts/diagnose.sh 第 4 节语义一致（同样的三组对象、同样的哨兵），但不是逐字相同：
+# 这几个脚本是 curl-piped 单文件、不能 source 公共库，各自内联了一份。改任何一处务必同步全部
+# 四处（simple-deploy.sh / migrate-from-official.sh / scripts/upgrade.sh / scripts/diagnose.sh）。
+sql_trio_objects_present() {
+    local db_container="$1"
+    docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+        "SELECT count(DISTINCT proname) FROM pg_proc WHERE proname IN ('lat_for_map','lng_for_map','wgs84_to_gcj02_lat','wgs84_to_gcj02_lng','is_outside_china')" \
+        2>/dev/null | grep -qx 5 || return 1
+    # 只数 proname 是查不出东西的：convert_km/convert_celsius/convert_m/convert_tire_pressure
+    # 这四个名字上游 TeslaMate 自己的迁移就会建（这正是"抢先建会撞车"的前提），所以任何迁移
+    # 完成的库上那个计数都恒等于 4——这一腿等于没查。改查我们这版独有的特征：只有我们的
+    # convert_tire_pressure 支持 kPa/kpa 单位。它又是 install-unit-functions.sql 的最后一个
+    # 函数，装到它就说明整份文件都装完了，正好当哨兵。
+    docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+        "SELECT count(*) FROM pg_proc WHERE proname = 'convert_tire_pressure' AND prosrc LIKE '%kPa%'" \
+        2>/dev/null | grep -qE '^[1-9][0-9]*$' || return 1
+    docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+        "SELECT 1 FROM pg_class WHERE relname='tou_rates'" \
+        2>/dev/null | grep -qx 1 || return 1
+    return 0
+}
+
 # SQL 兼容性 revision 记录（issue #23/#29 事故预防：镜像更新了但 SQL 没装的机制性校验）
 #
 # 只在坐标函数 + 单位换算函数 + 分时电价三组 SQL **全部**安装成功后调用（不含性能索引，
@@ -151,6 +246,10 @@ fi
 write_sql_compat_revision() {
     local db_container="$1"
     local rev ver_safe
+    if ! sql_trio_objects_present "$db_container"; then
+        echo "  ⚠ 三组兼容性 SQL 的对象没在库里查到，不记录 revision（跑 scripts/diagnose.sh 看缺哪一组）"
+        return 1
+    fi
     rev=$(curl -fsSL "$REPO_BASE/config/versions.env" 2>/dev/null \
         | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r') || true
     if [ -z "$rev" ]; then
@@ -480,11 +579,23 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         fi
         sleep 2
     done
+
+    if [ "$DB_READY" -eq 1 ]; then
+        # 先让 TeslaMate 把自己的迁移跑完，再装我们的 SQL（见 wait_teslamate_migrated 注释：
+        # 抢在它前面会让 tou 装不上、并让上游迁移撞 duplicate_function 崩掉）
+        echo "  → 等 TeslaMate 完成自身数据库迁移（首次安装通常 10-30 秒）"
+        TM_MIGRATED=1
+        if ! wait_teslamate_migrated "$DB_CONTAINER"; then
+            TM_MIGRATED=0
+            echo "  ⚠ 没能确认 TeslaMate 迁移已完成。为避免和它的迁移撞车，这次跳过单位换算函数"
+            echo "    （撞车会让 TeslaMate 自己起不来）。等 TeslaMate 正常启动后重跑本脚本即可补上。"
+        fi
+    fi
     echo ""
     UPGRADE_SQL_OK=1
     if [ "$DB_READY" -eq 1 ]; then
         echo "  → 安装/更新坐标转换函数"
-        if curl -fsSL "$SQL_BASE/install-coord-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+        if curl -fsSL "$SQL_BASE/install-coord-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
             echo "  ✓ 坐标函数已更新（地图源切换/纠偏）"
         else
             echo "  ⚠ 坐标函数更新失败"
@@ -492,7 +603,7 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         fi
 
         echo "  → 安装/更新单位换算函数"
-        if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+        if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
             echo "  ✓ 单位换算函数已更新（km/mi、℃/℉、m/ft、胎压）"
         else
             echo "  ⚠ 单位换算函数更新失败"
@@ -500,7 +611,7 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         fi
 
         echo "  → 安装/更新分时电价表 + 函数（v1.5.0+）"
-        if curl -fsSL "$SQL_BASE/install-tou.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+        if curl -fsSL "$SQL_BASE/install-tou.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
             echo "  ✓ 分时电价已就绪（首次装好后到「⚡ 分时电价配置」仪表盘填规则）"
         else
             echo "  ⚠ 分时电价更新失败，TOU 仪表盘可能不可用"
@@ -513,7 +624,7 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         fi
 
         echo "  → 安装/更新性能优化索引（v1.6.1+）"
-        if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+        if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
             echo "  ✓ 索引已就绪（电池健康/天气-能耗等查询提速）"
         else
             echo "  ⚠ 索引安装失败（不影响功能，仅性能略差）"
@@ -566,8 +677,19 @@ fi
 # 群晖 DSM 高发：DSM 自带服务、其他 docker 容器（Portainer/Bitwarden）也可能占
 # macOS 高发：3000 被 Vite/Next.js/Rails 默认占
 # 检测优先 lsof（macOS / Linux 都准），其次 ss（Linux 现代发行版），最后 netstat（兼容老系统）
+# 同 scripts/diagnose.sh 的 check_port_listen：只查监听表会漏——Docker 28 可以不起
+# docker-proxy 用户态进程（nftables 直接转发），端口实际被占着但 lsof/ss 里什么都看不到，
+# 预检会说"空闲"，然后 compose up 报 port is already allocated，用户拿到的是难懂的报错
+# 而不是这里友好的冲突提示。所以先真连一次：连得上一定是被占了。
 check_port_free() {
     local port=$1
+    if command -v curl >/dev/null 2>&1; then
+        local code
+        # --noproxy 必须：curl 不为 127.0.0.1 自动绕过 http_proxy。带代理的 shell 里
+        # 不加这个会让代理的响应被当成「端口被占用」，两个端口全判冲突、直接中止安装。
+        code=$(curl -sS --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" 2>/dev/null)
+        [ -n "$code" ] && [ "$code" != "000" ] && return 0
+    fi
     if command -v lsof >/dev/null 2>&1; then
         lsof -iTCP:"$port" -sTCP:LISTEN -P -n >/dev/null 2>&1
     elif command -v ss >/dev/null 2>&1; then
@@ -747,21 +869,33 @@ for i in $(seq 1 30); do
 done
 
 if [ "$DB_READY" -eq 1 ]; then
-    if curl -fsSL "$SQL_BASE/install-coord-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+    # 先让 TeslaMate 把自己的迁移跑完，再装我们的 SQL（见 wait_teslamate_migrated 注释：
+    # 抢在它前面会让 tou 装不上、并让上游迁移撞 duplicate_function 崩掉）
+    echo "  → 等 TeslaMate 完成自身数据库迁移（首次安装通常 10-30 秒）"
+    TM_MIGRATED=1
+    if ! wait_teslamate_migrated "$DB_CONTAINER"; then
+        TM_MIGRATED=0
+        echo "  ⚠ 没能确认 TeslaMate 迁移已完成。为避免和它的迁移撞车，这次跳过单位换算函数"
+        echo "    （撞车会让 TeslaMate 自己起不来）。等 TeslaMate 正常启动后重跑本脚本即可补上。"
+    fi
+fi
+
+if [ "$DB_READY" -eq 1 ]; then
+    if curl -fsSL "$SQL_BASE/install-coord-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
         echo "  ✓ 坐标转换函数已装（地图源切换+GCJ-02 自动纠偏）"
     else
         echo "  ⚠ 坐标函数安装失败"
         SQL_OK=0
     fi
 
-    if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+    if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
         echo "  ✓ 单位换算函数已装（km/mi、℃/℉、m/ft、胎压）"
     else
         echo "  ⚠ 单位换算函数安装失败"
         SQL_OK=0
     fi
 
-    if curl -fsSL "$SQL_BASE/install-tou.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+    if curl -fsSL "$SQL_BASE/install-tou.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
         echo "  ✓ 分时电价表+函数已装（v1.5.0+，首次装好后到「⚡ 分时电价配置」仪表盘填规则）"
     else
         echo "  ⚠ 分时电价安装失败，TOU 仪表盘可能不可用"
@@ -773,7 +907,7 @@ if [ "$DB_READY" -eq 1 ]; then
         write_sql_compat_revision "$DB_CONTAINER" || true
     fi
 
-    if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate >/dev/null 2>&1; then
+    if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
         echo "  ✓ 性能索引已装（v1.6.1+，电池健康/天气-能耗等查询提速）"
     else
         echo "  ⚠ 索引安装失败（不影响功能，仅性能略差）"
@@ -781,6 +915,7 @@ if [ "$DB_READY" -eq 1 ]; then
 
     if [ "$SQL_OK" -eq 0 ]; then
         echo ""
+        echo "    psql 的具体报错在：$SQL_ERR_LOG"
         echo "    部分 SQL 安装失败，可手动重跑（按需选）："
         echo "    for f in install-coord-functions install-unit-functions install-tou install-indexes; do"
         echo "      curl -fsSL $SQL_BASE/\$f.sql | docker exec -i $DB_CONTAINER psql -U teslamate -d teslamate"

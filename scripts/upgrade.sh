@@ -37,6 +37,39 @@ WARN_STEPS=()
 # migrate-from-official.sh 口径一致。用 case + 空格分隔字符串匹配而不是数组遍历：
 # 老 bash（如 Synology 的 3.2）在 set -e 下遍历「已声明但零元素」的数组可能报错，
 # 字符串匹配没有这个坑（CLAUDE.md「Bash 3.2 兼容」条款同类教训）。
+# 等 TeslaMate 自己的 Ecto 迁移跑完，再装我们的 SQL。
+# 理由同 simple-deploy.sh：install-tou.sql 依赖 charging_processes（TeslaMate 迁移建的），
+# 而 install-unit-functions.sql 抢先建 convert_* 会让上游那条不带 OR REPLACE 的迁移撞
+# duplicate_function、TeslaMate 起不来。判据：等 charging_processes 出现，再等
+# schema_migrations 行数连续 8 次采样（24 秒）不变——窗口取短了会在一条耗时长的迁移
+# 中途误判成已完成。
+wait_teslamate_migrated() {
+    local db="$1" u="$2" d="$3"
+    local i cur last="" stable=0
+    for i in $(seq 1 60); do
+        if docker exec "$db" psql -U "$u" -d "$d" -tAc \
+            "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
+            break
+        fi
+        sleep 3
+    done
+    for i in $(seq 1 60); do
+        cur=$(docker exec "$db" psql -U "$u" -d "$d" -tAc \
+            "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
+            stable=$((stable + 1))
+            if [ "$stable" -ge 8 ]; then
+                return 0
+            fi
+        else
+            stable=0
+        fi
+        last="$cur"
+        sleep 3
+    done
+    return 1
+}
+
 sql_trio_ok() {
     case " ${FAILED_STEPS[*]:-} " in
         *" 坐标函数 "*|*" 单位换算函数 "*|*" 分时电价 "*) return 1 ;;
@@ -48,7 +81,36 @@ sql_trio_ok() {
 # 比对镜像要求的 revision（config/versions.env，随镜像一起装进 /opt/teslamate-cn/versions.env）
 # 和数据库里实际装到的 revision。CREATE TABLE IF NOT EXISTS 是自愈的关键：老用户的数据库
 # 压根没有这张表，本函数第一次跑起来时会自动建表 + 写入当前 revision，不需要任何手动迁移步骤。
+# 三组兼容性 SQL 的对象是否真的在库里——记 revision 之前的最后一道校验。
+# psql 的退出码不够：默认不是 ON_ERROR_STOP 时语句失败也 exit 0（2026-07 冒烟①实测到
+# 「✓ 已装」+ revision=1 但 tou_rates 根本没建的假绿）。安装调用都加了 ON_ERROR_STOP=1，
+# 这里再直接问库一遍作为第二道闸。谓词与 scripts/diagnose.sh 第 4 节语义一致（同样的三组对象、
+# 同样的哨兵），但不是逐字相同：curl-piped 单文件脚本不能 source 公共库，各自内联了一份。
+# 改任一处务必同步全部四处（simple-deploy.sh / migrate-from-official.sh / upgrade.sh / diagnose.sh）。
+sql_trio_objects_present() {
+    [ -n "${DB_CONTAINER:-}" ] || return 1
+    docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc \
+        "SELECT count(DISTINCT proname) FROM pg_proc WHERE proname IN ('lat_for_map','lng_for_map','wgs84_to_gcj02_lat','wgs84_to_gcj02_lng','is_outside_china')" \
+        2>/dev/null | grep -qx 5 || return 1
+    # 只数 proname 是查不出东西的：convert_km/convert_celsius/convert_m/convert_tire_pressure
+    # 这四个名字上游 TeslaMate 自己的迁移就会建（这正是"抢先建会撞车"的前提），所以任何迁移
+    # 完成的库上那个计数都恒等于 4——这一腿等于没查。改查我们这版独有的特征：只有我们的
+    # convert_tire_pressure 支持 kPa/kpa 单位。它又是 install-unit-functions.sql 的最后一个
+    # 函数，装到它就说明整份文件都装完了，正好当哨兵。
+    docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc \
+        "SELECT count(*) FROM pg_proc WHERE proname = 'convert_tire_pressure' AND prosrc LIKE '%kPa%'" \
+        2>/dev/null | grep -qE '^[1-9][0-9]*$' || return 1
+    docker exec "$DB_CONTAINER" psql -U teslamate -d teslamate -tAc \
+        "SELECT 1 FROM pg_class WHERE relname='tou_rates'" \
+        2>/dev/null | grep -qx 1 || return 1
+    return 0
+}
+
 write_sql_compat_revision() {
+    if ! sql_trio_objects_present; then
+        echo -e "${YELLOW}  ⚠ 三组兼容性 SQL 的对象没在库里查到，不记录 revision（跑 scripts/diagnose.sh 看缺哪一组）${NC}"
+        return 1
+    fi
     if [ -z "$SQL_COMPAT_REVISION" ]; then
         echo -e "${YELLOW}  ⚠ 本地检出没有 config/versions.env，跳过记录 SQL 兼容性 revision${NC}"
         return 1
@@ -135,11 +197,20 @@ if [ -z "$DB_CONTAINER" ]; then
 fi
 echo -e "${GREEN}  ✓ 找到容器: ${DB_CONTAINER}${NC}"
 
+# 装 SQL 之前先确认 TeslaMate 的迁移不在跑：文档里的标准升级姿势是
+# `docker compose pull && docker compose up -d` 之后紧接着跑本脚本，新版本 TeslaMate
+# 起来时可能正在跑新迁移，这时装我们的 SQL 会撞车（见 wait_teslamate_migrated 注释）。
+# 已经跑了一阵的实例上这一步几秒就确认完。
+echo -e "${BLUE}      等 TeslaMate 完成自身数据库迁移...${NC}"
+if ! wait_teslamate_migrated "$DB_CONTAINER" teslamate teslamate; then
+    echo -e "${YELLOW}  ⚠ 没能确认迁移已完成，仍继续；若下面有 SQL 装失败，等 TeslaMate 起来后重跑本脚本${NC}"
+fi
+
 # ============================================================
 # 3. 安装坐标转换函数（地图源切换 + GCJ-02 转换）
 # ============================================================
 echo -e "${BLUE}[3/8] 安装坐标转换函数（地图）...${NC}"
-if ! docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+if ! docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
         < sql/install-coord-functions.sql > /dev/null; then
     echo -e "${RED}✗ 坐标函数安装失败${NC}"
     echo "  常见原因 + 解决: 见 TROUBLESHOOTING.md「装 PostgreSQL 坐标转换函数报错」章节"
@@ -152,7 +223,7 @@ fi
 # 4. 安装单位换算函数
 # ============================================================
 echo -e "${BLUE}[4/8] 安装单位换算函数...${NC}"
-if ! docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+if ! docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
         < sql/install-unit-functions.sql > /dev/null; then
     echo -e "${RED}✗ 单位换算函数安装失败${NC}"
     echo "  请确认 sql/install-unit-functions.sql 存在且可被当前数据库用户执行。"
@@ -170,7 +241,7 @@ if [ ! -f "sql/install-tou.sql" ]; then
     FAILED_STEPS+=("分时电价")
 else
     # 把 stderr 落盘，便于排错；NOTICE 信息走 stdout 丢弃
-    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
             < sql/install-tou.sql > /dev/null 2> /tmp/tou-install.log; then
         echo -e "${GREEN}  ✓ 分时电价表/函数/触发器/视图已就绪${NC}"
         echo "    用 'bash scripts/tou-wizard.sh' 配置峰谷电价（可选，没装也不影响主仪表盘）"
@@ -210,7 +281,7 @@ if [ ! -f "sql/install-indexes.sql" ]; then
     echo -e "${YELLOW}  ⚠ 找不到 sql/install-indexes.sql，跳过（不影响功能，仅性能略差）${NC}"
     WARN_STEPS+=("性能索引")
 else
-    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+    if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
             < sql/install-indexes.sql > /dev/null 2>&1; then
         echo -e "${GREEN}  ✓ 性能索引已就绪（电池健康/天气-能耗等查询提速）${NC}"
     else
