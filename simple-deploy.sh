@@ -146,25 +146,41 @@ SQL_ERR_LOG=$(mktemp "${TMPDIR:-/tmp}/teslamate-cn-sql-install.XXXXXX" 2>/dev/nu
 # 而重跑脚本时 TM_PORT 会回落成默认 4000——写死 4000 就可能探到 4000 上另一个无关服务，
 # 让等待瞬间"成功"，等于没等。以容器实际映射为准，拿不到再回落 TM_PORT。
 teslamate_published_port() {
-    local c p
-    c=$(docker ps --format '{{.Names}}' 2>/dev/null \
-        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
-    if [ -n "$c" ]; then
-        p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
-    fi
-    [ -z "$p" ] && p="$TM_PORT"
+    local c p=""
+    c=$(teslamate_container_name)
+    [ -z "$c" ] && return 0
+    p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
     echo "$p"
 }
 
 # TeslaMate 容器当前状态（running / restarting / exited / unknown）。
 # 等待函数必须看这个：崩溃重启中的 TeslaMate，schema_migrations 行数同样是恒定不变的，
 # 只看行数会把「迁移撞崩、永久停在半途」判成「迁移已完成」，然后继续装 SQL、把问题坐实。
+# 找 TeslaMate 主容器。三级探测，一级比一级不依赖命名约定：
+#   ① compose 自己报（用户改过 project 名也准）
+#   ② 名字正则（兼容没跑在 compose 里的情况）
+#   ③ 按镜像找（用户给容器起了完全不相干的名字时的兜底）
+# 探不到会让下面的存活判据退化成「不判」，所以这里要尽量探得到——实测过：容器叫
+# teslamate-app 时只有 ③ 能找到，而少了它，一个正在崩溃重启的 TeslaMate 会被当成健康。
+teslamate_container_name() {
+    local c=""
+    c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
+    if [ -z "$c" ]; then
+        c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
+            | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+            | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
+    fi
+    if [ -z "$c" ]; then
+        c=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
+            | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
+            | cut -f1 | head -1 || true)
+    fi
+    echo "$c"
+}
+
 teslamate_container_status() {
     local c
-    c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
-        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    c=$(teslamate_container_name)
     if [ -z "$c" ]; then
         echo unknown
         return
@@ -216,6 +232,14 @@ wait_teslamate_migrated() {
         [ $((i % 10)) -eq 0 ] && echo "    …仍在等 TeslaMate 建表（已等 $((i * 3)) 秒，容器状态 ${tm_st}）"
         sleep 3
     done
+    # 第一段跑完还没 break，说明表始终没出现——这时再进第二段也只会白等一个 180 秒的
+    # 超时（实测总耗时 400 秒+）。直接返回"确认不了"，让调用方走跳过分支。
+    if ! docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
+        "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
+        echo "  ✗ 等了 3 分钟，TeslaMate 仍未建好自己的数据表，无法确认迁移状态。"
+        return 1
+    fi
+
 
     # ② 主判据：TeslaMate 的 HTTP 端口能应答（最多 180 秒）
     #    次判据：schema_migrations 行数连续 8 次采样（24 秒）不变

@@ -90,8 +90,18 @@ def skeletonize(text):
                 # install-tou.sql 就把视图重建放在 DO 块里（要在里面处理"用户建了依赖对象"
                 # 的异常）。把 DO 体一起折叠掉，里面创建的对象就从契约里凭空消失了，
                 # 门会把"什么都没改"报成"移除了一个对象"。所以 DO 体保留、继续扫描。
-                if re.search(r'\bDO\s*$', ''.join(out)[-16:], re.IGNORECASE):
-                    out.append(inner)
+                # 折叠的判据是「这是不是函数体」，而不是「是不是 dollar-quote」。
+                # 函数体一定跟在 AS 后面（CREATE FUNCTION ... AS $$ ... $$），折叠它是有意
+                # 为之：改函数实现不该算契约变化。而 `DO $tag$ ... $tag$` 是会真正建对象的
+                # 顶层语句，`EXECUTE $tag$ ... $tag$` 是它里面要执行的 SQL——install-tou.sql
+                # 就把视图重建放在 DO + EXECUTE 里（要在里面处理"用户建了依赖对象"的异常）。
+                # 把这两种也折叠掉，里面创建的对象就从契约里凭空消失，门会把"什么都没改"
+                # 报成"移除了一个对象"。
+                # 不折叠的分支要递归骨架化，不能原样塞回去：原样塞回去的话体内的 `--` 注释
+                # 没被清理，注释里写的「CREATE VIEW xxx」会被后面的对象正则当成真对象
+                # （实测能造出幽灵对象让门误报新增）。
+                if not re.search(r'\bAS\s*$', ''.join(out)[-16:], re.IGNORECASE):
+                    out.append(skeletonize(inner))
                     i = end_tag_idx + len(tag)
                     continue
                 out.append(' $BODY$ ')

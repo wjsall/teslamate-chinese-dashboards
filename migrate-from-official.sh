@@ -301,11 +301,31 @@ check_pg_version() {
 # TeslaMate 容器当前状态（running / restarting / exited / unknown）。
 # 崩溃重启中的 TeslaMate，schema_migrations 行数同样恒定不变，只看行数会把「迁移撞崩、
 # 永久停在半途」判成「迁移已完成」，然后继续装 SQL 把问题坐实。
+# 找 TeslaMate 主容器。三级探测，一级比一级不依赖命名约定：
+#   ① compose 自己报（用户改过 project 名也准）
+#   ② 名字正则（兼容没跑在 compose 里的情况）
+#   ③ 按镜像找（用户给容器起了完全不相干的名字时的兜底）
+# 探不到会让下面的存活判据退化成「不判」，所以这里要尽量探得到——实测过：容器叫
+# teslamate-app 时只有 ③ 能找到，而少了它，一个正在崩溃重启的 TeslaMate 会被当成健康。
+teslamate_container_name() {
+    local c=""
+    c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
+    if [ -z "$c" ]; then
+        c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
+            | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+            | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
+    fi
+    if [ -z "$c" ]; then
+        c=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
+            | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
+            | cut -f1 | head -1 || true)
+    fi
+    echo "$c"
+}
+
 teslamate_container_status() {
     local c
-    c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
-        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    c=$(teslamate_container_name)
     if [ -z "$c" ]; then
         echo unknown
         return
@@ -316,10 +336,8 @@ teslamate_container_status() {
 # TeslaMate 实际映射到宿主机的端口（拿不到就空）。用它而不是写死 4000：
 # 用户可能用 TM_PORT 装在别的端口上，写死会探到无关服务、让等待瞬间"成功"。
 teslamate_published_port() {
-    local c p
-    c=$(docker ps --format '{{.Names}}' 2>/dev/null \
-        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    local c p=""
+    c=$(teslamate_container_name)
     [ -z "$c" ] && return 0
     p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
     echo "$p"
@@ -333,8 +351,27 @@ wait_teslamate_migrated() {
             "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
             break
         fi
+        tm_st=$(teslamate_container_status)
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+            bad=$((bad + 1))
+            if [ "$bad" -ge 3 ]; then
+                echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
+                echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                return 1
+            fi
+        else
+            bad=0
+        fi
         sleep 3
     done
+    # 第一段跑完还没 break，说明表始终没出现——这时再进第二段也只会白等一个 180 秒的
+    # 超时（实测总耗时 400 秒+）。直接返回"确认不了"，让调用方走跳过分支。
+    if ! docker exec "$db" psql -U "$u" -d "$d" -tAc \
+        "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
+        echo "  ✗ 等了 3 分钟，TeslaMate 仍未建好自己的数据表，无法确认迁移状态。"
+        return 1
+    fi
+
     for i in $(seq 1 60); do
         # 主判据：TeslaMate 的 HTTP 端口能应答。它的 entrypoint 是先跑完整套迁移
         # 再 exec 启动服务，所以端口一应答就等于迁移结束——比数迁移行数准得多。
@@ -684,16 +721,26 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FIL
         detect_db_container || true
         if [[ -n "${DB_CONTAINER:-}" ]]; then
             echo "→ 等 TeslaMate 完成自身数据库迁移（已在跑的实例通常几秒就确认）"
+            TM_MIGRATED=1
             if ! wait_teslamate_migrated "$DB_CONTAINER" "${DB_USER:-teslamate}" "${DB_NAME:-teslamate}"; then
-                echo "⚠️  没能确认迁移已完成，仍继续装 SQL；若分时电价装失败，等 TeslaMate 起来后重跑本脚本"
+                TM_MIGRATED=0
+                echo "⚠️  没能确认 TeslaMate 迁移已完成。为避免和它的迁移撞车，这次跳过单位换算函数"
+                echo "    （撞车会让 TeslaMate 自己起不来，且重跑本脚本也修不好）。等它正常启动后重跑即可补上。"
             fi
         fi
         install_sql "坐标转换函数（地图轨迹纠偏）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-coord-functions.sql" \
             "coord-sql" || true
-        install_sql "单位换算函数（km/mi、温度、海拔、胎压）" \
-            "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
-            "unit-sql" || true
+        # TM_MIGRATED=0 时必须真的跳过，不能只打印一句（这组函数与上游同名，抢先建会让
+        # TeslaMate 的迁移撞 duplicate_function 而永久起不来）
+        if [[ "${TM_MIGRATED:-1}" -eq 0 ]]; then
+            echo "⏭ 跳过单位换算函数（没能确认 TeslaMate 迁移已完成）"
+            FAILED_STEPS+=("unit-sql")
+        else
+            install_sql "单位换算函数（km/mi、温度、海拔、胎压）" \
+                "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
+                "unit-sql" || true
+        fi
         install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
             "tou-sql" || true
@@ -785,12 +832,25 @@ ensure_volkov_plugin || true
 
 # 10. 装 SQL（探测 DB 容器名 → install_sql × 4）
 detect_db_container || true
+TM_MIGRATED=1
+if [[ -n "${DB_CONTAINER:-}" ]]; then
+    echo "→ 等 TeslaMate 完成自身数据库迁移"
+    if ! wait_teslamate_migrated "$DB_CONTAINER" "${DB_USER:-teslamate}" "${DB_NAME:-teslamate}"; then
+        TM_MIGRATED=0
+        echo "⚠️  没能确认 TeslaMate 迁移已完成，这次跳过单位换算函数（抢先建同名函数会让 TeslaMate 起不来）"
+    fi
+fi
 install_sql "坐标转换函数（地图轨迹纠偏）" \
     "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-coord-functions.sql" \
     "coord-sql" || true
-install_sql "单位换算函数（km/mi、温度、海拔、胎压）" \
-    "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
-    "unit-sql" || true
+if [[ "${TM_MIGRATED:-1}" -eq 0 ]]; then
+    echo "⏭ 跳过单位换算函数（没能确认 TeslaMate 迁移已完成）"
+    FAILED_STEPS+=("unit-sql")
+else
+    install_sql "单位换算函数（km/mi、温度、海拔、胎压）" \
+        "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
+        "unit-sql" || true
+fi
 install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
     "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
     "tou-sql" || true

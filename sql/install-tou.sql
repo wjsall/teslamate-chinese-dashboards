@@ -525,8 +525,11 @@ DO $view$
 BEGIN
     BEGIN
         DROP VIEW IF EXISTS charging_processes_v;
-    EXCEPTION WHEN dependent_objects_still_exist THEN
-        RAISE NOTICE '跳过重建视图 charging_processes_v：有其他对象依赖它（多半是你自己建的视图）。';
+    -- 两种都要捕获：dependent_objects_still_exist = 有对象依赖它；
+    -- wrong_object_type = 同名对象存在但不是普通视图（例如用户把它换成了物化视图），
+    -- 这时 DROP VIEW 报 "is not a view"，不捕获同样会中断整份文件。
+    EXCEPTION WHEN dependent_objects_still_exist OR wrong_object_type THEN
+        RAISE NOTICE '跳过重建视图 charging_processes_v：有其他对象依赖它，或它已被换成别的对象类型。';
         RAISE NOTICE '  其余分时电价对象会照常安装，不受影响。';
         RAISE NOTICE '  想让这个视图也更新到最新定义：先删掉依赖它的对象，再重跑本文件。';
         RETURN;
