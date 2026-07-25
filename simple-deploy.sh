@@ -34,22 +34,55 @@ resolve_target_ref() {
     fi
     echo "🔍 解析最新正式 Release 版本..."
     local resp tag
+    # 路子一：GitHub API。信息最全，但未认证时限流 60 次/小时/IP——国内共享出口、
+    # 公司网络、NAS 都很容易撞上。
     resp=$(curl -fsSL --max-time 10 \
         "https://api.github.com/repos/wjsall/teslamate-chinese-dashboards/releases/latest" 2>/dev/null) || resp=""
     # `|| true` 必须：resp 为空或没有 tag_name 字段时 grep -m1 找不到匹配会返回 1，
     # set -o pipefail 下会让整条管道判定失败，在 set -e 下直接终止脚本——不加这个会让
     # "API 不可达时的兜底"本身在兜底判断前就被 set -e 杀掉，兜底逻辑永远跑不到。
     tag=$(printf '%s' "$resp" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || true
+
+    # 路子二：网页版 /releases/latest 会 302 到具体 tag，走的是普通网页通道、
+    # 不吃 API 限流。API 被限流时这条通常还通，能救回绝大多数解析失败。
+    if [ -z "$tag" ]; then
+        echo "  · GitHub API 没解析出来（多半是限流），换免限流的方式再试一次"
+        tag=$(curl -sSI --max-time 10 \
+            "https://github.com/wjsall/teslamate-chinese-dashboards/releases/latest" 2>/dev/null \
+            | grep -i '^location:' | tr -d '\r' | sed 's|.*/||') || true
+        # 只接受 vX.Y.Z 形态，避免把 "latest"（没有任何 Release 时的重定向结果）当版本号用
+        case "$tag" in
+            v[0-9]*) : ;;
+            *) tag="" ;;
+        esac
+    fi
+
     if [ -n "$tag" ]; then
         TARGET_REF="$tag"
         echo "  ✓ 最新正式版：${TARGET_REF}（SQL 锁定这个 tag，镜像用 latest——两者内容对齐同一版本）"
-    else
-        TARGET_REF="main"
-        echo "  ⚠️ 无法解析 GitHub 最新 Release（网络问题、未认证 API 限流 60次/小时/IP，或仓库暂无 Release）"
-        echo "     SQL 本次回退到 main 滚动通道拉取（可能包含尚未正式发版的改动）；镜像仍锁定 latest"
-        echo "     （最新正式版），不会因为这次解析失败就把镜像永久钉进 main 滚动通道"
-        echo "     想锁定具体版本重跑：TARGET_REF=v1.8.4 bash simple-deploy.sh"
+        return 0
     fi
+
+    # 两条路都没解析出来 → 停下来，不猜。
+    #
+    # 这里曾经的做法是回退到 main：SQL 从 main 拉、镜像仍用 latest。那正好是版本契约
+    # 明令禁止的混搭——用户拿到「正式版镜像 + 未发布的 SQL」，而这套组合从来没有被
+    # 任何冒烟测试跑过。安装成功与否取决于此刻 main 上有没有半成品，这不该由一次
+    # 网络抖动来决定。宁可让用户多打一个参数，也不要装出一套没人验证过的组合。
+    echo ""
+    echo "❌ 没能确定最新正式版本号（GitHub API 与网页两条路都没通）"
+    echo ""
+    echo "   常见原因：网络不通 GitHub、API 限流（未认证 60 次/小时/每 IP）、代理拦截。"
+    echo ""
+    echo "   两个办法，任选其一："
+    echo "     1) 稍后重试（限流通常一小时内自行恢复）"
+    echo "     2) 直接指定版本重跑，去 Releases 页面看最新版本号："
+    echo "        https://github.com/wjsall/teslamate-chinese-dashboards/releases"
+    echo "        TARGET_REF=v1.9.1 bash simple-deploy.sh"
+    echo ""
+    echo "   （不自动改用开发分支安装：那会让镜像和数据库脚本来自不同版本，"
+    echo "     是这套版本机制专门要避免的组合。）"
+    exit 1
 }
 # 只有 TARGET_REF 的推导结果会被实际用到时才发起网络请求：SQL_REF 和 GRAFANA_IMAGE
 # 都已经被显式设置时（常见于 CI 冒烟测试，如 GRAFANA_IMAGE=teslamate-cn-ci:local
@@ -106,6 +139,33 @@ SQL_BASE="https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/
 # 用同一个 ref——这两类文件必须来自同一次提交，否则 SQL_COMPAT_REVISION 校验会读到
 # 不匹配的期望值）
 REPO_BASE="https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${SQL_REF}"
+
+# ============================================================
+# 自举：确保真正执行的是**已发布版本**的这个脚本
+#
+# README 给用户的命令是 curl .../main/simple-deploy.sh | bash，所以拉到的脚本本体来自 main——
+# 也就是说，SQL、辅助脚本、镜像都锁定到了正式版，唯独「安装逻辑本身」还是未发布代码。
+# main 上的改动推上去那一刻就对所有新用户生效，而它此刻可能还没跑完冒烟测试。
+#
+# 这里在解析出正式版本号之后、做任何实际动作之前，换成那个 tag 下的同名脚本继续执行。
+# 于是整套安装——脚本、SQL、镜像——全部来自同一次正式发布。
+#
+# 三个安全阀：
+#   - TESLAMATE_CN_PINNED 防止无限自举（换过去的脚本带着这个变量，不会再换一次）
+#   - 拉取失败就继续用当前这份（保持原有行为，不会因为网络问题装不了）
+#   - TARGET_REF=main（用户主动选滚动通道）时不自举，那是明确的意图
+if [ -z "${TESLAMATE_CN_PINNED:-}" ] && [ "$TARGET_REF" != "main" ] \
+   && [ "$TARGET_REF" != "unused-both-refs-explicit" ]; then
+    _pinned=$(mktemp "${TMPDIR:-/tmp}/teslamate-cn-deploy.XXXXXX" 2>/dev/null) || _pinned=""
+    if [ -n "$_pinned" ] && curl -fsSL --max-time 30 "$REPO_BASE/simple-deploy.sh" -o "$_pinned" 2>/dev/null \
+       && [ -s "$_pinned" ] && head -1 "$_pinned" | grep -q '^#!/bin/bash'; then
+        echo "  ↻ 改用 ${TARGET_REF} 版本的安装脚本继续（保证脚本与 SQL、镜像同版本）"
+        export TESLAMATE_CN_PINNED=1
+        export TARGET_REF
+        exec bash "$_pinned" "$@"
+    fi
+    [ -n "$_pinned" ] && rm -f "$_pinned"
+fi
 
 # 端口配置（支持环境变量覆盖，端口冲突时用：TM_PORT=14000 GF_PORT=13000 bash simple-deploy.sh）
 TM_PORT="${TM_PORT:-4000}"
