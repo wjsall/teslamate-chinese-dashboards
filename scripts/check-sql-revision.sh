@@ -349,8 +349,11 @@ CORE_BODY_FUNCTIONS = {
     'compute_tou_cost',          # 单笔 TOU 费用的核心算法
     'lookup_tou_rate',           # 时段/地点/AC-DC → 电价 的匹配规则
     'effective_cost',            # 仪表盘取费用的统一入口（11 个仪表盘在用）
+    'cost_before_tou',           # 「不按分时电价时显示多少钱」——对账面板的比较基准
     'backfill_all_tou',          # 历史费用回算
-    'set_default_charging_rate', # 默认电价（会写 charging_processes.cost）
+    'set_default_charging_rate', # 默认电价（决定它会不会顶掉真实账单）
+    'trigger_compute_tou',       # 充电完成时自动算/清分时电价费用
+    'adopt_legacy_default_costs',# 老数据迁移，会改 charging_processes.cost，改错就丢数据
 }
 
 _COMMENT_LINE_RE = re.compile(r'--[^\n]*')
