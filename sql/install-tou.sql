@@ -619,6 +619,11 @@ BEGIN
         RETURN;
     END;
 
+    -- ⚠ cost_effective 只看「分时电价 → TeslaMate 原值」两档，**不认识费用覆盖表**
+    --   （手工单价 / 默认电价）。同一笔充电，这个视图给的数可能和仪表盘上显示的不一样。
+    --   要拿「用户实际看到的费用」，一律用 effective_cost(cp.id, cp.cost)。
+    --   这里保持现状是因为没有任何仪表盘读它，改成四档要重定义视图列、代价大于收益；
+    --   但下一个人别把它当权威——它不是。
     EXECUTE $v$
         CREATE VIEW charging_processes_v AS
         SELECT
@@ -635,7 +640,7 @@ BEGIN
         LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
     $v$;
 
-    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS 'TeslaMate 中文版独家：暴露 cost_effective 让所有仪表盘自动按 TOU 显示真实费用'$c$;
+    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含分时电价与 TeslaMate 原值，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
 END
 $view$;
 
@@ -1179,6 +1184,11 @@ COMMENT ON FUNCTION list_city_templates IS
 -- 早期版本写进 tou_rates 的那两条「默认」全天规则的清理函数。
 -- 标签是我们自己写死的，只有 set_default_charging_rate 会产生，按标签认得准；
 -- 同时限定全局（geofence NULL）、0-24 点、无季节，避免误伤用户手配的规则。
+--
+-- 谁在调：安装/升级时跑一次（本文件 9c 节），以及**每一次**设置默认电价时都跑。
+-- 不是「升级时的一次性清理」——用户可能先升级、再从老备份恢复库，或者手工把那两条
+-- 规则加了回来，每次设价都查一遍才挡得住。
+-- 返回删掉的条数：这是在删用户数据库里的行，调用方必须把它讲给用户听，不许静默吞掉。
 CREATE OR REPLACE FUNCTION _tou_drop_legacy_default_rates() RETURNS INT AS $$
 DECLARE
   n INT;
@@ -1197,14 +1207,26 @@ CREATE OR REPLACE FUNCTION set_default_charging_rate(p_rate NUMERIC)
 RETURNS TABLE(message TEXT) AS $$
 DECLARE
   v_updated_cp INT;
+  v_dropped_rules INT;
+  v_note TEXT := '';
 BEGIN
   IF p_rate IS NULL OR p_rate <= 0 THEN
     RETURN QUERY SELECT '❌ 默认电价必须 > 0'::TEXT;
     RETURN;
   END IF;
 
-  -- 老版本在这里写过两条全天规则，把它们清掉（见上面的说明）
-  PERFORM _tou_drop_legacy_default_rates();
+  -- 老版本在这里写过两条全天规则，把它们清掉（见上面的说明）。
+  -- 删的是用户数据库里的行，删了就得说——把条数接进下面的返回消息，
+  -- 没删到就一个字都不多讲，别给正常路径添噪音。
+  v_dropped_rules := _tou_drop_legacy_default_rates();
+  IF v_dropped_rules > 0 THEN
+    v_note := format(
+      '｜⚠ 顺带清理：发现并移除了 %s 条由旧版「默认电价」写进分时电价表的全天规则。'
+      || '那些规则会让所有充电都按这个统一电价重算，把 TeslaMate 自己报的充电金额（比如超充账单）顶掉；'
+      || '移除之后，统一电价只用在 TeslaMate 没有金额的充电上。'
+      || '你自己配的峰谷时段不受影响。',
+      v_dropped_rules);
+  END IF;
 
   -- 写覆盖表，不碰 charging_processes.cost（见 charging_process_cost_overrides 注释）。
   -- 用 GREATEST(charge_energy_added, charge_energy_used) 与 charges 仪表盘「电价」列
@@ -1232,7 +1254,7 @@ BEGIN
     WHERE charging_process_cost_overrides.source = 'default';
   GET DIAGNOSTICS v_updated_cp = ROW_COUNT;
 
-  RETURN QUERY SELECT format('✅ 默认电价 %s 元/度 已保存。按此价计费的充电记录：%s 笔（TeslaMate 已经报了金额的充电、以及你手工指定过价格的充电，都不受影响）', p_rate, v_updated_cp);
+  RETURN QUERY SELECT format('✅ 默认电价 %s 元/度 已保存。按此价计费的充电记录：%s 笔（TeslaMate 已经报了金额的充电、以及你手工指定过价格的充电，都不受影响）%s', p_rate, v_updated_cp, v_note);
 END;
 $$ LANGUAGE plpgsql;
 

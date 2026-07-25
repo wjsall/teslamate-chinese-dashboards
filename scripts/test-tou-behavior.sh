@@ -328,6 +328,27 @@ UPDATE charging_processes SET cost = 5 WHERE id = 22;
 SQL
 assert_eq "0 度充电、没配分时时段 → 不写旁路值（TeslaMate 的 5 元不被抹成 0）" "5" "$(psql_q 'SELECT effective_cost(22, (SELECT cost FROM charging_processes WHERE id=22))')"
 
+# 升级上来的用户库里还留着旧版写的那两条全天规则。设默认电价时会把它们清掉——
+# 这是在删用户数据库里的行，**必须当面告诉用户**，不能静默。
+psql_run <<'SQL'
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label, apply_to_dc)
+VALUES (NULL, 0, 24, 1.0, '默认(AC)', FALSE);
+SQL
+LEGACY_MSG="$(psql_q "SELECT message FROM set_default_charging_rate(1.5)")"
+case "$LEGACY_MSG" in
+    *"移除了1条"*) LEGACY_TOLD="告诉了用户";;
+    *)             LEGACY_TOLD="悄悄删掉了";;
+esac
+assert_eq "清掉旧版留下的全天规则 → 必须在返回消息里说清楚" "告诉了用户" "$LEGACY_TOLD"
+assert_eq "…而且那条规则确实被删掉了" "0" "$(psql_q 'SELECT count(*) FROM tou_rates')"
+
+# 反过来：没有旧规则可清时，别往正常路径上加噪音
+case "$(psql_q "SELECT message FROM set_default_charging_rate(1.0)")" in
+    *"顺带清理"*) LEGACY_QUIET="多了一段废话";;
+    *)            LEGACY_QUIET="干净";;
+esac
+assert_eq "没有旧规则时，消息里不出现清理提示" "干净" "$LEGACY_QUIET"
+
 # ===========================================================================
 # 算不出分时电价时，必须把旁路表里的旧值删掉
 #

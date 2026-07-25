@@ -4,7 +4,7 @@
 # 三组 SQL 的对象契约快照（表列/函数签名/视图名/触发器/索引），配合
 # config/versions.env 的 SQL_COMPAT_REVISION 做 CI 强制门（issue #33 同类教训）。
 FORMAT_VERSION=1
-RECORDED_REVISION=4
+RECORDED_REVISION=5
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
@@ -46,7 +46,7 @@ FUNCTION_BODY	compute_tou_cost	b2cd7dce3a0281c0
 FUNCTION_BODY	cost_before_tou	cbade0ad57456440
 FUNCTION_BODY	effective_cost	8998e890f1f06833
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
-FUNCTION_BODY	set_default_charging_rate	3500d24a2f7be200
+FUNCTION_BODY	set_default_charging_rate	b16fcd803afe77b9
 FUNCTION_BODY	trigger_compute_tou	a83acae00fadc4ce
 INDEX	tou_rates_geofence_idx	ON tou_rates(GEOFENCE_ID)
 INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_START,HOUR_END,COALESCE(VALID_FROM,'0001-01-01'::DATE),COALESCE(VALID_TO,'9999-12-31'::DATE),APPLY_TO_DC)

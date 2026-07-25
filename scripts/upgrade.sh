@@ -345,9 +345,20 @@ else
         # v1.7.5: compute_tou_cost 公式从 charge_energy_added 改为
         # GREATEST(added, used)。旁路表已有 cost_tou 是旧公式算的，重跑回算修正。
         # 单笔几毫秒，对个人用户（百~千笔）秒级完成，无副作用（旁路表仅函数写入）。
-        echo "    回算历史 TOU 费用（v1.7.5 算法修正）..."
+        #
+        # 回算的四个计数里，gapped / cleared / failed 必须报出来，不能只打 processed/updated/skipped：
+        #   cleared 意味着「你库里存着一批按旧算法算出的费用，刚被清掉了」——升级后那些充电
+        #           的金额会跟升级前不一样，用户不该在毫无提示的情况下发现数字变了；
+        #   gapped  意味着「这些充电的时段你没配全」，是需要用户回去补配置的信号；
+        #   failed  正常恒为 0，非 0 说明有笔充电算崩了，沉默等于把问题埋掉。
+        # 只在非 0 时才多打那几行，正常路径保持安静。
+        echo "    回算历史分时电价费用..."
         if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
-                -At -c "SELECT format('  ✓ 已扫描 %s 笔充电，回算 %s 笔，跳过 %s 笔（未配 TOU 的）', processed, updated, skipped) FROM backfill_all_tou();" \
+                -At -c "SELECT format('  ✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
+                        || CASE WHEN cleared > 0 THEN format(E'\n      · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按默认电价或 TeslaMate 记录的金额显示，跟升级前会不一样', cleared) ELSE '' END
+                        || CASE WHEN gapped  > 0 THEN format(E'\n      · %s 笔充电有时段没被你配的分时电价规则覆盖，算不出可信金额；想让它们按分时电价计费，去「⚡ 分时电价配置」仪表盘的「配置审计」看缺哪几个小时', gapped) ELSE '' END
+                        || CASE WHEN failed  > 0 THEN format(E'\n      ⚠ %s 笔充电回算时出错，已跳过；这些充电的费用维持原样，可稍后手动跑 SELECT * FROM backfill_all_tou(); 重试', failed) ELSE '' END
+                        FROM backfill_all_tou();" \
                 2> /tmp/tou-backfill.log; then
             :
         else
