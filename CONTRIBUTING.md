@@ -212,8 +212,8 @@ lint
     仪表盘 SQL 可执行性       面板 SQL 真交给 PostgreSQL 解析，同上
   → publish                  以上七个 job 全绿，才把同一个 digest 提升成
                              vX.Y.Z / latest / main
-  → cleanup-candidate-tag    删掉 candidate-<run_id> 临时 tag；`if: always()`，
-                             前面挂了也照删
+  → cleanup-candidate-tag    发布没成时删掉 candidate-<run_id> 临时 tag；
+                             `if: always()`，前面挂了也照跑
 ```
 
 三条硬保证：
@@ -222,10 +222,17 @@ lint
   分时电价行为测试（`tou-behavior`）和仪表盘 SQL 可执行性（`dashboard-sql`）。
 - **发出去的就是被测的那一份**——提升用 `docker buildx imagetools create` 纯复制 manifest，
   不重新构建；`publish` 最后还会回验每个正式 tag 指向的 digest 等于被测 digest。
-- **临时 tag 不会残留**——清理是独立 job，`needs` 列了所有用到候选镜像的 job（删早了会
-  把它们正在拉的镜像删掉），配 `if: always()`，所以某条门失败、`publish` 被跳过时它照样
-  跑。清理曾经写在 `publish` 里，正好在失败时不执行，每次失败都往公开的 GHCR 包里留一个
-  谁都能拉的候选镜像。
+- **失败的 run 不会在包里留下可拉取的候选镜像**——清理是独立 job，`needs` 列了所有用到
+  候选镜像的 job（删早了会把它们正在拉的镜像删掉），配 `if: always()`，所以某道门失败、
+  `publish` 被跳过时它照样跑。清理曾经写在 `publish` 里，正好在失败时不执行，每次失败都
+  往公开的 GHCR 包里留一个谁都能拉的候选镜像。
+
+  它只删「除了候选 tag 之外没挂别的 tag」的 package version，这一点不是多余的谨慎：
+  `imagetools create` 是纯 manifest 复制，发布成功后 `candidate-<run_id>` 和
+  `latest` / `vX.Y.Z` 指向同一个 digest，在 GHCR 里就是**同一个 package version**，而
+  GHCR 只能整删 version、没法单删一个 tag。判据放宽成"含候选 tag"的话，一次成功发布就会
+  把刚发出去的镜像连 `latest` 一起删掉。代价是发布成功时候选 tag 会留在包里（它和正式
+  tag 是同一份镜像的两个名字，不是多出来的一份），job 日志里会说明这一点。
 
 这道门是 2026-07-25 补的。在那之前 `build` 与冒烟并行，v1.9.0 发布那次四条冒烟挂着、
 镜像照样推了出去——冒烟当时只是发布后的报警器。

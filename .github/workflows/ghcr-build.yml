@@ -953,6 +953,10 @@ jobs:
   # 配上 `if: always()`，前面无论成功、失败还是被跳过，这个 job 都会跑。
   # build-candidate 自己被跳过（pull_request / schedule 事件）时没有候选 tag 可删，
   # 这时才真的不跑。
+  #
+  # 注意：这个 job 只删「除了候选 tag 之外没挂别的 tag」的 package version。发布成功时
+  # 候选 tag 和正式 tag 是同一个 version 的两个名字，删它等于删掉刚发布的镜像——详见
+  # 下面步骤里的说明。所以清理**只兜住发布失败那条路**，那也正是会泄漏的那条路。
   # ==========================================================================
   cleanup-candidate-tag:
     name: "清理候选镜像临时 tag"
@@ -970,22 +974,53 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: 清理候选 tag（删不掉会显式告警，不静默残留）
+      - name: 清理候选 tag（只删没被正式 tag 共用的那一份，删不掉会显式告警）
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           PKG="${{ github.event.repository.name }}"
           TAG="candidate-${{ github.run_id }}"
-          list_ids() {
-            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
-              | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' 2>/dev/null
+
+          # ★ 为什么判据是"tags 恰好只有候选 tag"，而不是"tags 里含候选 tag"★
+          #
+          # publish 提升 tag 用的是 `docker buildx imagetools create`——纯 manifest 复制，
+          # 正式 tag 和候选 tag 指向**同一个 digest**。而 GHCR 的 package version 是按
+          # digest 组织的：发布成功后，这一个 version 的 tags 数组同时含
+          # ["candidate-<run_id>", "latest", "1.9.2", "main", "sha-..."]。
+          # GHCR 又没有"只删一个 tag"的接口，DELETE 删的是**整个 version**。
+          #
+          # 所以判据一旦放宽成"包含候选 tag"，一次成功发布就会把刚发出去的镜像连同
+          # latest 一起删掉。今天没炸只是因为 GITHUB_TOKEN 没有 delete:packages 权限
+          # 删不动——等哪天真配上 GHCR_CLEANUP_TOKEN，第一次成功发布就会自删。
+          # 这个条件是安全阀，别"简化"成 tags[]? == $tag。
+          #
+          # 于是两种结局：
+          #   冒烟失败 / publish 被跳过 → version 只挂着候选 tag → 删掉，泄漏解决
+          #   发布成功                  → version 还挂着正式 tag → 不删，镜像安全
+          list_versions() {
+            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null
           }
-          for vid in $(list_ids); do
+          # 只挂着候选 tag 的 version：可以安全删除
+          sole_ids() {
+            list_versions \
+              | jq -r --arg tag "$TAG" '.[] | select((.metadata.container.tags // []) == [$tag]) | .id' 2>/dev/null
+          }
+          # 候选 tag 与别的 tag 共用的 version：删了会连正式 tag 一起删掉，绝不能碰
+          shared_ids() {
+            list_versions \
+              | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null and ((.metadata.container.tags // []) | length) > 1) | .id' 2>/dev/null
+          }
+
+          for vid in $(sole_ids); do
             [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" >/dev/null 2>&1 || true
           done
-          if [ -n "$(list_ids)" ]; then
-            echo "::warning::候选 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需人工或配 GHCR_CLEANUP_TOKEN"
+
+          if [ -n "$(sole_ids)" ]; then
+            echo "::warning::候选 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需人工清理或配 GHCR_CLEANUP_TOKEN"
+          elif [ -n "$(shared_ids)" ]; then
+            echo "候选 tag ${TAG} 保留在包里：本次发布成功，它与正式 tag（latest / vX.Y.Z 等）指向同一个镜像，"
+            echo "在 GHCR 里是同一个 package version，删掉它就会把刚发布的镜像一起删掉——按设计不删，不是权限问题。"
           else
             echo "候选 tag ${TAG} 已清理（或本 token 无权查询，无法确认）"
           fi
