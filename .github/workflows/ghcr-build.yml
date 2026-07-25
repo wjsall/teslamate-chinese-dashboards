@@ -831,6 +831,26 @@ jobs:
         run: bash scripts/test-tou-behavior.sh
 
   # ==========================================================================
+  # 仪表盘 SQL 可执行性：把面板查询真正交给 PostgreSQL 解析。
+  # 2026-07 实测：把费用列改成函数调用时有两处落在 CTE 外层作用域，两个主表整个空白，
+  # 而四道 lint、五条冒烟、行为测试全绿——没有任何一道门会执行面板查询。
+  # ==========================================================================
+  dashboard-sql:
+    name: "仪表盘 SQL 可执行性"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 解析全部面板 SQL
+        run: bash scripts/check-dashboard-sql-runs.sh
+
+  # ==========================================================================
   # 发布：把**被冒烟测过的那一个 digest**提升成正式 tag。
   #
   # needs 列全五条冒烟 = 任一条失败，这个 job 不会跑，vX.Y.Z / latest / main 都不会出现。
@@ -850,6 +870,7 @@ jobs:
       - smoke-manual-compose-degraded
       - smoke-plugin-volume-shadow
       - tou-behavior
+      - dashboard-sql
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
