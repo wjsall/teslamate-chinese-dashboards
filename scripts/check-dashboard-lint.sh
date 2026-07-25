@@ -1697,7 +1697,7 @@ def sql_snippet(sql, tokens, start, end):
 
 
 def run_k_self_test():
-    """不碰 dashboard 文件的四态与冷审失败路径故障注入。"""
+    """不碰 dashboard 文件的四态与 lint 判定失败路径故障注入。"""
     present = sql_field_contract('SELECT 1 AS known', 'P')
     absent = sql_field_contract('SELECT 1 AS known', 'A')
     dynamic = target_field_contract(
@@ -1763,7 +1763,7 @@ def run_k_self_test():
         raise AssertionError("k filterFieldsByName 动态交集保留故障注入失败")
 
     print("k 四态故障注入：PRESENT/ABSENT/DYNAMIC/UNKNOWN 各 1 例，全部通过")
-    print("k 冷审故障注入：裸别名/纯变量模板/includeByName None/filter 动态收窄，全部通过")
+    print("k 判定失败路径故障注入：裸别名/纯变量模板/includeByName None/filter 动态收窄，全部通过")
 
 
 def _w_panel(rename_from, rename_to, sql_alias, fields_pattern, extra_target_sql=None):
