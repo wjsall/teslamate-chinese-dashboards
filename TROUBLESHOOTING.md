@@ -190,7 +190,14 @@ DB=$(docker compose ps -q database)
 # 想锁到具体版本或滚动 main 通道，先 export SQL_REF=v1.6.2 / SQL_REF=main
 set -o pipefail
 REF="${SQL_REF:-$(curl -fsSL --max-time 10 https://api.github.com/repos/wjsall/teslamate-chinese-dashboards/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')}"
-REF="${REF:-main}"  # 解析失败（网络问题/API 限流）兜底滚动通道，见「三种更新通道」
+# API 限流时换一条不吃限流的路（网页 /releases/latest 会 302 到具体 tag），与安装脚本同样两条路
+if [ -z "$REF" ]; then
+  REF=$(curl -sSI --max-time 10 https://github.com/wjsall/teslamate-chinese-dashboards/releases/latest 2>/dev/null | grep -i '^location:' | tr -d '\r' | sed 's|.*/||')
+  case "$REF" in v[0-9]*) : ;; *) REF="" ;; esac
+fi
+# 两条都没查出版本号就停下：不改用 main，否则装的是「正式版镜像 + 未发布 SQL」的混搭。
+# 去 Releases 页面抄一个版本号，再 export SQL_REF=v1.9.1 重跑本段即可。
+[ -n "$REF" ] || { echo "❌ 没查出版本号：export SQL_REF=<版本号> 后重跑（版本号见 https://github.com/wjsall/teslamate-chinese-dashboards/releases）"; exit 1; }
 for f in install-coord-functions install-unit-functions install-tou install-indexes; do
   if ! curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REF}/sql/${f}.sql" \
     | docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1; then
@@ -1593,6 +1600,16 @@ docker compose up -d         # 重新开始
 - ⚠️ **来源信任**：你信任 `wjsall/teslamate-chinese-dashboards` 仓库的内容
 - ⚠️ **维护者风险**：若维护者 GitHub 账号被盗，攻击者可推恶意 SQL → 下次升级拉到恶意脚本 → psql 执行 → **数据库层任意代码执行**
 
+### 脚本还会下载并执行「另一份自己」
+
+除了上面那些 SQL / 配套文件，`simple-deploy.sh` 和 `migrate-from-official.sh` 在开跑早期还会**下载并 `exec` 一份同名脚本**，这一点值得单独说清楚，因为它执行的是 bash 而不只是 SQL：
+
+- **拉的是什么**：`https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/<版本号>/simple-deploy.sh`（迁移脚本同理，取 `migrate-from-official.sh`），版本号就是上面解析出的正式版 tag。
+- **为什么**：README 给的命令是 `curl .../main/simple-deploy.sh | bash`，脚本本体来自 `main`。也就是说 SQL、配套脚本、镜像都锁到了正式版，唯独**安装逻辑本身**是未发布代码——推上 `main` 那一刻就对所有新用户生效。换成正式版 tag 下的同名脚本继续执行，整套安装才真的来自同一次发布。
+- **信任边界没有变大**：拉的是同一个仓库、同一个 HTTPS 来源，只是把 ref 从 `main` 收紧到某个正式 tag（比 `main` 更严，不是更松）。
+- **三个安全阀**：环境变量 `TESLAMATE_CN_PINNED` 防止无限接力；`TARGET_REF=main`（你主动选滚动通道）时不做这一步；下载失败时**打印提示并继续用当前这份脚本**，不会因为网络问题装不了。
+- **想先审再跑**：把脚本下到本地看过之后，用 `TESLAMATE_CN_PINNED=1 bash simple-deploy.sh` 运行——这个变量就是上面那个"防接力"的阀门，脚本会认为自己已经是选定的那一份，直接跑你看过的代码，不再去下载。（不加这个变量的话，即使脚本已经在本地，它仍会去拉目标 tag 下的同名脚本，跑的是刚下载的那一份。）
+
 ### `TARGET_REF`：统一推导「这次装的镜像」和「这次装的 SQL」
 
 `simple-deploy.sh` / `migrate-from-official.sh` 内部有一个 `TARGET_REF` 开关，统一决定「这次装的 SQL / 配套脚本版本」，并据此推导镜像 tag，避免出现「正式版镜像 + main 分支未发布 SQL」的混搭。三条通道：
@@ -1620,7 +1637,17 @@ SQL_REF=v1.6.2 GRAFANA_IMAGE=bswlhbhmt816/teslamate-chinese-dashboards:1.6.2 bas
 REPO_REF=v1.6.2 NEW_IMAGE=bswlhbhmt816/teslamate-chinese-dashboards:1.6.2 bash migrate-from-official.sh
 ```
 
-**GitHub API 不可达时的兜底**：解析最新 Release 走的是未认证 GitHub API（限速 60 次/小时/IP，NAS、公司共享出口 IP 容易触发），网络问题、限流或仓库暂无 Release 时，脚本会打印明确警告，SQL 这次回退到 `main` 滚动通道拉取，但镜像 tag 仍然写 `latest`（不会因为一次 API 抖动就把镜像永久固化成 `:main`，退化成"更不稳定的滚动通道"）——不会静默失败或卡住。想避开这个网络请求，直接传 `TARGET_REF=v1.8.4`（或 `main`）跳过解析。
+**解析不出版本号时会怎样**：脚本用两条路查「最新正式 Release」——先走未认证 GitHub API（限速 60 次/小时/IP，NAS、公司共享出口 IP 容易触发），API 没结果时再走 `github.com/.../releases/latest` 的网页重定向（不吃 API 限流，限流场景下通常还通）。
+
+两条都没查出版本号（GitHub 整体访问不了、代理拦截、仓库暂无 Release）时，**脚本报错退出，不会自动改用 `main` 分支继续装**。早期版本会在这里回退到 `main` 拉 SQL、镜像仍用 `latest`，结果正是这套机制要消灭的混搭：正式版镜像配未发布的 SQL，而这个组合没有被任何测试跑过。宁可让你多打一个参数，也不装一套没人验证过的组合。
+
+撞上这个报错时：如果是限流，等一会儿重试通常就好；如果是访问不了 GitHub，等多久都没用，直接指定版本号重跑（版本号可以从任意能打开 [Releases 页面](https://github.com/wjsall/teslamate-chinese-dashboards/releases) 的设备上抄）：
+
+```bash
+TARGET_REF=v1.9.1 bash simple-deploy.sh
+```
+
+显式传 `TARGET_REF`（具体版本号或 `main`）本来就会跳过这次解析，不发这个网络请求。
 
 `git clone` 用户的 `scripts/upgrade.sh` 不用 `TARGET_REF`——它跑在本地 checkout 里，SQL 直接读本地文件（`git pull` 之后就是最新代码，没有远程 ref 的问题）；唯一的默认值是 `PROJECT_IMAGE`（仅用于插件修复兜底命令的提示文本），会按本地 `git describe --tags --exact-match` 自动判断：checkout 正好在某个正式版 tag 上就对应那个数字 tag，否则（本地在 main 分支上，领先于最新正式版）对应 `:main`。
 

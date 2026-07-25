@@ -25,8 +25,9 @@ export COMPOSE_PROJECT_NAME=teslamate
 # 要混搭版本时用，例如 CI 冒烟测试拿 SQL_REF=$GITHUB_SHA 配本次构建产物）；不单独设置
 # 时两者都跟着 TARGET_REF 走。
 #
-# GitHub API 有速率限制（未认证 60 次/小时/IP）：解析失败（网络问题 / 限流 / 仓库暂无
-# Release）一律回退到 main 滚动通道，并显式提示用户，不静默假装成功。
+# GitHub API 有速率限制（未认证 60 次/小时/IP）：先走 API，再走不吃限流的网页重定向
+# 兜一次。两条都没解析出版本号（网络不通 / 代理拦截 / 仓库暂无 Release）就直接报错退出，
+# 不会自动改用 main 分支——那等于让用户装上「正式版镜像 + 未发布 SQL」的混搭。
 resolve_target_ref() {
     if [ -n "${TARGET_REF:-}" ]; then
         echo "ℹ️  TARGET_REF=${TARGET_REF}（用户指定，跳过自动解析）"
@@ -75,8 +76,9 @@ resolve_target_ref() {
     echo "   常见原因：网络不通 GitHub、API 限流（未认证 60 次/小时/每 IP）、代理拦截。"
     echo ""
     echo "   两个办法，任选其一："
-    echo "     1) 稍后重试（限流通常一小时内自行恢复）"
-    echo "     2) 直接指定版本重跑，去 Releases 页面看最新版本号："
+    echo "     1) 如果是限流（同一出口 IP 短时间请求多次），等一会儿再重试通常就好了"
+    echo "     2) 如果是访问不了 GitHub（超时、被代理拦截、DNS 解析不了），等多久都没用，"
+    echo "        直接指定版本号重跑；版本号可以从任意能打开 Releases 页面的设备上抄："
     echo "        https://github.com/wjsall/teslamate-chinese-dashboards/releases"
     echo "        TARGET_REF=v1.9.1 bash simple-deploy.sh"
     echo ""
@@ -90,9 +92,8 @@ resolve_target_ref() {
 # 避免给不需要它的调用方增加网络依赖 / API 限流风险。
 #
 # 记录 TARGET_REF 是否由用户显式传入——必须在 resolve_target_ref() 之前记，因为该函数
-# 在未显式传入时会把解析结果（或失败兜底值 "main"）写回 TARGET_REF 本身，之后就再也
-# 分不清"用户主动要 main 滚动通道"和"自动解析失败兜底成了 main"。下面推导镜像 tag
-# 要用这个区分（见下方注释）。
+# 在未显式传入时会把解析结果写回 TARGET_REF 本身，之后就再也分不清"用户主动指定的版本"
+# 和"自动解析出来的版本"。下面推导镜像 tag 要用这个区分（见下方注释）。
 _TARGET_REF_EXPLICIT=0
 [ -n "${TARGET_REF:-}" ] && _TARGET_REF_EXPLICIT=1
 if [ -n "${SQL_REF:-}" ] && [ -n "${GRAFANA_IMAGE:-}" ]; then
@@ -106,9 +107,9 @@ fi
 # - 用户显式传 TARGET_REF=v1.8.4（钉具体版本）→ 镜像锁定该数字 tag，保证「镜像与 SQL
 #   严格对齐到同一版本」这个显式钉版本场景的承诺（TROUBLESHOOTING.md「SQL 远程拉取的
 #   信任模型」文档过的行为，不能破）。
-# - 未显式传（默认通道，占绝大多数用户）→ 不管自动解析成功（拿到具体版本号）还是失败
-#   （resolve_target_ref 内部回退到 main 去拉 SQL），镜像 tag 都固定用 latest。
-#   原因：
+# - 未显式传（默认通道，占绝大多数用户）→ 自动解析出的具体版本号只用来拉 SQL / 配套
+#   脚本，镜像 tag 固定用 latest（解析不出版本号时 resolve_target_ref 已经报错退出，
+#   走不到这里）。原因：
 #   1）Docker Hub/GHCR 的 latest 只在打正式 tag 时才更新（ghcr-build.yml
 #      type=raw,value=latest 只在 tag push 时 enable），语义上就是"当前最新正式版"，
 #      与自动解析出的版本号等价。
@@ -117,9 +118,10 @@ fi
 #      即永久停在当次版本，用户此后再怎么 pull 镜像都不会变，只有 SQL 会通过 upgrade
 #      模式重新解析 TARGET_REF 往前走，造成镜像与 SQL 脱节、diagnose.sh 的 SQL revision
 #      校验会指向错误的修复方向（应换镜像却提示重装 SQL）。
-#   3）解析失败兜底到 main 只影响这一次的 SQL 来源，镜像仍锁 latest 不会退化——避免一次
-#      GitHub API 抖动（未认证限流 60 次/小时/IP，NAS/公司共享出口 IP 很容易触发）就把
-#      用户从「最新正式版」这个更稳的默认通道永久错误地钉进「main 滚动通道」镜像。
+#   3）默认通道下镜像 tag 与"这次解析出了哪个版本号"无关，永远是 latest——一次 GitHub
+#      API 抖动（未认证限流 60 次/小时/IP，NAS/公司共享出口 IP 很容易触发）不会把用户
+#      从「最新正式版」这个更稳的默认通道悄悄挪到别的通道上去；真解析不出来时脚本是
+#      直接停下报错，不会自己换通道。
 if [ "$_TARGET_REF_EXPLICIT" = "1" ]; then
     if [ "$TARGET_REF" = "main" ]; then
         _DEFAULT_IMG_TAG="main"
@@ -152,7 +154,9 @@ REPO_BASE="https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards
 #
 # 三个安全阀：
 #   - TESLAMATE_CN_PINNED 防止无限自举（换过去的脚本带着这个变量，不会再换一次）
-#   - 拉取失败就继续用当前这份（保持原有行为，不会因为网络问题装不了）
+#   - 拉取失败就继续用当前这份（保持原有行为，不会因为网络问题装不了），但必须**说出来**：
+#     拉不到正式版脚本的人，往往正是访问 GitHub 受限的那批，也就是最需要知道
+#     "这次跑的安装逻辑来自开发分支"的人。静默继续等于把混搭藏起来。
 #   - TARGET_REF=main（用户主动选滚动通道）时不自举，那是明确的意图
 if [ -z "${TESLAMATE_CN_PINNED:-}" ] && [ "$TARGET_REF" != "main" ] \
    && [ "$TARGET_REF" != "unused-both-refs-explicit" ]; then
@@ -165,6 +169,18 @@ if [ -z "${TESLAMATE_CN_PINNED:-}" ] && [ "$TARGET_REF" != "main" ] \
         exec bash "$_pinned" "$@"
     fi
     [ -n "$_pinned" ] && rm -f "$_pinned"
+    # 走到这里 = 没能取到 ${TARGET_REF} 版本的安装脚本（下载失败，或本机临时目录不可写）。
+    # 继续装是有意为之：拉不到就干脆不装，比这个更糟。但要说清楚现在是什么状态。
+    echo ""
+    echo "  ⚠️  没能下载 ${TARGET_REF} 版本的安装脚本，本次继续用当前这份脚本安装。"
+    echo "     影响：数据库脚本和镜像仍然锁定 ${TARGET_REF}，但真正在跑的是当前这份脚本——"
+    echo "     按 README 的一键命令安装时它来自开发分支 main，不是 ${TARGET_REF} 发布时"
+    echo "     验证过的那一份。绝大多数情况下装出来是一样的。"
+    echo "     想要完全一致的话：先把脚本下到本地再跑（在网络能通的机器上下载后拷过来也行）"
+    echo "       curl -fsSL -o simple-deploy.sh \\"
+    echo "         https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${TARGET_REF}/simple-deploy.sh"
+    echo "       bash simple-deploy.sh"
+    echo ""
 fi
 
 # 端口配置（支持环境变量覆盖，端口冲突时用：TM_PORT=14000 GF_PORT=13000 bash simple-deploy.sh）

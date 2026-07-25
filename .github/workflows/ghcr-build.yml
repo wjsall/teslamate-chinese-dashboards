@@ -54,8 +54,9 @@ jobs:
   # build 成功推了 20 次 manifest、同时四个冒烟在挂——**带着已知缺陷的镜像照样
   # 发出去了，latest 也照样更新了**。冒烟当时只是"发布后报警器"，不是发布门。
   #
-  # 现在：候选镜像先建好 → 五条冒烟全部测**这一份** → 全绿才由 publish 把
-  # **同一个 digest** 提升成 vX.Y.Z / latest / main。任一冒烟失败，正式 tag 不会出现。
+  # 现在：候选镜像先建好 → 五条部署冒烟全部测**这一份**（分时电价行为测试、仪表盘 SQL
+  # 可执行性不需要镜像，与冒烟并行跑）→ 全部绿了才由 publish 把**同一个 digest**
+  # 提升成 vX.Y.Z / latest / main。任一道门失败，正式 tag 不会出现。
   # 提升用 `docker buildx imagetools create`，是纯 manifest 复制、不重新构建，
   # 所以"被测的那一份"和"发出去的那一份"在字节层面是同一个东西，不靠"应该一样"。
   # ==========================================================================
@@ -409,9 +410,11 @@ jobs:
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # 这个 job 只拉候选镜像、不推任何 tag（早期版本会自建一个临时 tag 推上去，那时才需要
+    # packages: write）。读一个包不需要写权限，按最小权限收回。
     permissions:
       contents: read
-      packages: write
+      packages: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -420,8 +423,8 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # migrate-from-official.sh 内部会 docker compose pull，纯本地镜像拉不到，
-      # 所以把本次构建产物临时推一份到 ghcr 供它拉。
-      - name: Log in to GHCR
+      # 所以这条路径用注册表上真实存在的候选镜像（下面那步先验它的 digest）。
+      - name: Log in to GHCR（拉候选镜像）
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -795,7 +798,7 @@ jobs:
   # 设计要点：
   #   - 只比对 digest，不修改任何文件、不触发 build/push——不自动升级、不自动发版，
   #     兼容性验证（45+3 个面板 + volkovlabs-form-panel）必须人工确认后才能改
-  #     Dockerfile、走常规发版流程（四道门 + 五个冒烟测试）。
+  #     Dockerfile、走常规发版流程（lint + 五条部署冒烟 + 行为测试 + 仪表盘 SQL 门）。
   #   - 用同一套 registry HTTP API（免 docker daemon，见本 job 步骤）取 manifest
   #     list digest，且显式要求 accept manifest.list/index media type，确保比较的
   #     是多架构 digest，不会被单平台 digest 污染判断。
@@ -811,7 +814,7 @@ jobs:
 
   # ==========================================================================
   # TOU 行为测试：验「算出来的钱对不对」。
-  # 四道 lint 门验的是文件写法、五条冒烟验的是部署起不起得来，都不碰计算结果——
+  # lint 门验的是文件写法、五条部署冒烟验的是部署起不起得来，都不碰计算结果——
   # 2026-07 的「配了一半电价，未覆盖时段被当成免费电」就是这样长期没人发现的。
   # 只用一个一次性 postgres 容器，不需要整套栈，几十秒跑完。
   # ==========================================================================
@@ -833,7 +836,7 @@ jobs:
   # ==========================================================================
   # 仪表盘 SQL 可执行性：把面板查询真正交给 PostgreSQL 解析。
   # 2026-07 实测：把费用列改成函数调用时有两处落在 CTE 外层作用域，两个主表整个空白，
-  # 而四道 lint、五条冒烟、行为测试全绿——没有任何一道门会执行面板查询。
+  # 而 lint、五条部署冒烟、行为测试全绿——没有任何一道门会执行面板查询。
   # ==========================================================================
   dashboard-sql:
     name: "仪表盘 SQL 可执行性"
@@ -853,7 +856,8 @@ jobs:
   # ==========================================================================
   # 发布：把**被冒烟测过的那一个 digest**提升成正式 tag。
   #
-  # needs 列全五条冒烟 = 任一条失败，这个 job 不会跑，vX.Y.Z / latest / main 都不会出现。
+  # needs 列全五条部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性 = 任一条失败，这个
+  # job 不会跑，vX.Y.Z / latest / main 都不会出现。
   # 这正是 2026-07-25 之前缺的那道门（当时 build 与冒烟并行，v1.9.0 在四条冒烟挂着的
   # 情况下把镜像推了出去）。
   #
@@ -936,23 +940,87 @@ jobs:
           done <<< "${{ steps.meta.outputs.tags }}"
           [ "$fail" -eq 0 ]
 
-      - name: 清理候选 tag（删不掉会显式告警，不静默残留）
-        if: always()
+  # ==========================================================================
+  # 清理候选镜像的临时 tag。
+  #
+  # 必须是独立 job，不能挂在 publish 里：任一冒烟失败时 publish 整个被跳过，跟着写在
+  # publish 里的清理步骤也不会跑，于是每一次失败的 run 都在公开的 GHCR 包里留下一个
+  # 谁都能拉的 candidate-<run_id> 多架构镜像，无上限累积。
+  #
+  # needs 为什么要列全部用到候选镜像的 job（不只是 build-candidate）：候选 tag 一删，
+  # 对应的 package version 就没了，按 digest 拉也会 404。所以清理必须排在所有会用到
+  # 这份镜像的 job 之后——五条冒烟按 digest 拉它，publish 按 digest 提升它。
+  # 配上 `if: always()`，前面无论成功、失败还是被跳过，这个 job 都会跑。
+  # build-candidate 自己被跳过（pull_request / schedule 事件）时没有候选 tag 可删，
+  # 这时才真的不跑。
+  #
+  # 注意：这个 job 只删「除了候选 tag 之外没挂别的 tag」的 package version。发布成功时
+  # 候选 tag 和正式 tag 是同一个 version 的两个名字，删它等于删掉刚发布的镜像——详见
+  # 下面步骤里的说明。所以清理**只兜住发布失败那条路**，那也正是会泄漏的那条路。
+  # ==========================================================================
+  cleanup-candidate-tag:
+    name: "清理候选镜像临时 tag"
+    needs:
+      - build-candidate
+      - smoke-fresh-install
+      - smoke-upgrade-from-old
+      - smoke-migrate-official
+      - smoke-manual-compose-degraded
+      - smoke-plugin-volume-shadow
+      - publish
+    if: always() && needs.build-candidate.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 清理候选 tag（只删没被正式 tag 共用的那一份，删不掉会显式告警）
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           PKG="${{ github.event.repository.name }}"
           TAG="candidate-${{ github.run_id }}"
-          list_ids() {
-            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
-              | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' 2>/dev/null
+
+          # ★ 为什么判据是"tags 恰好只有候选 tag"，而不是"tags 里含候选 tag"★
+          #
+          # publish 提升 tag 用的是 `docker buildx imagetools create`——纯 manifest 复制，
+          # 正式 tag 和候选 tag 指向**同一个 digest**。而 GHCR 的 package version 是按
+          # digest 组织的：发布成功后，这一个 version 的 tags 数组同时含
+          # ["candidate-<run_id>", "latest", "1.9.2", "main", "sha-..."]。
+          # GHCR 又没有"只删一个 tag"的接口，DELETE 删的是**整个 version**。
+          #
+          # 所以判据一旦放宽成"包含候选 tag"，一次成功发布就会把刚发出去的镜像连同
+          # latest 一起删掉。今天没炸只是因为 GITHUB_TOKEN 没有 delete:packages 权限
+          # 删不动——等哪天真配上 GHCR_CLEANUP_TOKEN，第一次成功发布就会自删。
+          # 这个条件是安全阀，别"简化"成 tags[]? == $tag。
+          #
+          # 于是两种结局：
+          #   冒烟失败 / publish 被跳过 → version 只挂着候选 tag → 删掉，泄漏解决
+          #   发布成功                  → version 还挂着正式 tag → 不删，镜像安全
+          list_versions() {
+            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null
           }
-          for vid in $(list_ids); do
+          # 只挂着候选 tag 的 version：可以安全删除
+          sole_ids() {
+            list_versions \
+              | jq -r --arg tag "$TAG" '.[] | select((.metadata.container.tags // []) == [$tag]) | .id' 2>/dev/null
+          }
+          # 候选 tag 与别的 tag 共用的 version：删了会连正式 tag 一起删掉，绝不能碰
+          shared_ids() {
+            list_versions \
+              | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null and ((.metadata.container.tags // []) | length) > 1) | .id' 2>/dev/null
+          }
+
+          for vid in $(sole_ids); do
             [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" >/dev/null 2>&1 || true
           done
-          if [ -n "$(list_ids)" ]; then
-            echo "::warning::候选 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需人工或配 GHCR_CLEANUP_TOKEN"
+
+          if [ -n "$(sole_ids)" ]; then
+            echo "::warning::候选 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需人工清理或配 GHCR_CLEANUP_TOKEN"
+          elif [ -n "$(shared_ids)" ]; then
+            echo "候选 tag ${TAG} 保留在包里：本次发布成功，它与正式 tag（latest / vX.Y.Z 等）指向同一个镜像，"
+            echo "在 GHCR 里是同一个 package version，删掉它就会把刚发布的镜像一起删掉——按设计不删，不是权限问题。"
           else
             echo "候选 tag ${TAG} 已清理（或本 token 无权查询，无法确认）"
           fi
@@ -1022,7 +1090,7 @@ jobs:
             echo "**下一步（人工确认后再改，不自动升级）：**"
             echo "1. 确认新 digest 确实是多架构 manifest list（不是单平台）：\`docker manifest inspect teslamate/grafana@$UPSTREAM\`，应该看到 \`manifests\` 数组里含 \`linux/amd64\` 和 \`linux/arm64\` 两个平台。"
             echo "2. 把 \`Dockerfile\` 里 \`FROM teslamate/grafana:latest@sha256:...\` 换成新 digest。"
-            echo "3. 按常规发版流程走 CI（四道门 lint + 五个冒烟测试）验证兼容后再合并/发版。"
+            echo "3. 按常规发版流程走 CI（lint、五条部署冒烟、分时电价行为测试、仪表盘 SQL 可执行性）验证兼容后再合并/发版。"
             echo "4. 处理完关闭本 issue。"
             echo ""
             echo "本 issue 由自动化创建，不代表项目本身有 bug。"
