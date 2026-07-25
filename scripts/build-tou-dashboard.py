@@ -11,6 +11,15 @@
   Row 5: 💰 最近 10 笔家充 分时电价对账（table）
 
 跑：python3 scripts/build-tou-dashboard.py
+
+⚠️ 现状：这个生成器已经落后于 grafana/dashboards/zh-cn/tou-config.json 一大截。
+仪表盘的多处修复是直接改 JSON 落地的，从没回灌到这里，**现在直接跑它会把那些修复删掉**：
+  · 「💡 默认电价」整个面板不见了（这里压根没有它）
+  · 城市模板少了武汉，表单少了「下拉为空怎么办」的说明
+  · 表单参数少了 'undefined' 兜底、写入确认框 confirm 从 true 变回 false
+  · 24 小时电价分布的围栏匹配退回 `=`（NULL 匹配不上），时区退回写死的 Asia/Shanghai
+在把这些回灌进来之前，请**不要**用它重新生成整份 JSON；改面板时两边各改一遍，
+并用 `bash scripts/check-dashboard-sql-runs.sh` 验证 JSON 那一侧。
 """
 import json
 from pathlib import Path
@@ -63,7 +72,7 @@ def text_panel(id_, title, content, gridPos):
     }
 
 
-def table_panel(id_, title, sql, gridPos, transformations=None):
+def table_panel(id_, title, sql, gridPos, transformations=None, description=None):
     p = {
         "id": id_, "type": "table", "title": title,
         "datasource": DS,
@@ -74,12 +83,14 @@ def table_panel(id_, title, sql, gridPos, transformations=None):
     }
     if transformations:
         p["transformations"] = transformations
+    if description:
+        p["description"] = description
     return p
 
 
-def hour_bar_panel(id_, title, sql, gridPos):
+def hour_bar_panel(id_, title, sql, gridPos, description=None):
     """24 小时电价柱图：x 轴 0-23 时（categorical 不依赖 dashboard time range），柱高=单价，颜色按阈值"""
-    return {
+    p = {
         "id": id_, "type": "barchart", "title": title,
         "datasource": DS,
         "targets": [{"refId": "A", "datasource": DS, "rawSql": sql, "format": "table"}],
@@ -127,6 +138,9 @@ def hour_bar_panel(id_, title, sql, gridPos):
         },
         "gridPos": gridPos
     }
+    if description:
+        p["description"] = description
+    return p
 
 
 def form_panel(id_, title, elements, update_sql, initial_sql, gridPos,
@@ -354,6 +368,8 @@ panels = [
 > 时段格式：`22-7`（跨夜）或 `0-7, 23-24`（多段用逗号）。**两档电网**：峰时段留空、峰价填 0。
 
 > ⚡ **范围说明**：本配置只作用于**家充（交流慢充）**。**直流快充（超充 / 第三方快充）按桩侧上报金额计费**，不参与本表的分时重算 —— 因为快充价格随桩、随时段、随会员浮动，桩侧上报已是真实金额，覆盖反而会算错。
+
+> 💡 **默认电价 ≠ 分时时段**：页面底部的「默认电价」是一口价，只用在 TeslaMate 没有记录金额的充电上，**不会**在这里生成任何时段规则 —— 所以只设了默认电价的话，上面的「24 小时电价分布」是空的，这是正常的。费用取值顺序：你手工指定的单价 → 分时电价 → 默认电价 → TeslaMate 记录的费用。
 """, {"x": 0, "y": 0, "w": 24, "h": 4}),
 
     # ⏰ 24 小时电价柱图：每小时 1 根柱，柱高=单价，颜色按阈值 0/0.4/0.7/1
@@ -395,7 +411,10 @@ SELECT
   ) AS "标签"
 FROM hours h
 ORDER BY h.h
-""", {"x": 0, "y": 4, "w": 24, "h": 8}),
+""", {"x": 0, "y": 4, "w": 24, "h": 8},
+    description="只显示**分时时段**的配置。如果这里 24 根柱子都是 0 / 标注「未配置」，"
+                "说明你还没有配峰谷时段——只设了统一的默认电价也会是这样，那是正常的，"
+                "费用会按默认电价计算。想按峰谷分开计价，用下面的「一键填一整季节」或城市模板配一次。"),
 
     # ⚠ 配置审计：自动检查时段空缺/重叠/月份空缺
     # 用 UNION ALL 加 placeholder 让 0 问题时也显示「✓ 配置完整」而不是「无数据」
@@ -498,17 +517,31 @@ SELECT
 """,
                initial_sql="SELECT 1",
                gridPos={"x": 0, "y": 54, "w": 24, "h": 6},
-               success_msg="✅ 历史已按新 分时电价重算！刷新「最近 10 笔对账」面板和外部仪表盘看效果",
+               success_msg="✅ 历史已按当前分时电价配置重算。若某笔充电有时段没被电价规则覆盖，它会改为按默认电价 / TeslaMate 记录的费用显示 —— 刷新「最近 10 笔对账」面板核对",
                submit_text="🔄 一键重算", submit_icon="sync"),
 
+    # 对账的基准是「不按分时电价算的话，这笔会显示多少钱」= cost_before_tou()，
+    # 不是 charging_processes.cost。手工单价和默认电价都写在费用覆盖表里、不写 TeslaMate
+    # 原表，所以家充这类 TeslaMate 本来就没有金额的记录 cp.cost 是空的，用它当基准会让
+    # 「差额」整列为空——而这批充电恰恰是本面板唯一要对账的对象。
     table_panel(8, "💰 最近 10 笔家充电费对账", """
 SELECT
   cp.id AS "充电编号",
-  (cp.start_date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')::timestamp(0) AS "本地时间",
+  date_trunc('second', cp.start_date AT TIME ZONE 'UTC') AS "本地时间",
   ROUND(cp.charge_energy_added::numeric, 2) AS "充电度数",
-  cp.cost AS "原费用 ¥",
+  cost_before_tou(cp.id, cp.cost) AS "不按分时电价的费用 ¥",
+  CASE
+    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o
+                  WHERE o.charging_process_id = cp.id AND o.source = 'manual')
+      THEN '你手工指定的单价'
+    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o
+                  WHERE o.charging_process_id = cp.id AND o.source = 'default')
+      THEN '默认电价'
+    WHEN cp.cost IS NOT NULL THEN 'TeslaMate 记录的费用'
+    ELSE '没有可对比的费用'
+  END AS "对比基准",
   compute_tou_cost(cp.id) AS "分时电价费用 ¥",
-  ROUND((compute_tou_cost(cp.id) - cp.cost)::numeric, 2) AS "差额 ¥",
+  ROUND((compute_tou_cost(cp.id) - cost_before_tou(cp.id, cp.cost))::numeric, 2) AS "差额 ¥",
   COALESCE(g.name, '(无)') AS "充电点"
 FROM charging_processes cp
 LEFT JOIN geofences g ON g.id = cp.geofence_id
@@ -516,7 +549,13 @@ WHERE cp.car_id = $car_id
   AND cp.geofence_id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL)
 ORDER BY cp.start_date DESC
 LIMIT 10
-""", {"x": 0, "y": 60, "w": 24, "h": 10}),
+""", {"x": 0, "y": 60, "w": 24, "h": 10},
+    description="「不按分时电价的费用」= 这笔充电在没有分时电价时会显示的金额，"
+                "优先取你手工指定的单价，其次默认电价，最后才是 TeslaMate 自己记录的费用；"
+                "「对比基准」那一列写明了这次用的是哪一种。"
+                "「差额」为正表示按分时电价算更贵，为负表示更便宜。"
+                "分时电价费用为空 = 这笔充电有时段没被电价规则覆盖，算不出可信金额，"
+                "去「配置审计」看缺哪几个小时。"),
 ]
 
 # ============================================================
