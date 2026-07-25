@@ -46,6 +46,7 @@ cd "$(dirname "$0")/.."
 
 python3 - "$@" <<'PYEOF'
 import os
+import hashlib
 import re
 import sys
 
@@ -330,6 +331,60 @@ def parse_returns(header_text, pos):
     return 'UNKNOWN'
 
 
+# ---------------------------------------------------------------------------
+# 核心函数的「函数体指纹」
+#
+# 对象契约（表列 / 函数签名 / 视图 / 触发器 / 索引）刻意不管函数体——改个 RAISE NOTICE
+# 措辞就要求 bump revision，会让这个机制变成噪音，很快就没人当真。
+#
+# 但有一类函数体的改动是必须让老用户重装 SQL 的：**算钱和算数的那几个**。
+# 2026-07 的实例：compute_tou_cost 里把「没匹配到电价的时段」从当 0 元改成整笔回退，
+# 这是行为的实质变化（会改变用户看到的费用），签名却一个字没动 —— 契约门完全看不见。
+# 只换镜像不重装 SQL 的用户（方法 C / Watchtower）会一直用着旧算法，而 diagnose 说一切正常。
+#
+# 所以对下面这几个函数额外记一个**规范化后的函数体指纹**：去掉注释、压缩空白、
+# 抹掉 RAISE NOTICE/WARNING 的文案（那是给人看的提示，改措辞不该触发 bump）。
+# 指纹变了就必须 bump SQL_COMPAT_REVISION，跟契约变化同等对待。
+CORE_BODY_FUNCTIONS = {
+    'compute_tou_cost',          # 单笔 TOU 费用的核心算法
+    'lookup_tou_rate',           # 时段/地点/AC-DC → 电价 的匹配规则
+    'effective_cost',            # 仪表盘取费用的统一入口（11 个仪表盘在用）
+    'backfill_all_tou',          # 历史费用回算
+    'set_default_charging_rate', # 默认电价（会写 charging_processes.cost）
+}
+
+_COMMENT_LINE_RE = re.compile(r'--[^\n]*')
+_BLOCK_COMMENT_RE = re.compile(r'/\*.*?\*/', re.S)
+_RAISE_TEXT_RE = re.compile(r"(RAISE\s+(?:NOTICE|WARNING|INFO|LOG)\s+)'(?:[^']|'')*'", re.I)
+
+
+def normalize_body(text):
+    """把函数体归一化成「只剩逻辑」的形式：去注释、抹掉 RAISE 文案、压空白。"""
+    t = _BLOCK_COMMENT_RE.sub(' ', text)
+    t = _COMMENT_LINE_RE.sub(' ', t)
+    t = _RAISE_TEXT_RE.sub(r"\1'<msg>'", t)
+    t = re.sub(r'\s+', ' ', t)
+    return t.strip().lower()
+
+
+def extract_core_body_prints(raw_text, path, current):
+    """在**未骨架化**的原文里找核心函数的 dollar-quoted 函数体，记录其指纹。"""
+    for m in _FUNC_RE.finditer(raw_text):
+        name = m.group(1).lower()
+        if name not in CORE_BODY_FUNCTIONS:
+            continue
+        tag_m = _DOLLAR_TAG_RE.search(raw_text, m.end())
+        if not tag_m:
+            continue
+        tag = tag_m.group(0)
+        end_idx = raw_text.find(tag, tag_m.end())
+        if end_idx == -1:
+            continue
+        body = raw_text[tag_m.end():end_idx]
+        digest = hashlib.sha256(normalize_body(body).encode('utf-8')).hexdigest()[:16]
+        _record(current, 'FUNCTION_BODY', name, digest, path)
+
+
 _TABLE_RE = re.compile(
     r'\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(',
     re.I,
@@ -378,6 +433,8 @@ def extract_from_file(path, current):
             sig_parts.append(f'{pmode}:{pname}:{ptype}{"=D" if has_default else ""}')
         value = '(' + ','.join(sig_parts) + ') RETURNS ' + returns_repr
         _record(current, 'FUNCTION', name, value, path)
+
+    extract_core_body_prints(raw, path, current)
 
     for m in _VIEW_RE.finditer(skel):
         name = m.group(1).lower()

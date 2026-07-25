@@ -810,6 +810,27 @@ jobs:
   # ============================================================================
 
   # ==========================================================================
+  # TOU 行为测试：验「算出来的钱对不对」。
+  # 四道 lint 门验的是文件写法、五条冒烟验的是部署起不起得来，都不碰计算结果——
+  # 2026-07 的「配了一半电价，未覆盖时段被当成免费电」就是这样长期没人发现的。
+  # 只用一个一次性 postgres 容器，不需要整套栈，几十秒跑完。
+  # ==========================================================================
+  tou-behavior:
+    name: "分时电价行为测试（算钱正确性）"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 跑 TOU 行为断言
+        run: bash scripts/test-tou-behavior.sh
+
+  # ==========================================================================
   # 发布：把**被冒烟测过的那一个 digest**提升成正式 tag。
   #
   # needs 列全五条冒烟 = 任一条失败，这个 job 不会跑，vX.Y.Z / latest / main 都不会出现。
@@ -828,6 +849,7 @@ jobs:
       - smoke-migrate-official
       - smoke-manual-compose-degraded
       - smoke-plugin-volume-shadow
+      - tou-behavior
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:

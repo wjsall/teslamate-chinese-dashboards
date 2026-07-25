@@ -225,9 +225,20 @@ BEGIN
     WHERE next_date IS NOT NULL
       AND EXTRACT(EPOCH FROM (next_date - date)) < 600  -- 跳过 > 10 分钟的异常 gap
   )
+  --【电价覆盖必须完整，缺口不能当免费电】
+  -- 这里曾经写的是 SUM(raw_kwh * COALESCE(rate, 0)) / SUM(raw_kwh)：没匹配到电价的采样点
+  -- rate 是 NULL，COALESCE 把它当 0 元，但那段电量仍留在分母里——结果是「配了一半电价」的
+  -- 用户，未覆盖时段被按免费电算进去，总费用被静默低估，而且界面上看不出任何异常。
+  -- 上面的 has_any_rate 只保证「至少有一条规则」，挡不住「有规则但没覆盖到这次充电的某些
+  -- 小时」。所以这里改成：只要有**实际产生电量**的采样点没匹配到电价，整笔就返回 NULL，
+  -- 回退 TeslaMate 原 cost，而不是给一个偏低的数。
+  -- 注意区分两件事：rate = 0（用户明确配了 0 元，比如免费充电桩）是有效电价，照常计算；
+  -- rate IS NULL（压根没配到这个时段）才是缺口。
   SELECT
-    CASE WHEN SUM(raw_kwh) = 0 THEN NULL
-         ELSE SUM(raw_kwh * COALESCE(rate, 0)) / SUM(raw_kwh)
+    CASE
+      WHEN SUM(raw_kwh) = 0 THEN NULL
+      WHEN SUM(CASE WHEN raw_kwh > 0 AND rate IS NULL THEN raw_kwh ELSE 0 END) > 0 THEN NULL
+      ELSE SUM(raw_kwh * rate) / SUM(raw_kwh)
     END
   INTO weighted_rate
   FROM sample_kwh;
