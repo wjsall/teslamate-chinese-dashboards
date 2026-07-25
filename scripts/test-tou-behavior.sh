@@ -187,6 +187,84 @@ assert_eq "只配了夏季电价，3 月充电 → NULL" "" "$(psql_q 'SELECT co
 make_charge 9 '2026-08-10 10:00' 60 7
 assert_eq "同一条夏季电价，8 月充电 → 7kWh × 0.7 = 4.9" "4.9000" "$(psql_q 'SELECT compute_tou_cost(9)')"
 
+# ===========================================================================
+# 费用来源优先级（手工 > 分时电价 > 默认电价 > TeslaMate 原值）
+# 以及「不写 TeslaMate 原表」这条边界——它是这套设计的核心承诺，必须有断言守着。
+# ===========================================================================
+echo ""
+echo "===== 费用来源与优先级 ====="
+
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+DELETE FROM charging_process_cost_overrides;
+DELETE FROM charging_processes_tou_cost;
+SQL
+
+# 10. 默认电价：只覆盖 TeslaMate 没有费用的记录，且不动原表
+make_charge 10 '2026-03-10 10:00' 60 7          # cost 为空
+make_charge 11 '2026-03-10 12:00' 60 7          # 下面给它一个 TeslaMate 原始费用
+psql_run <<'SQL'
+UPDATE charging_processes SET cost = 99 WHERE id = 11;
+SQL
+psql_q "SELECT set_default_charging_rate(1.0)" >/dev/null
+assert_eq "默认电价 1.0：无费用的那笔 → 7kWh × 1.0" "7.0000"     "$(psql_q 'SELECT effective_cost(10, (SELECT cost FROM charging_processes WHERE id=10))')"
+assert_eq "TeslaMate 已有费用的那笔 → 保持 99，不被一口价盖掉" "99"     "$(psql_q 'SELECT effective_cost(11, (SELECT cost FROM charging_processes WHERE id=11))')"
+assert_eq "原表没有被写入（cost 仍为空）" ""     "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 10')"
+
+# 11. 改默认电价 → 历史记录跟着重算（旧实现做不到：写进原表后就不再是 NULL）
+psql_q "SELECT set_default_charging_rate(2.0)" >/dev/null
+assert_eq "把默认电价改成 2.0 → 历史记录跟着变成 14" "14.0000"     "$(psql_q 'SELECT effective_cost(10, (SELECT cost FROM charging_processes WHERE id=10))')"
+
+# 12. 手工单价压过默认电价，且改默认价不会覆盖它
+psql_run <<'SQL'
+INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate)
+VALUES (10, 3.33, 'manual', 0.5)
+ON CONFLICT (charging_process_id) DO UPDATE SET cost = 3.33, source = 'manual', rate = 0.5;
+SQL
+assert_eq "手工指定 3.33 → 压过默认电价" "3.3300"     "$(psql_q 'SELECT effective_cost(10, NULL)')"
+psql_q "SELECT set_default_charging_rate(5.0)" >/dev/null
+assert_eq "再改默认电价 → 手工指定的那笔不受影响" "3.3300"     "$(psql_q 'SELECT effective_cost(10, NULL)')"
+
+# 13. 分时电价压过默认电价、但让位于手工
+psql_run <<'SQL'
+DELETE FROM charging_process_cost_overrides WHERE charging_process_id = 12;
+SQL
+make_charge 12 '2026-03-10 14:00' 60 7
+psql_run <<'SQL'
+INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate)
+VALUES (12, 1.11, 'default', 0.1);
+INSERT INTO charging_processes_tou_cost (charging_process_id, cost_tou) VALUES (12, 2.22);
+SQL
+assert_eq "同时有默认价和分时电价 → 用分时电价" "2.2200" "$(psql_q 'SELECT effective_cost(12, NULL)')"
+psql_run <<'SQL'
+UPDATE charging_process_cost_overrides SET cost = 4.44, source = 'manual' WHERE charging_process_id = 12;
+SQL
+assert_eq "再加上手工指定 → 手工最优先" "4.4400" "$(psql_q 'SELECT effective_cost(12, NULL)')"
+
+# 14. 老数据迁移：只认算得出来的行，其余一律不碰
+# 夹具要清干净：上一组把默认电价设成 5.0，那会往 tou_rates 写规则，
+# 后面 UPDATE cost 会触发 TOU 重算并写进旁路表——而分时电价优先级高于默认电价，
+# 于是这一组读到的是 TOU 的值而不是迁移进来的值。清掉才能只测迁移本身。
+psql_run <<'SQL'
+DELETE FROM charging_process_cost_overrides;
+DELETE FROM tou_rates;
+DELETE FROM charging_processes_tou_cost;
+SQL
+make_charge 13 '2026-03-11 10:00' 60 7
+make_charge 14 '2026-03-11 12:00' 60 7
+psql_run <<'SQL'
+-- 13：模拟当年按 1.0 元/度写进原表的值（7kWh × 1.0 = 7.00）
+UPDATE charging_processes SET cost = 7.00 WHERE id = 13;
+-- 14：TeslaMate 自己报的费用，对不上这个乘法，不该被搬走
+UPDATE charging_processes SET cost = 6.66 WHERE id = 14;
+SQL
+assert_eq "迁移试算：只认出 1 笔" "试算：有1笔充电的费用与「1.0元/度」完全吻合，会被搬进覆盖表并把原始费用恢复为空。去掉第二个参数即可实际执行。"     "$(psql_q "SELECT message FROM adopt_legacy_default_costs(1.0, TRUE)")"
+assert_eq "试算不改任何东西（原表仍是 7.00）" "7.00" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 13')"
+psql_q "SELECT message FROM adopt_legacy_default_costs(1.0)" >/dev/null
+assert_eq "实际执行后：算得出来的那笔原表恢复为空" "" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 13')"
+assert_eq "费用仍然显示 7（已搬进覆盖表）" "7.0000" "$(psql_q 'SELECT effective_cost(13, NULL)')"
+assert_eq "对不上的那笔完全没动" "6.66" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 14')"
+
 echo ""
 echo "====================================="
 if [ "$FAIL" -eq 0 ]; then

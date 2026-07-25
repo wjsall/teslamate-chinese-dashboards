@@ -499,7 +499,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT cost from charging_processes where id = $charging_process_id;",
+          "rawSql": "SELECT effective_cost(id, cost) AS cost from charging_processes where id = $charging_process_id;",
           "refId": "A",
           "sql": {
             "columns": [
