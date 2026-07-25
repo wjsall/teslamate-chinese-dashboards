@@ -177,10 +177,11 @@ done
 
 ### 提交前本地检查
 
-改动 `grafana/dashboards/` 下的 JSON 或 `sql/`/安装脚本前，提交 PR 前先在本地跑一遍这 4 个检查（PR CI 会跑这 4 项 lint；push main 时会先跑 lint、全绿后再构建镜像；本地先过能少一轮来回）：
+改动 `grafana/dashboards/` 下的 JSON 或 `sql/`/安装脚本前，提交 PR 前先在本地跑一遍这 5 个检查（`lint` job 跑的就是这 5 项；push main 时会先跑 lint、全绿后再构建镜像；本地先过能少一轮来回）：
 
 ```bash
-bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash scripts/check-sql-revision.sh && bash scripts/check-dashboards-clean.sh
+bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash scripts/check-sql-revision.sh \
+  && bash scripts/check-sql-gate-consistency.sh && bash scripts/check-dashboards-clean.sh
 ```
 
 ## 📋 发布流程
@@ -200,20 +201,31 @@ bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash s
 
 ### CI 是怎么保证发出去的镜像被测过的
 
-tag 推送后的流水线是**串行**的，不是并行：
+tag 推送后，流水线的关键顺序是**串行**的（先构建候选 → 各道门测的都是这一份 → 全绿才提升），
+不是"构建和测试一起跑"：
 
 ```
 lint
-  → build-candidate   构建镜像，只推一个 candidate-<run_id> 临时 tag
-  → 五条冒烟          全部按 digest 拉这一份候选镜像来测
-  → publish           五条全绿，才把同一个 digest 提升成 vX.Y.Z / latest / main
+  → build-candidate          构建镜像，只推一个 candidate-<run_id> 临时 tag
+  → 五条部署冒烟             全部按 digest 拉这一份候选镜像来测
+    分时电价行为测试          算钱正确性，只需要 lint，与冒烟并行
+    仪表盘 SQL 可执行性       面板 SQL 真交给 PostgreSQL 解析，同上
+  → publish                  以上七个 job 全绿，才把同一个 digest 提升成
+                             vX.Y.Z / latest / main
+  → cleanup-candidate-tag    删掉 candidate-<run_id> 临时 tag；`if: always()`，
+                             前面挂了也照删
 ```
 
-两条硬保证：
+三条硬保证：
 
-- **任一冒烟失败，正式 tag 不会出现**——`publish` 的 `needs` 列了全部五条冒烟。
+- **任一门失败，正式 tag 不会出现**——`publish` 的 `needs` 列了全部五条部署冒烟，外加
+  分时电价行为测试（`tou-behavior`）和仪表盘 SQL 可执行性（`dashboard-sql`）。
 - **发出去的就是被测的那一份**——提升用 `docker buildx imagetools create` 纯复制 manifest，
   不重新构建；`publish` 最后还会回验每个正式 tag 指向的 digest 等于被测 digest。
+- **临时 tag 不会残留**——清理是独立 job，`needs` 列了所有用到候选镜像的 job（删早了会
+  把它们正在拉的镜像删掉），配 `if: always()`，所以某条门失败、`publish` 被跳过时它照样
+  跑。清理曾经写在 `publish` 里，正好在失败时不执行，每次失败都往公开的 GHCR 包里留一个
+  谁都能拉的候选镜像。
 
 这道门是 2026-07-25 补的。在那之前 `build` 与冒烟并行，v1.9.0 发布那次四条冒烟挂着、
 镜像照样推了出去——冒烟当时只是发布后的报警器。
