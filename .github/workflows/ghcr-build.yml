@@ -282,10 +282,13 @@ jobs:
           # -v ON_ERROR_STOP=1 必须：psql 默认某条语句失败也 exit 0。这一步曾经就是这样
           # 静默失败的——cars.settings_id 是 NOT NULL，插入报错但步骤照样绿，drives 停在 0，
           # 于是下面「升级后行数不能减少」的断言变成 0 >= 0 恒真，等于没测。
-          # settings_id 取 TeslaMate 自己迁移时建的那行设置。
+          # cars.settings_id 的外键指向 car_settings（不是 settings），而全新库里那张表是空的，
+          # 所以要先建一行。car_settings 每一列都有默认值，DEFAULT VALUES 即可（本地对着真
+          # TeslaMate schema 实测过）。
           docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 <<'SQL'
+          WITH s AS (INSERT INTO car_settings DEFAULT VALUES RETURNING id)
           INSERT INTO cars (eid, vid, model, efficiency, settings_id, inserted_at, updated_at)
-          VALUES (990001, 990001, '3', 0.153, (SELECT id FROM settings ORDER BY id LIMIT 1), now(), now());
+          SELECT 990001, 990001, '3', 0.153, s.id, now(), now() FROM s;
 
           INSERT INTO drives (start_date, end_date, distance, duration_min, car_id)
           SELECT now() - interval '2 day', now() - interval '2 day' + interval '20 min', 8.2, 18, id
@@ -619,6 +622,13 @@ jobs:
           COMPOSE_PROJECT_NAME=teslamate docker compose -f "$HOME/manual-stack/docker-compose.yml" up -d
           for i in $(seq 1 30); do
             curl -fsS http://localhost:3000/api/health >/dev/null 2>&1 && { echo "Grafana 就绪"; break; }
+            sleep 5
+          done
+          # TeslaMate 也要等：它启动要先跑完自己的全套迁移，比 Grafana 慢得多。只等 Grafana
+          # 就跑 diagnose，会在 TeslaMate 还没开始监听时判 container_down → RESULT=FAILED，
+          # 而这个 job 要断言的是 DEGRADED（SQL 没装），于是被一个纯粹的时序问题带挂。
+          for i in $(seq 1 40); do
+            curl -fsS --noproxy '*' -o /dev/null "http://127.0.0.1:4000/" 2>/dev/null && { echo "TeslaMate 就绪"; break; }
             sleep 5
           done
 
