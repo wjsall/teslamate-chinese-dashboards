@@ -40,6 +40,9 @@ jobs:
       - name: SQL 对象契约 / SQL_COMPAT_REVISION 强制门（issue #33 同类教训）
         run: bash scripts/check-sql-revision.sh
 
+      - name: 四个脚本内联的 SQL 对象判据必须一致
+        run: bash scripts/check-sql-gate-consistency.sh
+
       - name: Dashboard JSON 环境残留脏值
         run: bash scripts/check-dashboards-clean.sh
 

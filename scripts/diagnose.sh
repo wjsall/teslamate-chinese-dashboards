@@ -403,9 +403,11 @@ elif tesla_api_reachable https://owner-api.teslamotors.com; then
     # 国内网关不通算不算问题，取决于这套部署用的是哪个地域的账号：
     #   - 配了 TESLA_API_HOST=...tesla.cn（国内账号）→ 它就是这套部署唯一的数据来源，
     #     不通就是真故障，记进 REASONS。
-    #   - 没配（国际账号，也是绝大多数海外网络环境）→ 本来就连不上国内网关，
-    #     记进 REASONS 会把一套完全健康的部署判成 DEGRADED，只做提示。
-    # 判据取自 teslamate 容器实际生效的环境变量，不猜。
+    #   - 没配 → **判不出地域**，不能当成"国际账号，没事"。本项目推荐姿势就是不配这几个
+    #     变量（TeslaMate 3.0 会从 token 自动识别中国区），所以绝大多数国内车主在这里都是
+    #     "没配"；这条要是写成"不影响使用"，等于对主力用户群把真故障说成没事。
+    #     但也不能一律记进 REASONS——国际账号用户本来就连不上国内网关，那会让一套完全
+    #     健康的部署被判 DEGRADED。折中：不降级，但话说准，把两种可能都摆给用户。
     TM_CONTAINER=$(detect_service_container teslamate)
     TESLA_CN_CONFIGURED=0
     if [ -n "$TM_CONTAINER" ] && docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
@@ -416,8 +418,11 @@ elif tesla_api_reachable https://owner-api.teslamotors.com; then
         fail_r "国内 owner-api.vn.cloud.tesla.cn 不通，而这套部署配的正是国内账号网关（拿不到车辆数据）" datasource_unreachable
         echo "    修：排查 DNS / 网络能否解析并访问 owner-api.vn.cloud.tesla.cn"
     else
-        warn "国内 owner-api.vn.cloud.tesla.cn 不通（这套部署用的是国际账号网关，不影响使用；"
-        echo "    若你其实是国内账号，需要在 compose 里配 TESLA_API_HOST 并排查网络）"
+        warn "国内 owner-api.vn.cloud.tesla.cn 不通（国际 owner-api.teslamotors.com 可达）"
+        echo "    用国际账号：正常现象，忽略即可。"
+        echo "    用国内账号：这多半就是「车辆数据不同步 / 一直没数据」的原因，需要排查本机到"
+        echo "      owner-api.vn.cloud.tesla.cn 的 DNS 与网络（这条不计入总体结论，因为脚本"
+        echo "      无法确定你用的是哪种账号）。"
     fi
 else
     fail_r "Tesla API 服务器都不通（容器拿不到车辆数据）" datasource_unreachable

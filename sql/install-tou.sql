@@ -505,30 +505,52 @@ EXECUTE FUNCTION trigger_compute_tou();
 -- 注：本视图不能直接替换 dashboards 的 FROM charging_processes，
 -- PG 视图不传递底层表 PK 函数依赖到下游 GROUP BY，会破坏所有 GROUP BY cp.id 的聚合 SQL。
 -- 视图作为只读展示/对账查询用 OK；批量替换底表请用 trigger 或逐面板 JOIN旁路表。
--- 必须先 DROP 再建，不能只用 CREATE OR REPLACE：视图选了 cp.*，建视图时 * 会被展开成
--- 当时的列并固化下来。等 TeslaMate 将来给 charging_processes 加一列（历史上 cost、
--- charge_energy_used 都是后加的），新列在展开后排在 cost_effective 之前，而
--- CREATE OR REPLACE VIEW 只允许在列表末尾追加列，于是报
---   ERROR: cannot change name of view column "cost_effective" to "<新列>"
--- 重装因此在这里中断，本文件后面的 effective_cost 等对象（11 个仪表盘在用）全都装不上，
--- 而且重跑还是同样的错，用户不手动删视图就永远修不好。DROP 掉重建没有这个问题。
--- 不加 CASCADE：本视图没有下游依赖对象（仅仪表盘按需查询），CASCADE 反而可能误删用户自建对象。
-DROP VIEW IF EXISTS charging_processes_v;
-CREATE OR REPLACE VIEW charging_processes_v AS
-SELECT
-  cp.*,
-  COALESCE(t.cost_tou, cp.cost) AS cost_effective,
-  t.cost_tou,
-  t.energy_by_period,
-  CASE
-    WHEN t.cost_tou IS NOT NULL THEN 'TOU'
-    WHEN cp.cost IS NOT NULL THEN 'flat'
-    ELSE 'unknown'
-  END AS cost_mode
-FROM charging_processes cp
-LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id;
+-- 这个视图的重建必须放在一个带异常处理的 DO 块里，三个理由缺一不可：
+--
+-- 1) 不能只用 CREATE OR REPLACE VIEW：视图选了 cp.*，建视图时 * 会被展开成当时的列并
+--    固化。等 TeslaMate 将来给 charging_processes 加列（历史上 cost、charge_energy_used
+--    都是后加的），新列排在 cost_effective 之前，而 CREATE OR REPLACE VIEW 只允许在
+--    列表末尾追加列，直接报 cannot change name of view column，重装中断。
+-- 2) 也不能无脑 DROP 再建：用户可能在这个视图上建了自己的视图/物化视图，那时 DROP 会报
+--    dependent objects still exist，整份 SQL 同样中断——只是把失败条件从"上游加列"换成
+--    "用户建过东西"，一样不可自愈。加 CASCADE 更糟，会连用户自己的对象一起删掉。
+-- 3) DROP 和 CREATE 分成两条语句时，psql 默认 autocommit，中间存在视图不存在的窗口，
+--    此刻刷新仪表盘会报 relation does not exist；更糟的是 DROP 成功而 CREATE 因故失败
+--    （连接断、进程被杀）会让视图永久消失。DO 块是单条语句、单个事务，没有这个窗口。
+--
+-- 所以：在 DO 块里试着 DROP，撞到依赖就保留旧视图并 RAISE NOTICE 告诉用户怎么处理，
+-- 然后正常继续装后面的对象（本视图只用于对账查询，没有任何仪表盘引用它，旧一点没关系）；
+-- 能 DROP 掉就重建成最新定义。无论哪条路径，本文件后面的 effective_cost 等对象都照装。
+DO $view$
+BEGIN
+    BEGIN
+        DROP VIEW IF EXISTS charging_processes_v;
+    EXCEPTION WHEN dependent_objects_still_exist THEN
+        RAISE NOTICE '跳过重建视图 charging_processes_v：有其他对象依赖它（多半是你自己建的视图）。';
+        RAISE NOTICE '  其余分时电价对象会照常安装，不受影响。';
+        RAISE NOTICE '  想让这个视图也更新到最新定义：先删掉依赖它的对象，再重跑本文件。';
+        RETURN;
+    END;
 
-COMMENT ON VIEW charging_processes_v IS 'TeslaMate 中文版独家：暴露 cost_effective 让所有仪表盘自动按 TOU 显示真实费用';
+    EXECUTE $v$
+        CREATE VIEW charging_processes_v AS
+        SELECT
+          cp.*,
+          COALESCE(t.cost_tou, cp.cost) AS cost_effective,
+          t.cost_tou,
+          t.energy_by_period,
+          CASE
+            WHEN t.cost_tou IS NOT NULL THEN 'TOU'
+            WHEN cp.cost IS NOT NULL THEN 'flat'
+            ELSE 'unknown'
+          END AS cost_mode
+        FROM charging_processes cp
+        LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
+    $v$;
+
+    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS 'TeslaMate 中文版独家：暴露 cost_effective 让所有仪表盘自动按 TOU 显示真实费用'$c$;
+END
+$view$;
 
 -- ----------------------------------------------------------------------------
 -- 7e. effective_cost(cp_id, fallback) — 让 dashboards 透明拿到 TOU 计算后的 cost

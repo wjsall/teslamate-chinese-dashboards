@@ -193,7 +193,7 @@ REF="${SQL_REF:-$(curl -fsSL --max-time 10 https://api.github.com/repos/wjsall/t
 REF="${REF:-main}"  # 解析失败（网络问题/API 限流）兜底滚动通道，见「三种更新通道」
 for f in install-coord-functions install-unit-functions install-tou install-indexes; do
   if ! curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REF}/sql/${f}.sql" \
-    | docker exec -i "$DB" psql -U teslamate -d teslamate; then
+    | docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1; then
     echo "❌ ${f}.sql 安装失败"
     exit 1
   fi
@@ -203,7 +203,7 @@ done
 REV=$(curl -fsSL "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REF}/config/versions.env" \
   | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r')
 if [ -n "$REV" ]; then
-  docker exec -i "$DB" psql -U teslamate -d teslamate <<SQL
+  docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 <<SQL
 CREATE TABLE IF NOT EXISTS teslamate_cn_extension_meta (
     id INTEGER PRIMARY KEY DEFAULT 1,
     sql_revision INTEGER NOT NULL,

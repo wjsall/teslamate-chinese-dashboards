@@ -85,6 +85,15 @@ def skeletonize(text):
                     out.append(text[i:])
                     break
                 inner = text[start_content:end_tag_idx]
+                # 折叠函数体是有意为之（函数体只是实现，改措辞不该算契约变化）。
+                # 但 `DO $tag$ ... $tag$` 不是函数体，而是一条会真正建对象的顶层语句——
+                # install-tou.sql 就把视图重建放在 DO 块里（要在里面处理"用户建了依赖对象"
+                # 的异常）。把 DO 体一起折叠掉，里面创建的对象就从契约里凭空消失了，
+                # 门会把"什么都没改"报成"移除了一个对象"。所以 DO 体保留、继续扫描。
+                if re.search(r'\bDO\s*$', ''.join(out)[-16:], re.IGNORECASE):
+                    out.append(inner)
+                    i = end_tag_idx + len(tag)
+                    continue
                 out.append(' $BODY$ ')
                 out.append('\n' * inner.count('\n'))
                 i = end_tag_idx + len(tag)

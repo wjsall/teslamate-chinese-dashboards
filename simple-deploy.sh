@@ -137,8 +137,40 @@ fi
 
 # SQL 安装的 stderr 落盘：加了 ON_ERROR_STOP=1 之后，psql 的 ERROR 行就是排查唯一线索，
 # 不能再像以前那样一起丢进 /dev/null（用户只看到「⚠ 装失败」，既没法自查也没法贴 issue）。
-SQL_ERR_LOG="${TMPDIR:-/tmp}/teslamate-cn-sql-install.log"
-: > "$SQL_ERR_LOG"
+# 用 mktemp 而不是固定路径：固定路径在「先 sudo 跑过一次、之后不带 sudo 重跑」时会是
+# root 属主，truncate 直接 Permission denied，而这行在 set -e 下会让脚本零解释猝死。
+# mktemp 也失败就退到 /dev/null——丢日志可以接受，装不了不行。
+SQL_ERR_LOG=$(mktemp "${TMPDIR:-/tmp}/teslamate-cn-sql-install.XXXXXX" 2>/dev/null) || SQL_ERR_LOG=/dev/null
+
+# TeslaMate 实际映射到宿主机的端口。升级模式下用户当初可能是用 TM_PORT=14000 装的，
+# 而重跑脚本时 TM_PORT 会回落成默认 4000——写死 4000 就可能探到 4000 上另一个无关服务，
+# 让等待瞬间"成功"，等于没等。以容器实际映射为准，拿不到再回落 TM_PORT。
+teslamate_published_port() {
+    local c p
+    c=$(docker ps --format '{{.Names}}' 2>/dev/null \
+        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    if [ -n "$c" ]; then
+        p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
+    fi
+    [ -z "$p" ] && p="$TM_PORT"
+    echo "$p"
+}
+
+# TeslaMate 容器当前状态（running / restarting / exited / unknown）。
+# 等待函数必须看这个：崩溃重启中的 TeslaMate，schema_migrations 行数同样是恒定不变的，
+# 只看行数会把「迁移撞崩、永久停在半途」判成「迁移已完成」，然后继续装 SQL、把问题坐实。
+teslamate_container_status() {
+    local c
+    c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
+        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    if [ -z "$c" ]; then
+        echo unknown
+        return
+    fi
+    docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo unknown
+}
 
 # 等 TeslaMate 自己的数据库迁移跑完，再装我们的 SQL。
 #
@@ -162,7 +194,7 @@ SQL_ERR_LOG="${TMPDIR:-/tmp}/teslamate-cn-sql-install.log"
 # 并且只作为兜底。
 wait_teslamate_migrated() {
     local db_container="$1"
-    local i cur last="" stable=0 code
+    local i cur last="" stable=0 code tm_st tm_port bad=0
 
     # ① 等上游核心表出现（最多 180 秒；镜像已拉好的情况下通常 10-30 秒）
     for i in $(seq 1 60); do
@@ -170,20 +202,46 @@ wait_teslamate_migrated() {
             "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
             break
         fi
-        [ $((i % 10)) -eq 0 ] && echo "    …仍在等 TeslaMate 建表（已等 $((i * 3)) 秒）"
+        tm_st=$(teslamate_container_status)
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+            bad=$((bad + 1))
+            if [ "$bad" -ge 3 ]; then
+                echo "    ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成"
+                echo "      先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本"
+                return 1
+            fi
+        else
+            bad=0
+        fi
+        [ $((i % 10)) -eq 0 ] && echo "    …仍在等 TeslaMate 建表（已等 $((i * 3)) 秒，容器状态 ${tm_st}）"
         sleep 3
     done
 
     # ② 主判据：TeslaMate 的 HTTP 端口能应答（最多 180 秒）
     #    次判据：schema_migrations 行数连续 8 次采样（24 秒）不变
     for i in $(seq 1 60); do
-        if command -v curl >/dev/null 2>&1; then
+        tm_port=$(teslamate_published_port)
+        if [ -n "$tm_port" ] && command -v curl >/dev/null 2>&1; then
             code=$(curl -sS --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' \
-                "http://127.0.0.1:${TM_PORT}/" 2>/dev/null)
+                "http://127.0.0.1:${tm_port}/" 2>/dev/null)
             if [ -n "$code" ] && [ "$code" != "000" ]; then
                 return 0
             fi
         fi
+        tm_st=$(teslamate_container_status)
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+            bad=$((bad + 1))
+            if [ "$bad" -ge 3 ]; then
+                echo "    ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），迁移停在半途"
+                echo "      先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本"
+                return 1
+            fi
+            stable=0
+            last=""
+            sleep 3
+            continue
+        fi
+        bad=0
         cur=$(docker exec "$db_container" psql -U teslamate -d teslamate -tAc \
             "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
         if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
@@ -248,7 +306,10 @@ write_sql_compat_revision() {
     local rev ver_safe
     if ! sql_trio_objects_present "$db_container"; then
         echo "  ⚠ 三组兼容性 SQL 的对象没在库里查到，不记录 revision（跑 scripts/diagnose.sh 看缺哪一组）"
-        return 1
+        # 返回 2 而不是 1：调用方据此把整体结论也置成失败。返回 1 留给「拉不到 revision
+        # 数字」这种不影响已装好功能的情况。闸门真拦下东西时还打「✅ 安装完成」+ exit 0，
+        # 正是这批改动要根除的「结论比证据乐观」。
+        return 2
     fi
     rev=$(curl -fsSL "$REPO_BASE/config/versions.env" 2>/dev/null \
         | grep -m1 '^SQL_COMPAT_REVISION=' | cut -d= -f2 | tr -d '[:space:]\r') || true
@@ -603,7 +664,14 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         fi
 
         echo "  → 安装/更新单位换算函数"
-        if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
+        # TM_MIGRATED=0 时必须真的跳过：这组函数与上游 TeslaMate 迁移建的是同名函数，我们抢先
+        # CREATE OR REPLACE 之后，上游那条不带 OR REPLACE 的迁移会撞 duplicate_function 崩掉，
+        # TeslaMate 从此反复重启、迁移永久停在半途，重跑本脚本也修不好（要手工 DROP FUNCTION）。
+        # 少装这组函数只是地图/单位显示不对，比把 TeslaMate 搞停轻得多。
+        if [ "${TM_MIGRATED:-1}" -eq 0 ]; then
+            echo "  ⏭ 跳过单位换算函数（上面没能确认 TeslaMate 迁移已完成）"
+            UPGRADE_SQL_OK=0
+        elif curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
             echo "  ✓ 单位换算函数已更新（km/mi、℃/℉、m/ft、胎压）"
         else
             echo "  ⚠ 单位换算函数更新失败"
@@ -620,7 +688,9 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
 
         # 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见函数定义处注释）
         if [ "$UPGRADE_SQL_OK" -eq 1 ]; then
-            write_sql_compat_revision "$DB_CONTAINER" || true
+            _rev_rc=0
+            write_sql_compat_revision "$DB_CONTAINER" || _rev_rc=$?
+            [ "$_rev_rc" -eq 2 ] && UPGRADE_SQL_OK=0
         fi
 
         echo "  → 安装/更新性能优化索引（v1.6.1+）"
@@ -648,6 +718,10 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
         UPGRADE_EXIT=0
     else
         echo "⚠️ 升级部分完成：坐标、单位或分时电价 SQL 未全部安装成功"
+        # stderr 已经落盘（见 SQL_ERR_LOG 定义处），这里必须把路径告诉用户——否则加了
+        # ON_ERROR_STOP 之后唯一的排查线索就藏在一个没人知道的文件里。
+        [ -s "$SQL_ERR_LOG" ] && echo "   psql 的具体报错在：$SQL_ERR_LOG"
+        echo "   跑 bash scripts/diagnose.sh 可以看到具体缺哪一组对象"
         UPGRADE_EXIT=2
     fi
     echo "============================================="
@@ -888,7 +962,14 @@ if [ "$DB_READY" -eq 1 ]; then
         SQL_OK=0
     fi
 
-    if curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
+    # TM_MIGRATED=0 时必须真的跳过：这组函数与上游 TeslaMate 迁移建的是同名函数，我们抢先
+    # CREATE OR REPLACE 之后，上游那条不带 OR REPLACE 的迁移会撞 duplicate_function 崩掉，
+    # TeslaMate 从此反复重启、迁移永久停在半途，重跑本脚本也修不好（要手工 DROP FUNCTION）。
+    # 少装这组函数只是地图/单位显示不对，比把 TeslaMate 搞停轻得多。
+    if [ "${TM_MIGRATED:-1}" -eq 0 ]; then
+        echo "  ⏭ 跳过单位换算函数（上面没能确认 TeslaMate 迁移已完成）"
+        SQL_OK=0
+    elif curl -fsSL "$SQL_BASE/install-unit-functions.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
         echo "  ✓ 单位换算函数已装（km/mi、℃/℉、m/ft、胎压）"
     else
         echo "  ⚠ 单位换算函数安装失败"
@@ -904,7 +985,9 @@ if [ "$DB_READY" -eq 1 ]; then
 
     # 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见函数定义处注释）
     if [ "$SQL_OK" -eq 1 ]; then
-        write_sql_compat_revision "$DB_CONTAINER" || true
+        _rev_rc=0
+        write_sql_compat_revision "$DB_CONTAINER" || _rev_rc=$?
+        [ "$_rev_rc" -eq 2 ] && SQL_OK=0
     fi
 
     if curl -fsSL "$SQL_BASE/install-indexes.sql" | docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 >/dev/null 2>>"$SQL_ERR_LOG"; then
@@ -918,7 +1001,7 @@ if [ "$DB_READY" -eq 1 ]; then
         echo "    psql 的具体报错在：$SQL_ERR_LOG"
         echo "    部分 SQL 安装失败，可手动重跑（按需选）："
         echo "    for f in install-coord-functions install-unit-functions install-tou install-indexes; do"
-        echo "      curl -fsSL $SQL_BASE/\$f.sql | docker exec -i $DB_CONTAINER psql -U teslamate -d teslamate"
+        echo "      curl -fsSL $SQL_BASE/\$f.sql | docker exec -i $DB_CONTAINER psql -U teslamate -d teslamate -v ON_ERROR_STOP=1"
         echo "    done"
     fi
 else

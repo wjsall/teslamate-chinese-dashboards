@@ -298,9 +298,36 @@ check_pg_version() {
 # duplicate_function、TeslaMate 起不来。判据：等 charging_processes 出现，再等
 # schema_migrations 行数连续 8 次采样（24 秒）不变——窗口取短了会在一条耗时长的迁移
 # 中途误判成已完成。
+# TeslaMate 容器当前状态（running / restarting / exited / unknown）。
+# 崩溃重启中的 TeslaMate，schema_migrations 行数同样恒定不变，只看行数会把「迁移撞崩、
+# 永久停在半途」判成「迁移已完成」，然后继续装 SQL 把问题坐实。
+teslamate_container_status() {
+    local c
+    c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
+        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    if [ -z "$c" ]; then
+        echo unknown
+        return
+    fi
+    docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo unknown
+}
+
+# TeslaMate 实际映射到宿主机的端口（拿不到就空）。用它而不是写死 4000：
+# 用户可能用 TM_PORT 装在别的端口上，写死会探到无关服务、让等待瞬间"成功"。
+teslamate_published_port() {
+    local c p
+    c=$(docker ps --format '{{.Names}}' 2>/dev/null \
+        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+        | grep -viE 'database|postgres|grafana|mosquitto' | head -1)
+    [ -z "$c" ] && return 0
+    p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
+    echo "$p"
+}
+
 wait_teslamate_migrated() {
     local db="$1" u="$2" d="$3"
-    local i cur last="" stable=0
+    local i cur last="" stable=0 code tm_st tm_port bad=0
     for i in $(seq 1 60); do
         if docker exec "$db" psql -U "$u" -d "$d" -tAc \
             "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
@@ -309,6 +336,30 @@ wait_teslamate_migrated() {
         sleep 3
     done
     for i in $(seq 1 60); do
+        # 主判据：TeslaMate 的 HTTP 端口能应答。它的 entrypoint 是先跑完整套迁移
+        # 再 exec 启动服务，所以端口一应答就等于迁移结束——比数迁移行数准得多。
+        tm_port=$(teslamate_published_port)
+        if [ -n "$tm_port" ] && command -v curl >/dev/null 2>&1; then
+            code=$(curl -sS --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' \
+                "http://127.0.0.1:${tm_port}/" 2>/dev/null)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+                return 0
+            fi
+        fi
+        tm_st=$(teslamate_container_status)
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+            bad=$((bad + 1))
+            if [ "$bad" -ge 3 ]; then
+                echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
+                echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                return 1
+            fi
+            stable=0
+            last=""
+            sleep 3
+            continue
+        fi
+        bad=0
         cur=$(docker exec "$db" psql -U "$u" -d "$d" -tAc \
             "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
         if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
@@ -344,11 +395,11 @@ install_sql() {
     fi
     if [[ "$level" == "warning" ]]; then
         echo "⚠️  ${label}装失败（不影响核心功能，仅性能/次要体验略差）。重新跑（带 stderr）："
-        echo "    curl -fsSL $url | docker exec -i $DB_CONTAINER psql -U ${DB_USER:-teslamate} -d ${DB_NAME:-teslamate}"
+        echo "    curl -fsSL $url | docker exec -i $DB_CONTAINER psql -U ${DB_USER:-teslamate} -d ${DB_NAME:-teslamate} -v ON_ERROR_STOP=1"
         WARN_STEPS+=("$key")
     else
         echo "⚠️  ${label}装失败。重新跑（带 stderr）："
-        echo "    curl -fsSL $url | docker exec -i $DB_CONTAINER psql -U ${DB_USER:-teslamate} -d ${DB_NAME:-teslamate}"
+        echo "    curl -fsSL $url | docker exec -i $DB_CONTAINER psql -U ${DB_USER:-teslamate} -d ${DB_NAME:-teslamate} -v ON_ERROR_STOP=1"
         FAILED_STEPS+=("$key")
     fi
     return 1
@@ -409,7 +460,7 @@ sql_trio_objects_present() {
 write_sql_compat_revision() {
     if ! sql_trio_objects_present; then
         echo "⚠️  三组兼容性 SQL 的对象没在库里查到，不记录 revision（跑 scripts/diagnose.sh 看缺哪一组）"
-        return 1
+        return 2
     fi
     if [[ -z "${DB_CONTAINER:-}" ]]; then
         return 1
@@ -649,7 +700,11 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FIL
         install_sql "性能优化索引（positions 表 car_id+date btree）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql" \
             "indexes-sql" "warning" || true
-        if sql_trio_ok; then write_sql_compat_revision || true; fi
+        if sql_trio_ok; then
+            _rev_rc=0
+            write_sql_compat_revision || _rev_rc=$?
+            [[ "$_rev_rc" -eq 2 ]] && FAILED_STEPS+=("sql-object-check")
+        fi
     fi
     echo
     if [[ ${#FAILED_STEPS[@]} -eq 0 ]]; then
@@ -744,7 +799,11 @@ install_sql "性能优化索引（positions 表 car_id+date btree）" \
     "indexes-sql" "warning" || true
 
 # 10b. 三组兼容性 SQL 全部成功才记录 revision（性能索引不算，见 sql_trio_ok 定义处注释）
-if sql_trio_ok; then write_sql_compat_revision || true; fi
+if sql_trio_ok; then
+    _rev_rc=0
+    write_sql_compat_revision || _rev_rc=$?
+    [[ "$_rev_rc" -eq 2 ]] && FAILED_STEPS+=("sql-object-check")
+fi
 
 # 11. 完成 / 部分完成 汇总
 trap - ERR  # 后面只是 echo，不需要再触发 on_error
