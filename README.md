@@ -318,7 +318,8 @@ services:
 ## 🔒 SQL 远程拉取的信任模型
 
 升级路径会从 GitHub 拉取四个 SQL 安装文件并交给 `psql` 执行。`simple-deploy.sh` / `migrate-from-official.sh` 内置 `TARGET_REF` 开关，默认自动解析**最新正式 Release**，让镜像 tag 和 SQL 版本锁定同一个 ref（不会出现"正式版镜像 + main 分支未发布 SQL"的混搭）；也支持 `TARGET_REF=v1.8.4` 锁定到指定版本，或 `TARGET_REF=main` 切到滚动通道。
-三条通道详情、优先级规则、GitHub API 不可达时的兜底行为、传输安全与维护者风险，以及第三方/自建镜像的信任边界见 [故障排查手册：SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
+脚本在确定版本号之后，还会下载并运行**该正式版本的同名脚本**，好让安装逻辑、SQL、镜像三者来自同一次发布；想先审阅再运行的话，用 `TESLAMATE_CN_PINNED=1 bash simple-deploy.sh` 跳过这一步。
+三条通道详情、优先级规则、版本号解析不出来时的处理、传输安全与维护者风险，以及第三方/自建镜像的信任边界见 [故障排查手册：SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
 
 <a id="requirements"></a>
 
