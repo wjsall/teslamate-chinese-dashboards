@@ -46,7 +46,20 @@ jobs:
       - name: Dashboard JSON 环境残留脏值
         run: bash scripts/check-dashboards-clean.sh
 
-  build:
+  # ==========================================================================
+  # 构建「候选镜像」——只打一个临时 tag 推到 ghcr，不碰任何正式 tag。
+  #
+  # 为什么必须拆成 候选 → 冒烟 → 提升 三段（2026-07-25 实测教训）：
+  # 之前 build 和五个冒烟都只 needs: lint，并行跑，于是 v1.9.0 发布那次
+  # build 成功推了 20 次 manifest、同时四个冒烟在挂——**带着已知缺陷的镜像照样
+  # 发出去了，latest 也照样更新了**。冒烟当时只是"发布后报警器"，不是发布门。
+  #
+  # 现在：候选镜像先建好 → 五条冒烟全部测**这一份** → 全绿才由 publish 把
+  # **同一个 digest** 提升成 vX.Y.Z / latest / main。任一冒烟失败，正式 tag 不会出现。
+  # 提升用 `docker buildx imagetools create`，是纯 manifest 复制、不重新构建，
+  # 所以"被测的那一份"和"发出去的那一份"在字节层面是同一个东西，不靠"应该一样"。
+  # ==========================================================================
+  build-candidate:
     needs: lint
     # schedule 不再构建/推送镜像（base image 锁 digest 后，同一 commit 重建内容恒定，
     # 周期性重建没有意义）——那条路径改由下面的 base-image-canary 只读巡检覆盖。
@@ -55,6 +68,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      ref: ${{ steps.cand.outputs.ref }}
+      digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -80,7 +97,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: 候选镜像引用（本次 run 专用的临时 tag）
+        id: cand
+        run: echo "ref=ghcr.io/${{ github.repository }}:candidate-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata（只为算出最终 tag / labels，候选阶段不推这些 tag）
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -114,13 +135,14 @@ jobs:
           fi
           echo "version=$FINAL" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+      - name: 构建候选镜像并推到临时 tag
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          push: true
+          tags: ${{ steps.cand.outputs.ref }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
@@ -157,7 +179,7 @@ jobs:
 
   smoke-fresh-install:
     name: "冒烟①全新安装"
-    needs: lint
+    needs: build-candidate
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -175,16 +197,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 本地构建这次改动的镜像（不经任何注册表）
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR（拉候选镜像）
+        uses: docker/login-action@v3
         with:
-          context: .
-          push: false
-          load: true
-          tags: teslamate-cn-ci:local
-          cache-from: type=gha
-          build-args: |
-            VERSION=ci-${{ github.sha }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拉本次的候选镜像（按 digest 锁定，不重新构建）
+        run: |
+          # 关键：按 digest 拉，不按 tag。这样这个 job 测的字节内容与 publish 之后
+          # 发出去的完全一致——"重新构建一份应该一样的"不算数。
+          REF="${{ needs.build-candidate.outputs.ref }}@${{ needs.build-candidate.outputs.digest }}"
+          echo "候选镜像: $REF"
+          docker pull "$REF"
+          docker tag "$REF" teslamate-cn-ci:local
 
       - name: 非交互跑 simple-deploy.sh（GRAFANA_IMAGE/SQL_REF 均指向本次构建产物/本次提交）
         env:
@@ -216,7 +243,7 @@ jobs:
 
   smoke-upgrade-from-old:
     name: "冒烟②旧版升级"
-    needs: lint
+    needs: build-candidate
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -236,16 +263,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 本地构建这次改动的镜像
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR（拉候选镜像）
+        uses: docker/login-action@v3
         with:
-          context: .
-          push: false
-          load: true
-          tags: teslamate-cn-ci:local
-          cache-from: type=gha
-          build-args: |
-            VERSION=ci-${{ github.sha }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拉本次的候选镜像（按 digest 锁定，不重新构建）
+        run: |
+          # 关键：按 digest 拉，不按 tag。这样这个 job 测的字节内容与 publish 之后
+          # 发出去的完全一致——"重新构建一份应该一样的"不算数。
+          REF="${{ needs.build-candidate.outputs.ref }}@${{ needs.build-candidate.outputs.digest }}"
+          echo "候选镜像: $REF"
+          docker pull "$REF"
+          docker tag "$REF" teslamate-cn-ci:local
 
       - name: 解析最新已发布 tag
         id: oldver
@@ -373,7 +405,7 @@ jobs:
 
   smoke-migrate-official:
     name: "冒烟③官方迁移（issue #20 事故路径）"
-    needs: lint
+    needs: build-candidate
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -396,16 +428,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 构建并推送本次改动的镜像到临时 ci-test tag
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: "ghcr.io/${{ github.repository }}:ci-migrate-${{ github.run_id }}"
-          cache-from: type=gha
-          build-args: |
-            VERSION=ci-${{ github.sha }}
+      # migrate-from-official.sh 内部会 docker compose pull，所以这条路径必须用一个
+      # 注册表上真实存在的镜像——正好直接用候选镜像本身，不必再自建临时 tag
+      # （那个临时 tag 用 GITHUB_TOKEN 删不掉，会在 ghcr 里逐次累积）。
+      - name: 核对候选 tag 解析到的 digest 就是被测的那一份
+        run: |
+          # 这条路径按 tag 用镜像（compose 里写 digest 引用会破坏脚本对镜像名的正则匹配），
+          # 所以显式验一次：这个 tag 现在指向的 manifest 必须就是 build-candidate 产出的
+          # 那个 digest。不验的话"按 tag 用"就等于放弃了 digest 一致性保证。
+          EXPECTED="${{ needs.build-candidate.outputs.digest }}"
+          ACTUAL=$(docker buildx imagetools inspect "${{ needs.build-candidate.outputs.ref }}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "expected=$EXPECTED"
+          echo "actual  =$ACTUAL"
+          [ "$EXPECTED" = "$ACTUAL" ] || { echo "::error::候选 tag 指向的 digest 与被测 digest 不一致"; exit 1; }
 
       - name: 起官方 TeslaMate + 官方 Grafana 栈（不含我们的中文镜像）
         run: |
@@ -479,7 +515,7 @@ jobs:
       - name: 非交互跑 migrate-from-official.sh（NEW_IMAGE/REPO_REF 均指向本次改动产物）
         env:
           ASSUME_YES: "1"
-          NEW_IMAGE: "ghcr.io/${{ github.repository }}:ci-migrate-${{ github.run_id }}"
+          NEW_IMAGE: ${{ needs.build-candidate.outputs.ref }}
           REPO_REF: ${{ github.sha }}
         run: |
           COMPOSE_FILE="$HOME/official-stack/docker-compose.yml" bash migrate-from-official.sh
@@ -504,39 +540,10 @@ jobs:
           docker compose -f "$HOME/official-stack/docker-compose.yml" ps
           docker compose -f "$HOME/official-stack/docker-compose.yml" logs --tail 300
 
-      # 清理临时 ghcr tag。仓库 owner 是个人账号（已确认 owner.type = User），所以端点用
-      # /user/... 或 /users/wjsall/... 都对得上；真正不确定的是身份：workflow 里的
-      # GITHUB_TOKEN 是 github-actions[bot]，/user/... 会解析到 bot 自己的包，很可能删不掉。
-      # 删除 ghcr package version 一般需要带 delete:packages 的 PAT。
-      #
-      # 所以这里删完必须回验：删不掉就明确 ::warning:: 报出残留的 tag 名，而不是让它静默累积
-      # ——「清理步骤绿了」不等于「东西删掉了」。要根治：给仓库加一个带 delete:packages 的
-      # PAT secret（如 GHCR_CLEANUP_TOKEN），下面会自动优先用它。
-      - name: 清理临时 ghcr tag（删不掉会显式告警，不静默残留）
-        if: always()
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          PKG="${{ github.event.repository.name }}"
-          TAG="ci-migrate-${{ github.run_id }}"
-          list_ids() {
-            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
-              | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' 2>/dev/null
-          }
-          for vid in $(list_ids); do
-            [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" >/dev/null 2>&1 || true
-          done
-          # 回验：还查得到（或压根查不动 API）就报出来
-          if [ -n "$(list_ids)" ]; then
-            echo "::warning::ghcr 临时 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需要人工或配 GHCR_CLEANUP_TOKEN 清理"
-          else
-            echo "临时 tag ${TAG} 已清理（或本 token 无权查询，无法确认——见上方注释）"
-          fi
 
   smoke-manual-compose-degraded:
     name: "冒烟④手动 compose 未跑 SQL → DEGRADED → 修复后 HEALTHY"
-    needs: lint
+    needs: build-candidate
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -549,16 +556,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 本地构建这次改动的镜像
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR（拉候选镜像）
+        uses: docker/login-action@v3
         with:
-          context: .
-          push: false
-          load: true
-          tags: teslamate-cn-ci:local
-          cache-from: type=gha
-          build-args: |
-            VERSION=ci-${{ github.sha }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拉本次的候选镜像（按 digest 锁定，不重新构建）
+        run: |
+          # 关键：按 digest 拉，不按 tag。这样这个 job 测的字节内容与 publish 之后
+          # 发出去的完全一致——"重新构建一份应该一样的"不算数。
+          REF="${{ needs.build-candidate.outputs.ref }}@${{ needs.build-candidate.outputs.digest }}"
+          echo "候选镜像: $REF"
+          docker pull "$REF"
+          docker tag "$REF" teslamate-cn-ci:local
 
       - name: 手动 compose 起栈（方法 B 模板，直接用我们的镜像，故意不跑 SQL 安装）
         run: |
@@ -684,7 +696,7 @@ jobs:
 
   smoke-plugin-volume-shadow:
     name: "冒烟⑤旧卷遮蔽插件回归（issue #20/#21 根因）"
-    needs: lint
+    needs: build-candidate
     if: github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -697,16 +709,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 本地构建这次改动的镜像
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR（拉候选镜像）
+        uses: docker/login-action@v3
         with:
-          context: .
-          push: false
-          load: true
-          tags: teslamate-cn-ci:local
-          cache-from: type=gha
-          build-args: |
-            VERSION=ci-${{ github.sha }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 拉本次的候选镜像（按 digest 锁定，不重新构建）
+        run: |
+          # 关键：按 digest 拉，不按 tag。这样这个 job 测的字节内容与 publish 之后
+          # 发出去的完全一致——"重新构建一份应该一样的"不算数。
+          REF="${{ needs.build-candidate.outputs.ref }}@${{ needs.build-candidate.outputs.digest }}"
+          echo "候选镜像: $REF"
+          docker pull "$REF"
+          docker tag "$REF" teslamate-cn-ci:local
 
       - name: 用官方镜像预先"污染"一个持久卷（模拟从官方栈迁移过来的旧卷）
         run: |
@@ -791,6 +808,111 @@ jobs:
   # Renovate App 或开 Mend hosted app），两边会各自开一条更新通知，属于重复噪音，
   # 到时候可以考虑关掉本 job（或反过来关 Renovate 对这个包的规则），不必现在处理。
   # ============================================================================
+
+  # ==========================================================================
+  # 发布：把**被冒烟测过的那一个 digest**提升成正式 tag。
+  #
+  # needs 列全五条冒烟 = 任一条失败，这个 job 不会跑，vX.Y.Z / latest / main 都不会出现。
+  # 这正是 2026-07-25 之前缺的那道门（当时 build 与冒烟并行，v1.9.0 在四条冒烟挂着的
+  # 情况下把镜像推了出去）。
+  #
+  # 提升用 `docker buildx imagetools create`：它只复制 manifest / blob，不重新构建，
+  # 所以正式 tag 指向的就是候选那一份的字节内容。如果这里改成重新 build 一次，哪怕
+  # 用同样的缓存，也只是"大概率一样"，那道保证就没了。
+  # ==========================================================================
+  publish:
+    needs:
+      - build-candidate
+      - smoke-fresh-install
+      - smoke-upgrade-from-old
+      - smoke-migrate-official
+      - smoke-manual-compose-degraded
+      - smoke-plugin-volume-shadow
+    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata（最终 tag，与候选阶段同一套规则）
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/teslamate-chinese-dashboards
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: 提升候选镜像为正式 tag（纯 manifest 复制，不重新构建）
+        run: |
+          SRC="${{ needs.build-candidate.outputs.ref }}@${{ needs.build-candidate.outputs.digest }}"
+          echo "源（冒烟测过的那一份）: $SRC"
+          ARGS=""
+          while read -r t; do
+            [ -n "$t" ] && ARGS="$ARGS -t $t"
+          done <<< "${{ steps.meta.outputs.tags }}"
+          echo "目标 tag:$ARGS"
+          # shellcheck disable=SC2086
+          docker buildx imagetools create $ARGS "$SRC"
+
+      - name: 回验:正式 tag 与被测 digest 一致
+        run: |
+          EXPECTED="${{ needs.build-candidate.outputs.digest }}"
+          fail=0
+          while read -r t; do
+            [ -z "$t" ] && continue
+            ACTUAL=$(docker buildx imagetools inspect "$t" --format '{{json .Manifest.Digest}}' | tr -d '"')
+            if [ "$ACTUAL" = "$EXPECTED" ]; then
+              echo "  ✓ $t → $ACTUAL"
+            else
+              echo "::error::$t 指向 $ACTUAL，与被测的 $EXPECTED 不一致"
+              fail=1
+            fi
+          done <<< "${{ steps.meta.outputs.tags }}"
+          [ "$fail" -eq 0 ]
+
+      - name: 清理候选 tag（删不掉会显式告警，不静默残留）
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          PKG="${{ github.event.repository.name }}"
+          TAG="candidate-${{ github.run_id }}"
+          list_ids() {
+            gh api "/user/packages/container/${PKG}/versions" --paginate 2>/dev/null \
+              | jq -r --arg tag "$TAG" '.[] | select(.metadata.container.tags[]? == $tag) | .id' 2>/dev/null
+          }
+          for vid in $(list_ids); do
+            [ -n "$vid" ] && gh api -X DELETE "/user/packages/container/${PKG}/versions/${vid}" >/dev/null 2>&1 || true
+          done
+          if [ -n "$(list_ids)" ]; then
+            echo "::warning::候选 tag ${TAG} 没能删掉（当前 token 多半没有 delete:packages 权限），需人工或配 GHCR_CLEANUP_TOKEN"
+          else
+            echo "候选 tag ${TAG} 已清理（或本 token 无权查询，无法确认）"
+          fi
 
   base-image-canary:
     name: "基础镜像 digest 巡检（只读，不发布镜像）"

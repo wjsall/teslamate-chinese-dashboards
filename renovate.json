@@ -1,30 +1,50 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "timezone": "Asia/Shanghai",
-  "schedule": ["before 3am on monday"],
+  "schedule": [
+    "before 3am on monday"
+  ],
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
-  "labels": ["dependencies"],
-  "enabledManagers": ["dockerfile", "github-actions"],
+  "labels": [
+    "dependencies"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions"
+  ],
   "dockerfile": {
     "pinDigests": true
   },
   "packageRules": [
     {
       "description": "Dockerfile 里 teslamate/grafana 基础镜像的 digest 更新：只开 PR，不自动合并。理由：本项目历史上已经踩过一次跟着上游 Grafana 版本升级出现的静默行为回归（Grafana 13.0.1 引入 stripSQLComments，字符串字面量里的 -- 被误当 SQL 行注释吞掉，Grafana 侧渲染报错但 psql 直接执行完全正常）——这类版本特定的渲染层回归，CI 现有的功能性冒烟测试（Grafana 健康检查 / SQL 对象契约 / 插件目录遮蔽回归）不逐面板做查询级验证，未必能覆盖到。基础镜像升级必须留给人工过一遍仪表盘再合并，不适合自动合并。",
-      "matchManagers": ["dockerfile"],
-      "matchPackageNames": ["teslamate/grafana"],
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "teslamate/grafana"
+      ],
       "automerge": false,
-      "labels": ["base-image-digest", "needs-manual-verification"]
+      "labels": [
+        "base-image-digest",
+        "needs-manual-verification"
+      ]
     },
     {
-      "description": "GitHub Actions 版本更新（actions/checkout、docker/setup-buildx-action、docker/login-action、docker/metadata-action、docker/build-push-action 等）：只改变 CI 编排本身，不改变发布的镜像内容，风险面窄。注意：五个部署路径冒烟测试和 build job 的触发条件都是 `github.event_name != 'pull_request'`，PR 上实际只跑 lint 四道门（dashboard lint / SQL 三件套引用一致 / SQL_COMPAT_REVISION 门 / dashboard JSON 环境残留检查），冒烟测试要等 PR 合并进 main 才会跑；lint 四道门全绿即自动合并，减少一人维护项目里持续人工合并 PR 的负担。",
-      "matchManagers": ["github-actions"],
-      "automerge": true,
+      "description": "CI 编排本身的更新不自动合并：五条冒烟只在 push main / tag / 手动触发时跑，PR 上不跑，所以自动合并等于让改动 CI 的 PR 只过 lint 就进 main——而 CI 正是发布门本身。人工看一眼，合并后 main 上的完整冒烟会真正验证它。",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "automerge": false,
       "automergeType": "pr",
       "platformAutomerge": true,
-      "labels": ["github-actions"]
+      "labels": [
+        "github-actions"
+      ]
     }
   ]
 }

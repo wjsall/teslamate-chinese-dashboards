@@ -187,10 +187,36 @@ bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash s
 
 维护者发布新版本时：
 
-1. 更新 `README.md` 中的版本信息
-2. 创建 Git Tag: `git tag v1.x.x`
-3. 推送 Tag: `git push origin v1.x.x`
-4. 在 GitHub 创建 Release
+1. 把 `CHANGELOG.md` 的 `[Unreleased]` 定版成 `[vX.Y.Z] - 日期`
+2. 本地跑一遍门禁（CI 也会跑，本地先跑省一轮往返）：
+   ```bash
+   for s in check-dashboard-lint check-sql-trio check-dashboards-clean \
+            check-sql-revision check-sql-gate-consistency; do bash scripts/$s.sh; done
+   ```
+3. 提交并推送 `main`
+4. **紧接着**打 tag 并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`
+   —— 两步之间不要留窗口：`latest` 只在 tag 构建时更新，只推 main 的话新用户会拿到旧版本
+5. `gh release create vX.Y.Z`，说明取 CHANGELOG 对应小节
+
+### CI 是怎么保证发出去的镜像被测过的
+
+tag 推送后的流水线是**串行**的，不是并行：
+
+```
+lint
+  → build-candidate   构建镜像，只推一个 candidate-<run_id> 临时 tag
+  → 五条冒烟          全部按 digest 拉这一份候选镜像来测
+  → publish           五条全绿，才把同一个 digest 提升成 vX.Y.Z / latest / main
+```
+
+两条硬保证：
+
+- **任一冒烟失败，正式 tag 不会出现**——`publish` 的 `needs` 列了全部五条冒烟。
+- **发出去的就是被测的那一份**——提升用 `docker buildx imagetools create` 纯复制 manifest，
+  不重新构建；`publish` 最后还会回验每个正式 tag 指向的 digest 等于被测 digest。
+
+这道门是 2026-07-25 补的。在那之前 `build` 与冒烟并行，v1.9.0 发布那次四条冒烟挂着、
+镜像照样推了出去——冒烟当时只是发布后的报警器。
 
 ## 💬 沟通渠道
 
