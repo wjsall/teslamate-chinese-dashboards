@@ -279,9 +279,13 @@ jobs:
       - name: 灌入合成数据（不需要真实 Tesla 账号，只为验证升级不丢数据）
         run: |
           DB=$(cd "$HOME/teslamate-chinese" && docker compose ps -q database)
-          docker exec -i "$DB" psql -U teslamate -d teslamate <<'SQL'
-          INSERT INTO cars (eid, vid, model, efficiency, inserted_at, updated_at)
-          VALUES (990001, 990001, '3', 0.153, now(), now());
+          # -v ON_ERROR_STOP=1 必须：psql 默认某条语句失败也 exit 0。这一步曾经就是这样
+          # 静默失败的——cars.settings_id 是 NOT NULL，插入报错但步骤照样绿，drives 停在 0，
+          # 于是下面「升级后行数不能减少」的断言变成 0 >= 0 恒真，等于没测。
+          # settings_id 取 TeslaMate 自己迁移时建的那行设置。
+          docker exec -i "$DB" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO cars (eid, vid, model, efficiency, settings_id, inserted_at, updated_at)
+          VALUES (990001, 990001, '3', 0.153, (SELECT id FROM settings ORDER BY id LIMIT 1), now(), now());
 
           INSERT INTO drives (start_date, end_date, distance, duration_min, car_id)
           SELECT now() - interval '2 day', now() - interval '2 day' + interval '20 min', 8.2, 18, id
@@ -292,6 +296,10 @@ jobs:
           SQL
           BEFORE=$(docker exec -i "$DB" psql -U teslamate -d teslamate -tAc 'SELECT count(*) FROM drives')
           echo "升级前 drives 行数：$BEFORE"
+          if [ "${BEFORE:-0}" -lt 1 ]; then
+            echo "::error::合成数据没灌进去（drives=$BEFORE），后面的「升级不丢数据」断言会变成空转"
+            exit 1
+          fi
           echo "BEFORE_DRIVES=$BEFORE" >> "$GITHUB_ENV"
 
       - name: 让本地 checkout 处于可 `git pull --rebase` 的分支状态（CI harness 适配，非改动 upgrade.sh）
@@ -301,13 +309,20 @@ jobs:
           # origin/main 的本地分支——workflow 的 push 触发器本就只认 main 分支，tag 触发
           # 时对应的提交也总是从 main 打出来的（本项目发版流程：先 push main 再打 tag），
           # 所以 origin/main 对这两种触发场景都是安全、可预期的 upstream。
-          # upstream 指向「本次被测的这个 commit」，不是 origin/main：tag 构建时 HEAD 通常是
-          # origin/main 的祖先，把 upstream 设成 main 会让 upgrade.sh 内部的 git pull --rebase
-          # 快进到 main，于是装的是 main 的 SQL 而不是这个 tag 的 SQL——发版冒烟测的就不是
-          # 发版内容了。指向被测 commit 时 pull --rebase 是个 no-op，正好满足脚本要求。
-          git fetch origin "+${GITHUB_SHA}:refs/remotes/origin/ci-target"
+          # upgrade.sh 内部跑裸 `git pull --rebase`，而 Actions 默认是 detached HEAD，会报
+          # "You are not currently on a branch"。这里造一个满足它的分支状态。
+          #
+          # upstream 不能指向 origin/main：tag 构建时 HEAD 通常是 origin/main 的祖先，
+          # pull --rebase 会快进到 main，于是装的是 main 的 SQL 而不是这个 tag 的 SQL
+          # ——发版冒烟测的就不是发版内容了。
+          # 也不能指向 origin/<临时名>：远端根本没有那个分支，pull 会报
+          # "no such ref was fetched"。
+          # 用 remote="." （把本仓库自己当远端）指向一个停在被测 commit 的本地分支：
+          # pull --rebase 变成确定的 no-op，既满足脚本要求，又保证测的就是这个 commit。
+          git checkout -B ci-upgrade-base "${GITHUB_SHA}"
           git checkout -B ci-upgrade-test "${GITHUB_SHA}"
-          git branch --set-upstream-to=origin/ci-target ci-upgrade-test
+          git config branch.ci-upgrade-test.remote .
+          git config branch.ci-upgrade-test.merge refs/heads/ci-upgrade-base
 
       - name: 跑 scripts/upgrade.sh（本次提交的 SQL，本地检出，不走网络拉取）
         run: bash scripts/upgrade.sh
