@@ -40,6 +40,7 @@ FUNCTION	trigger_compute_tou	() RETURNS TRIGGER
 FUNCTION	uninstall_tou	() RETURNS TEXT
 FUNCTION	wgs84_to_gcj02_lat	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 FUNCTION	wgs84_to_gcj02_lng	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+FUNCTION_BODY	_tou_has_matching_rate	a404c607b90c287a
 FUNCTION_BODY	adopt_legacy_default_costs	5bc3a96c5f986972
 FUNCTION_BODY	backfill_all_tou	36c007243b6cde26
 FUNCTION_BODY	compute_tou_cost	b2cd7dce3a0281c0
@@ -48,6 +49,7 @@ FUNCTION_BODY	effective_cost	8998e890f1f06833
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
 FUNCTION_BODY	set_default_charging_rate	b16fcd803afe77b9
 FUNCTION_BODY	trigger_compute_tou	a83acae00fadc4ce
+FUNCTION_BODY	uninstall_tou	75d530d8e426c42e
 INDEX	tou_rates_geofence_idx	ON tou_rates(GEOFENCE_ID)
 INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_START,HOUR_END,COALESCE(VALID_FROM,'0001-01-01'::DATE),COALESCE(VALID_TO,'9999-12-31'::DATE),APPLY_TO_DC)
 TABLE	charging_process_cost_overrides	(charging_process_id:INT,cost:NUMERIC(10,4),source:TEXT,rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,original_cost:NUMERIC(10,4))

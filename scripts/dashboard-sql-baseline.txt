@@ -1,7 +1,9 @@
 # 自动生成——跑 `bash scripts/check-dashboard-sql-runs.sh --update-baseline` 重建。
 # 列出「能被 PostgreSQL 解析」的面板查询。不在表里的多半是变量渲染器还原不了，
-# 不代表面板有问题；在表里却解析失败 = 真回归，门会报红。
+# 不代表面板有问题；在表里的每一条都必须再次通过校验，否则门报红——
+# 解析失败要报，key 整个消失（面板改名/移位/删除）同样要报。
 AmortizationTracker.json::0::折旧曲线
+AmortizationTracker.json::1::回本明细
 ChargingCostsStats.json::0::总充电量 (kWh)
 ChargingCostsStats.json::10::交流充电费用
 ChargingCostsStats.json::11::直流充电费用
@@ -94,6 +96,8 @@ TrackingDrives.json::3::驾驶记录追踪
 TrackingDrives.json::4::驾驶记录追踪
 TrackingDrives.json::5::驾驶记录追踪
 TrackingDrives.json::6::耗电量
+TrackingDrives.json::7::海拔
+TrackingDrives.json::8::海拔
 annual-summary.json::0::年度驾驶报告
 annual-summary.json::10::最常到访地点 TOP10
 annual-summary.json::11::最常使用充电站 TOP10
@@ -142,7 +146,9 @@ charge-details.json::5::充电能量
 charge-details.json::6::充电能量
 charge-details.json::8::电池电量
 charge-details.json::9::电池电量
+charge-level.json::0::电量曲线图
 charge-level.json::1::电量曲线图
+charge-level.json::2::电量曲线图
 charges.json::0::充电桩类型: $charge_type
 charges.json::1::不完整的充电记录 🪫
 charges.json::2::✏️ 单笔充电单价（手动填/改）
@@ -169,6 +175,7 @@ charging-stats.json::20::充电站排序 (按电量)
 charging-stats.json::21::充电站排序 (按费用)
 charging-stats.json::2::超充总费用 (¥)
 charging-stats.json::3::累计充电总费用 (¥)
+charging-stats.json::4::每百 $length_unit 费用
 charging-stats.json::5::平均每度电价格
 charging-stats.json::6::平均每度电价格 DC
 charging-stats.json::7::平均每度电价格 AC
@@ -197,12 +204,15 @@ database-info.json::6::不完整的数据
 database-info.json::7::PostgreSQL 版本
 database-info.json::8::数据库信息
 database-info.json::9::数据库信息
+drive-details.json::10::海拔摘要
+drive-details.json::11::海拔摘要
 drive-details.json::12::能耗 (净)
 drive-details.json::13::能量回收
 drive-details.json::14::平均能耗
 drive-details.json::15::平均速度
 drive-details.json::5::里程表 (起 - 止)
 drive-details.json::6::行驶时长
+drive-details.json::7::选中时长
 drive-details.json::8::速度分布 ($speed_unit)
 drive-details.json::9::行驶距离
 drive-stats.json::3::每次行驶里程中位数
@@ -237,6 +247,7 @@ driving-score.json::7::综合评分趋势
 driving-score.json::8::综合评分趋势
 driving-score.json::9::行程评分明细
 efficiency.json::0::能耗（行驶）
+efficiency.json::1::能耗 (总计)
 efficiency.json::2::记录的距离
 efficiency.json::3::温度 – 能效
 efficiency.json::4::当前额定能效
@@ -301,6 +312,10 @@ station-ranking.json::4::🏆 充电桩排行榜（按 ¥/度 升序，分时 = 
 station-ranking.json::5::💎 ¥/度 Top 10 桩（绿=便宜，红=贵）
 station-ranking.json::6::📈 最近 30 天 vs 之前的桩单价对比（红 = 涨价，绿 = 降价）
 station-ranking.json::7::🗺️ 充电桩地图（颜色=¥/度，大小=去过的次数）
+statistics.json::0::每${period}
+statistics.json::1::每${period}
+statistics.json::2::每${period}
+statistics.json::3::每${period}
 tire-pressure.json::0::当前胎压（忽略时间范围）($pressure_unit)
 tire-pressure.json::1::所选时段的胎压
 tire-pressure.json::2::最后一次行驶的胎压 ($pressure_unit)
@@ -323,6 +338,7 @@ trip.json::0::行程统计（时间段）
 trip.json::11::行程
 trip.json::12::充电
 trip.json::13::电池水平及续航里程
+trip.json::14::海拔
 trip.json::15::行程统计（时间段）
 trip.json::1::行程统计（时间段）
 trip.json::2::耗时
@@ -330,6 +346,7 @@ trip.json::3::耗时
 trip.json::4::行程统计（时间段）
 trip.json::5::行程统计（时间段）
 trip.json::6::行程统计（时间段）
+trip.json::7::行程统计（时间段）
 trip.json::8::行程统计（时间段）
 trip.json::9::行程统计（时间段）
 updates.json::0::系统更新

@@ -9,6 +9,16 @@ on:
   pull_request:
     branches:
       - main
+  # 手动触发。ref 下拉框可以选任意分支或 tag，所以**发布**这一步额外有一道 ref 守卫：
+  # 见下面 publish job 的 `if`（只允许 main 和 v* tag）。在别的分支上手动触发仍然会跑
+  # 完整的 lint + 五条部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性——那是有用的，
+  # 只是不会推任何镜像 tag。
+  #
+  # ⚠ 这道守卫有一个堵不住的口子，写在这里以免有人以为它万无一失：
+  #   在**旧 tag** 上手动触发时，GitHub 跑的是那个 tag 里的 workflow 文件，不是 main 上
+  #   的这一份。也就是说旧 tag 上跑的是旧流水线（构建与测试并行、没有发布门、没有这道
+  #   ref 守卫），这份文件里的任何改动都管不到它。要重发某个版本，请从 main 走正常发布
+  #   流程，不要在历史 tag 上手动触发。
   workflow_dispatch:
   schedule:
     # 每周一凌晨 2 点：只读巡检上游 teslamate/grafana:latest 的 digest 是否变化
@@ -864,6 +874,36 @@ jobs:
   # 提升用 `docker buildx imagetools create`：它只复制 manifest / blob，不重新构建，
   # 所以正式 tag 指向的就是候选那一份的字节内容。如果这里改成重新 build 一次，哪怕
   # 用同样的缓存，也只是"大概率一样"，那道保证就没了。
+  #
+  # ---------------------------------------------------------------------------
+  # ref 守卫（`if` 里的第三个条件）
+  #
+  # `on:` 里有 workflow_dispatch，而手动触发时 ref 下拉框可以选**任意分支或 tag**。
+  # 没有这个条件的话：选一个分支 → 未经评审的代码会以 `<分支名>` 和 `sha-<sha>` 推到
+  # ghcr 和 Docker Hub；选一个旧 tag → `latest` 和 `X.Y.Z` 会被重新推一遍。
+  # 所以只有 main 和 v* tag 才允许发布。别的 ref 上手动触发照样跑完整的 lint + 五条
+  # 部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性（这正是手动触发的用处），
+  # 只是不推任何 tag，并由下面的 publish-skipped-notice job 打印说明。
+  #
+  # ⚠ 这道守卫管不到「在旧 tag 上手动触发」：那时 GitHub 跑的是**那个 tag 里的**
+  #   workflow 文件（旧流水线，构建与测试并行、没有发布门、也没有这个条件），
+  #   本文件改成什么样都影响不了它。重发版本请从 main 走正常发布流程。
+  #
+  # ---------------------------------------------------------------------------
+  # concurrency（发布串行）
+  #
+  # 发布流程是「先 push main，紧接着 push tag」，于是两个 run 几乎同时开跑，各自
+  # **独立构建一次**，得到两个不同的 digest，却都会推同一个 `sha-<短sha>` tag
+  # （两次 push 是同一个 commit）。没有排队的话：谁最后写谁赢，而且 publish 末尾那步
+  # 「回验正式 tag 指向的 digest」可能读到对方刚覆盖上去的值，把好版本判成红的。
+  #
+  # group 故意**不含** github.ref：只有 main push 和 tag push 落进同一个 group，
+  # 它们才会互相排队；用 github.ref 做 key 的话两者分属不同 group，等于没加。
+  # cancel-in-progress 必须是 false：取消会让先跑的那个 run 半途而废，
+  # 可能停在「推了一部分 tag」的状态——比慢几分钟糟糕得多。
+  # 放在 job 级而不是 workflow 级：workflow 级会把 PR / lint 的 run 也一起串行化，
+  # 而且 GitHub 每个 group 只留一个排队位（多出来的排队 run 会被顶掉），
+  # PR 一多就会丢反馈。需要串行的只有真正推 tag 的这一步。
   # ==========================================================================
   publish:
     needs:
@@ -875,7 +915,12 @@ jobs:
       - smoke-plugin-volume-shadow
       - tou-behavior
       - dashboard-sql
-    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    if: >-
+      github.event_name != 'pull_request' && github.event_name != 'schedule'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    concurrency:
+      group: publish-${{ github.repository }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -939,6 +984,46 @@ jobs:
             fi
           done <<< "${{ steps.meta.outputs.tags }}"
           [ "$fail" -eq 0 ]
+
+  # ==========================================================================
+  # 全部验证通过、但这个 ref 不允许发布时，明确说一声——否则 publish 直接是灰色的
+  # "Skipped"，看的人无从判断是"守卫拦下了"还是"哪里配错了"。
+  # 条件是 publish 那个 `if` 的 ref 部分取反，两个 job 合起来正好覆盖所有情况。
+  # 不加 `if: always()`：某道门真的挂了的时候，红色的那个 job 才是要看的信息，
+  # 这里再补一条只会喧宾夺主。
+  # ==========================================================================
+  publish-skipped-notice:
+    name: "本次不发布（当前 ref 不是 main 或 v* tag）"
+    needs:
+      - build-candidate
+      - smoke-fresh-install
+      - smoke-upgrade-from-old
+      - smoke-migrate-official
+      - smoke-manual-compose-degraded
+      - smoke-plugin-volume-shadow
+      - tou-behavior
+      - dashboard-sql
+    if: >-
+      github.event_name != 'pull_request' && github.event_name != 'schedule'
+      && !(github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 说明为什么没有发布
+        env:
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          echo "全部验证已通过，但这个 ref 不在允许发布的名单里，所以没有推送任何镜像 tag。"
+          echo
+          echo "  当前 ref : $CURRENT_REF"
+          echo "  允许发布 : refs/heads/main、refs/tags/v*"
+          echo
+          echo "手动触发本流水线来跑验证是完全正常的用法——lint、五条部署冒烟、分时电价行为测试、"
+          echo "仪表盘 SQL 可执行性都已经在这个 ref 上跑过了。只是发布这一步被守卫拦下，避免把未经"
+          echo "评审的构建推成 <分支名> / sha-<sha> 镜像，或者把 latest 和 X.Y.Z 重新指向别处。"
+          echo
+          echo "要发布，请走正常流程：把改动合进 main，然后推 vX.Y.Z tag。"
 
   # ==========================================================================
   # 清理候选镜像的临时 tag。

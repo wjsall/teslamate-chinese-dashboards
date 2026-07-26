@@ -28,6 +28,9 @@
 #       # 仅当「契约无变化」或「契约变了且 SQL_COMPAT_REVISION 已相应 bump」时才允许写入；
 #       # 契约变了但 revision 没变会拒绝更新（跟直接跑默认模式一样报错），
 #       # 防止有人绕过检查、只重新生成基线而不真的 bump 版本号。
+#       # 唯一例外：diff 只是「新增 FUNCTION_BODY 行」——那只可能来自把某个已有函数加进
+#       # 下面 CORE_BODY_FUNCTIONS 名单，SQL 文件一个字节没变，只是门变严了，不该
+#       # 让所有现有用户被判成「装的 SQL 过期了」。判定见 is_watchlist_widening()。
 #
 # 退出码：0 = 契约与基线一致（或 --update-baseline 成功写入）；1 = 有未经 revision
 # 确认的契约变化，或 --update-baseline 被拒绝。
@@ -354,6 +357,10 @@ CORE_BODY_FUNCTIONS = {
     'set_default_charging_rate', # 默认电价（决定它会不会顶掉真实账单）
     'trigger_compute_tou',       # 充电完成时自动算/清分时电价费用
     'adopt_legacy_default_costs',# 老数据迁移，会改 charging_processes.cost，改错就丢数据
+    'uninstall_tou',             # 卸载，会把覆盖表里的 TeslaMate 原值写回原表，改错就丢/串数据
+    '_tou_has_matching_rate',    # 「这笔充电有没有电价规则可用」——compute_tou_cost 用它决定
+                                 # 算 TOU 还是回退原 cost，改这里就等于改用户看到的费用，
+                                 # 而 compute_tou_cost 自己的函数体一个字都不用动
 }
 
 _COMMENT_LINE_RE = re.compile(r'--[^\n]*')
@@ -564,6 +571,23 @@ def diff_contracts(current, baseline):
     return added, removed, changed
 
 
+def is_watchlist_widening(added, removed, changed):
+    """diff 是不是「只把某个已有函数纳入了核心函数体指纹的监视名单」。
+
+    FUNCTION_BODY 行只对 CORE_BODY_FUNCTIONS 里的函数产生。所以「只新增 FUNCTION_BODY
+    行、别的一行没动」只可能来自把某个**已经存在**的函数加进那份名单——SQL 文件本身
+    一个字节都没变（真改了 SQL，要么对应的 FUNCTION/TABLE/… 行跟着动，要么 FUNCTION_BODY
+    是「变化」而不是「新增」；这两种下面都不放行）。
+
+    这种改动只会让门对以后的改动更严，不改变任何用户已经装好的 SQL，因此不该 bump
+    SQL_COMPAT_REVISION：bump 了等于告诉所有现有用户「你装的 SQL 过期了，去重装」，
+    那是假警报，正是 config/versions.env 顶部反复强调要避免的噪音。
+    反过来，**移除** FUNCTION_BODY 行是把门改松，不在这条放行规则里。
+    """
+    return (bool(added) and not removed and not changed
+            and all(kind == 'FUNCTION_BODY' for kind, _name in added))
+
+
 def print_diff(current, baseline, defined_in, added, removed, changed):
     def where(key):
         files = defined_in.get(key)
@@ -619,12 +643,13 @@ def main():
 
     added, removed, changed = diff_contracts(current, baseline)
     has_diff = bool(added or removed or changed)
+    widening = is_watchlist_widening(added, removed, changed)
 
     if update:
         if not has_diff:
             print(f"契约与基线一致（{len(current)} 个对象），无需更新。基线文件未改动。")
             sys.exit(0)
-        if current_rev == recorded_rev:
+        if current_rev == recorded_rev and not widening:
             print(
                 "❌ 拒绝更新基线：SQL 对象契约有变化，但 config/versions.env 的 "
                 f"SQL_COMPAT_REVISION 仍是 {current_rev}（与基线记录一致，说明没有 bump）。"
@@ -635,10 +660,20 @@ def main():
             print("请先按 config/versions.env 顶部注释 bump 这个数字，再重跑 --update-baseline。")
             sys.exit(1)
         write_baseline(current, current_rev)
-        print(
-            f"✅ 基线已更新：{BASELINE_PATH}（revision {recorded_rev} → {current_rev}，"
-            f"{len(current)} 个对象）"
-        )
+        if current_rev == recorded_rev:
+            print(
+                f"✅ 基线已更新：{BASELINE_PATH}（revision 保持 {current_rev}，"
+                f"{len(current)} 个对象）"
+            )
+            print(
+                "   本次只是把下面这些函数纳入「核心函数体指纹」的监视范围，SQL 文件本身没变，"
+                "所以不用 bump SQL_COMPAT_REVISION。"
+            )
+        else:
+            print(
+                f"✅ 基线已更新：{BASELINE_PATH}（revision {recorded_rev} → {current_rev}，"
+                f"{len(current)} 个对象）"
+            )
         print()
         print_diff(current, baseline, defined_in, added, removed, changed)
         sys.exit(0)
@@ -652,7 +687,14 @@ def main():
     print()
     print_diff(current, baseline, defined_in, added, removed, changed)
     print()
-    if current_rev == recorded_rev:
+    if widening:
+        print(
+            "以上只是把某些函数纳入「核心函数体指纹」的监视范围（SQL 文件本身没变），"
+            f"不用 bump SQL_COMPAT_REVISION（保持 {current_rev} 即可）。本地跑："
+        )
+        print("  bash scripts/check-sql-revision.sh --update-baseline")
+        print(f"并把更新后的 {BASELINE_PATH} 一起提交。")
+    elif current_rev == recorded_rev:
         print(
             f"config/versions.env 的 SQL_COMPAT_REVISION 仍是 {current_rev}"
             "（与基线记录一致）——契约变了就必须 bump 这个数字（规则见文件顶部注释），"
