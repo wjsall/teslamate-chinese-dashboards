@@ -40,6 +40,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # check-sql-revision.sh 的「基线历史棘轮」要读上一次提交里的
+          # scripts/sql-contract-baseline.txt 来比对。默认的 fetch-depth: 1 拿不到，
+          # 那道门只会跳过（不会假红），但也就白建了。2 足够：pull_request 事件下
+          # HEAD 是合并提交，深度 2 会把两个父提交都拉下来。
+          fetch-depth: 2
 
       - name: Dashboard JSON lint (9 项踩过的坑)
         run: bash scripts/check-dashboard-lint.sh

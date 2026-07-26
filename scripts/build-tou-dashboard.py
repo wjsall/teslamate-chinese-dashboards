@@ -369,7 +369,7 @@ panels = [
 
 > ⚡ **范围说明**：本配置只作用于**家充（交流慢充）**。**直流快充（超充 / 第三方快充）按桩侧上报金额计费**，不参与本表的分时重算 —— 因为快充价格随桩、随时段、随会员浮动，桩侧上报已是真实金额，覆盖反而会算错。
 
-> 💡 **默认电价 ≠ 分时时段**：页面底部的「默认电价」是一口价，只用在 TeslaMate 没有记录金额的充电上，**不会**在这里生成任何时段规则 —— 所以只设了默认电价的话，上面的「24 小时电价分布」是空的，这是正常的。费用取值顺序：你手工指定的单价 → 分时电价 → 默认电价 → TeslaMate 记录的费用。
+> 💡 **默认电价 ≠ 分时时段**：页面底部的「默认电价」是一口价，只用在 TeslaMate 没有记录金额的充电上，**不会**在这里生成任何时段规则 —— 所以只设了默认电价的话，上面的「24 小时电价分布」是空的，这是正常的。费用取值顺序：你手工指定的单价 → TeslaMate 记录的金额 → 分时电价 → 默认电价。
 """, {"x": 0, "y": 0, "w": 24, "h": 4}),
 
     # ⏰ 24 小时电价柱图：每小时 1 根柱，柱高=单价，颜色按阈值 0/0.4/0.7/1
@@ -517,13 +517,13 @@ SELECT
 """,
                initial_sql="SELECT 1",
                gridPos={"x": 0, "y": 54, "w": 24, "h": 6},
-               success_msg="✅ 历史已按当前分时电价配置重算。若某笔充电有时段没被电价规则覆盖，它会改为按默认电价 / TeslaMate 记录的费用显示 —— 刷新「最近 10 笔对账」面板核对",
+               success_msg="✅ 历史已按当前分时电价配置重算。若某笔充电有时段没被电价规则覆盖，它会改为按 TeslaMate 记录的金额 / 默认电价显示 —— 刷新「最近 10 笔对账」面板核对",
                submit_text="🔄 一键重算", submit_icon="sync"),
 
     # 对账的基准是「不按分时电价算的话，这笔会显示多少钱」= cost_before_tou()，
-    # 不是 charging_processes.cost。手工单价和默认电价都写在费用覆盖表里、不写 TeslaMate
-    # 原表，所以家充这类 TeslaMate 本来就没有金额的记录 cp.cost 是空的，用它当基准会让
-    # 「差额」整列为空——而这批充电恰恰是本面板唯一要对账的对象。
+    # 不是 charging_processes.cost。手工单价写在费用覆盖表里、默认电价是读取时现算的，
+    # 两者都不写 TeslaMate 原表，所以家充这类 TeslaMate 本来就没有金额的记录 cp.cost 是
+    # 空的，用它当基准会让「差额」整列为空——而这批充电恰恰是本面板唯一要对账的对象。
     table_panel(8, "💰 最近 10 笔家充电费对账", """
 SELECT
   cp.id AS "充电编号",
@@ -534,10 +534,8 @@ SELECT
     WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o
                   WHERE o.charging_process_id = cp.id AND o.source = 'manual')
       THEN '你手工指定的单价'
-    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o
-                  WHERE o.charging_process_id = cp.id AND o.source = 'default')
-      THEN '默认电价'
-    WHEN cp.cost IS NOT NULL THEN 'TeslaMate 记录的费用'
+    WHEN cp.cost IS NOT NULL THEN 'TeslaMate 记录的金额'
+    WHEN cost_before_tou(cp.id, cp.cost) IS NOT NULL THEN '默认电价'
     ELSE '没有可对比的费用'
   END AS "对比基准",
   compute_tou_cost(cp.id) AS "分时电价费用 ¥",
@@ -551,7 +549,7 @@ ORDER BY cp.start_date DESC
 LIMIT 10
 """, {"x": 0, "y": 60, "w": 24, "h": 10},
     description="「不按分时电价的费用」= 这笔充电在没有分时电价时会显示的金额，"
-                "优先取你手工指定的单价，其次默认电价，最后才是 TeslaMate 自己记录的费用；"
+                "优先取你手工指定的单价，其次是 TeslaMate 自己记录的金额，最后才是默认电价；"
                 "「对比基准」那一列写明了这次用的是哪一种。"
                 "「差额」为正表示按分时电价算更贵，为负表示更便宜。"
                 "分时电价费用为空 = 这笔充电有时段没被电价规则覆盖，算不出可信金额，"

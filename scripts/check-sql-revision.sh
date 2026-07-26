@@ -42,11 +42,21 @@
 #       # 把当前 SQL 一股脑认作「已确认」，任何未经 SQL_COMPAT_REVISION 确认的改动都会
 #       # 被一并洗白。也就是说「删掉基线再重新生成」本来是一条绕过 bump 的路。拆成两个
 #       # flag 之后，日常那条命令碰不到这个行为，重建必须显式说出口。
-#       # 它挡不住存心的人（谁都能删文件再跑 --create-baseline），但重建出来的是**整个
-#       # 文件重写**，diff 摆在评审面前，这一步靠的是可见性而不是门。
+#       # 重建出来的是**整个文件重写**，diff 摆在评审面前；这一步原本只靠可见性。
 #       # FORMAT_VERSION 升级导致的重建属于这一类：应当由**改脚本的那个人**在同一次提交
 #       # 里跑 --create-baseline，让基线 diff 跟脚本改动一起被评审看到；不要让用户各自
 #       # 在自己机器上重建（那样每个人洗白的东西都不一样，而且谁都没看见）。
+#
+# 基线历史棘轮（默认模式额外跑的一道）：
+#   光有上面那套还不够。「删掉基线文件再 --create-baseline」能在**不 bump
+#   SQL_COMPAT_REVISION** 的情况下重写基线，之后所有门全绿——实测走过一次：把
+#   uninstall_tou 的语义反转，走这条路只产生 4 行 diff，RECORDED_REVISION 纹丝不动。
+#   所以默认模式还会把基线文件跟**它自己的上一版**（git 里的）比一次：
+#   契约行变了、RECORDED_REVISION 却没变 → 报红。判据是机器可校验的，不依赖有没有人
+#   认真看那次 diff。工作区的基线跟 HEAD 不一致时比的是 HEAD（还没提交的改动也拦得住）。
+#   拿不到上一版时明确跳过并说明原因，绝不假红（见 ratchet_against_history 的注释）。
+#   ⚠ CI 里要能比对，checkout 深度必须 ≥ 2；深度不够只会跳过、不会假红，但那道门也就
+#     形同虚设。.github/workflows/ghcr-build.yml 的 lint job 已经设了 fetch-depth: 2。
 #
 # 退出码：0 = 契约与基线一致（或 --update-baseline / --create-baseline 成功写入）；
 # 1 = 有未经 revision 确认的契约变化，或写入被拒绝。
@@ -67,6 +77,7 @@ python3 - "$@" <<'PYEOF'
 import os
 import hashlib
 import re
+import subprocess
 import sys
 
 SQL_FILES = [
@@ -541,35 +552,48 @@ def compute_source_digest(files):
     return h.hexdigest()
 
 
+def parse_baseline_text(text, strict=True):
+    """把基线文件的内容解析成 (contract_dict, recorded_rev, source_digest, fmt_ver)。
+
+    strict=False 用于解析**历史版本**的基线（git show 出来的）：格式对不上时返回
+    None 让调用方跳过，而不是像解析当前文件那样直接退出。历史版本解析失败只意味着
+    「没法比对」，不意味着「有人洗白」——见 ratchet_against_history() 里对假红的态度。
+    """
+    contract = {}
+    recorded_rev = None
+    recorded_digest = None
+    fmt_ver = None
+    for line in text.split('\n'):
+        line = line.rstrip('\r')
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('FORMAT_VERSION='):
+            fmt_ver = line.split('=', 1)[1].strip()
+            continue
+        if line.startswith('RECORDED_REVISION='):
+            recorded_rev = line.split('=', 1)[1].strip()
+            continue
+        if line.startswith('SOURCE_DIGEST='):
+            recorded_digest = line.split('=', 1)[1].strip()
+            continue
+        parts = line.split('\t')
+        if len(parts) != 3:
+            if not strict:
+                return None
+            print(f"基线文件格式错误（期待 3 个 tab 分隔字段）：{line!r}", file=sys.stderr)
+            sys.exit(2)
+        kind, name, value = parts
+        contract[(kind, name)] = value
+    return contract, recorded_rev, recorded_digest, fmt_ver
+
+
 def load_baseline():
     """返回 (contract_dict, recorded_revision, recorded_source_digest)；
     文件不存在时返回 (None, None, None)。"""
     if not os.path.exists(BASELINE_PATH):
         return None, None, None
-    contract = {}
-    recorded_rev = None
-    recorded_digest = None
-    fmt_ver = None
     with open(BASELINE_PATH, encoding='utf-8') as f:
-        for line in f:
-            line = line.rstrip('\n')
-            if not line or line.startswith('#'):
-                continue
-            if line.startswith('FORMAT_VERSION='):
-                fmt_ver = line.split('=', 1)[1].strip()
-                continue
-            if line.startswith('RECORDED_REVISION='):
-                recorded_rev = line.split('=', 1)[1].strip()
-                continue
-            if line.startswith('SOURCE_DIGEST='):
-                recorded_digest = line.split('=', 1)[1].strip()
-                continue
-            parts = line.split('\t')
-            if len(parts) != 3:
-                print(f"基线文件格式错误（期待 3 个 tab 分隔字段）：{line!r}", file=sys.stderr)
-                sys.exit(2)
-            kind, name, value = parts
-            contract[(kind, name)] = value
+        contract, recorded_rev, recorded_digest, fmt_ver = parse_baseline_text(f.read())
     if fmt_ver != str(FORMAT_VERSION):
         print(
             f"基线文件版本无效：期待 FORMAT_VERSION={FORMAT_VERSION}，实际 {fmt_ver!r}。\n"
@@ -648,6 +672,99 @@ def is_watchlist_widening(added, removed, changed, recorded_digest, current_dige
     if not all(kind == 'FUNCTION_BODY' for kind, _name in added):
         return False
     return recorded_digest is not None and recorded_digest == current_digest
+
+
+def _git_show(spec):
+    """git show <spec> 的内容；拿不到（不是仓库 / 没这个提交 / 文件不在）返回 None。"""
+    try:
+        r = subprocess.run(['git', 'show', spec],
+                           capture_output=True, text=True)
+    except OSError:
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def ratchet_against_history():
+    """棘轮：基线文件里的契约行相对上一版变了、RECORDED_REVISION 却没变 → 报红。
+
+    为什么单靠上面那套比对不够：--update-baseline 会检查 bump，但「删掉基线文件再
+    --create-baseline」绕开了它——重建出来的基线把当前 SQL 原样认作已确认，
+    RECORDED_REVISION 纹丝不动，之后所有门全绿。实测走过一次这条路：把 uninstall_tou
+    的语义反转，只产生 4 行 diff，门一声不吭。--create-baseline 那条路靠的是「整文件
+    diff 摆在评审面前」，也就是靠人看；这里补的是机器判据。
+
+    判据：拿当前基线文件跟它的上一版比。
+      · 工作区的基线跟 HEAD 里的不一样 → 上一版就是 HEAD 里的那份（还没提交的改动）
+      · 一样 → 上一版是 HEAD~1 里的那份（这次提交带来的改动）
+    契约行有增删改、而 RECORDED_REVISION 两版相同 → 报红。
+    （「把函数纳入核心函数体指纹监视范围」那条豁免同样适用，判据与 --update-baseline
+    完全一致，否则那条合法路径会在这里假红。）
+
+    拿不到上一版时**明确跳过并说明原因**，绝不假红：这道门的全部价值是「它响的时候
+    可信」，一次假红就会让人学会无视它。已知的合法跳过场景：不在 git 仓库里跑、
+    仓库还没有第二个提交、CI 只 checkout 了一层（fetch-depth: 1）、基线文件是这次新加的、
+    以及基线格式版本（FORMAT_VERSION）升级导致整文件重建。
+
+    返回 (ok: bool, skipped_reason: str|None)。
+    """
+    if not os.path.exists(BASELINE_PATH):
+        return True, '基线文件不存在'
+
+    with open(BASELINE_PATH, encoding='utf-8') as f:
+        cur_text = f.read()
+
+    head_text = _git_show('HEAD:' + BASELINE_PATH)
+    if head_text is None:
+        return True, '取不到 HEAD 里的基线文件（不在 git 仓库里跑？基线是这次新加的？）'
+
+    if head_text != cur_text:
+        prev_text = head_text
+        prev_label = 'HEAD（已提交的那一版）'
+    else:
+        prev_text = _git_show('HEAD~1:' + BASELINE_PATH)
+        prev_label = 'HEAD~1（上一次提交）'
+        if prev_text is None:
+            return True, ('取不到上一次提交里的基线文件（仓库只有一个提交？'
+                          'CI 的 checkout 深度是 1？基线是上一次提交才加进来的？）')
+
+    parsed = parse_baseline_text(prev_text, strict=False)
+    if parsed is None:
+        return True, f'{prev_label} 里的基线文件格式解析不了'
+    prev_contract, prev_rev, prev_digest, prev_fmt = parsed
+    if prev_fmt != str(FORMAT_VERSION):
+        return True, (f'{prev_label} 里的基线是 FORMAT_VERSION={prev_fmt!r}，'
+                      f'与当前脚本的 {FORMAT_VERSION} 不同（格式升级会整文件重建，无法逐行比对）')
+    if prev_rev is None:
+        return True, f'{prev_label} 里的基线没有 RECORDED_REVISION 字段'
+
+    cur_parsed = parse_baseline_text(cur_text, strict=False)
+    if cur_parsed is None:
+        return True, '当前基线文件格式解析不了（上面的比对已经会报）'
+    cur_contract, cur_rev, cur_digest, _cur_fmt = cur_parsed
+
+    added, removed, changed = diff_contracts(cur_contract, prev_contract)
+    if not (added or removed or changed):
+        return True, None
+    if cur_rev != prev_rev:
+        return True, None
+    if is_watchlist_widening(added, removed, changed, prev_digest, cur_digest):
+        return True, None
+
+    print(f"❌ 基线文件的契约行相对{prev_label}变了，但 RECORDED_REVISION 还是 {cur_rev}。")
+    print()
+    print_diff(cur_contract, prev_contract, {}, added, removed, changed)
+    print()
+    print("契约变了就必须 bump config/versions.env 的 SQL_COMPAT_REVISION（规则见那个文件顶部），")
+    print("否则装了旧 SQL 的用户会被 scripts/diagnose.sh 判成「已经是最新」，而实际不是。")
+    print("正确流程：改 SQL → bump SQL_COMPAT_REVISION → bash scripts/check-sql-revision.sh"
+          " --update-baseline → 一起提交。")
+    print()
+    print("如果你是用「删掉基线再 --create-baseline」重建的：那条路不检查 revision，")
+    print("这道门就是专门补它的。确实需要整文件重建（例如脚本的 FORMAT_VERSION 升级），")
+    print("请连同脚本的改动一起提交，这道门会因为格式版本不同而跳过。")
+    return False, None
 
 
 def print_diff(current, baseline, defined_in, added, removed, changed):
@@ -803,6 +920,16 @@ def main():
     # 默认模式：只读比对，CI 用
     if not has_diff:
         print(f"✅ SQL 对象契约与基线一致（{len(current)} 个对象，revision={current_rev}）")
+        # 上面那句只说明「SQL 跟基线对得上」。基线文件本身可能是被重写过的——
+        # 「删掉基线再 --create-baseline」就能在不 bump revision 的情况下把改动洗白，
+        # 之后这里照样打勾。所以再跟基线文件的上一版对一次。
+        ratchet_ok, skipped = ratchet_against_history()
+        if not ratchet_ok:
+            sys.exit(1)
+        if skipped:
+            print(f"ℹ 基线历史棘轮这次跳过：{skipped}")
+        else:
+            print("✅ 基线文件相对上一版没有未经 revision 确认的契约变化")
         sys.exit(0)
 
     print("❌ SQL 对象契约相对基线有变化：")

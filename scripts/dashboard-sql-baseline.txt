@@ -324,7 +324,7 @@ grafana/dashboards/zh-cn/tou-config.json::10::🗑️ 删除整段
 grafana/dashboards/zh-cn/tou-config.json::11::🔄 重算所有历史充电（按当前 分时电价配置）
 grafana/dashboards/zh-cn/tou-config.json::12::🔄 重算所有历史充电（按当前 分时电价配置）
 grafana/dashboards/zh-cn/tou-config.json::13::💰 最近 10 笔家充电费对账
-grafana/dashboards/zh-cn/tou-config.json::14::💡 默认电价（无位置充电用此价）
+grafana/dashboards/zh-cn/tou-config.json::14::💡 默认电价（TeslaMate 没记金额时按此价算）
 grafana/dashboards/zh-cn/tou-config.json::1::⚠ 配置审计
 grafana/dashboards/zh-cn/tou-config.json::2::📋 当前电价配置
 grafana/dashboards/zh-cn/tou-config.json::3::⚡ 一键填一整季节（只填谷+峰时段，平自动）

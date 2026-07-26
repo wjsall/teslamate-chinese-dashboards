@@ -6,12 +6,13 @@
 # SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，
 # 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。
 FORMAT_VERSION=2
-RECORDED_REVISION=5
-SOURCE_DIGEST=7803eca510e010ff870906b0551d9bddf5945f73a018a59f82741fec39a22650
+RECORDED_REVISION=6
+SOURCE_DIGEST=823efeeec0147dc60d2578553f210e7ef41f96f1615bc73e8b439451d31bf6f4
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
 FUNCTION	_tou_clean_numeric	(IN:s:TEXT) RETURNS NUMERIC
+FUNCTION	_tou_default_cost	(IN:cp_id:INT) RETURNS NUMERIC
 FUNCTION	_tou_delete_season	(IN:p_geofence_id:INT,IN:v_from:DATE,IN:v_to:DATE) RETURNS VOID
 FUNCTION	_tou_drop_legacy_default_rates	() RETURNS INT
 FUNCTION	_tou_has_matching_rate	(IN:cp_id:INT) RETURNS BOOLEAN
@@ -44,19 +45,20 @@ FUNCTION	uninstall_tou	() RETURNS TEXT
 FUNCTION	wgs84_to_gcj02_lat	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 FUNCTION	wgs84_to_gcj02_lng	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 FUNCTION_BODY	_tou_has_matching_rate	a404c607b90c287a
-FUNCTION_BODY	adopt_legacy_default_costs	5bc3a96c5f986972
+FUNCTION_BODY	adopt_legacy_default_costs	82870f0218b901f4
 FUNCTION_BODY	backfill_all_tou	36c007243b6cde26
 FUNCTION_BODY	compute_tou_cost	b2cd7dce3a0281c0
-FUNCTION_BODY	cost_before_tou	cbade0ad57456440
-FUNCTION_BODY	effective_cost	8998e890f1f06833
+FUNCTION_BODY	cost_before_tou	cb3e6b00bdd1f8ab
+FUNCTION_BODY	effective_cost	fa33602e104f7069
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
-FUNCTION_BODY	set_default_charging_rate	b16fcd803afe77b9
+FUNCTION_BODY	set_default_charging_rate	3907d72be5a00e99
 FUNCTION_BODY	trigger_compute_tou	a83acae00fadc4ce
-FUNCTION_BODY	uninstall_tou	75d530d8e426c42e
+FUNCTION_BODY	uninstall_tou	65082a75e5bd84bf
 INDEX	tou_rates_geofence_idx	ON tou_rates(GEOFENCE_ID)
 INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_START,HOUR_END,COALESCE(VALID_FROM,'0001-01-01'::DATE),COALESCE(VALID_TO,'9999-12-31'::DATE),APPLY_TO_DC)
 TABLE	charging_process_cost_overrides	(charging_process_id:INT,cost:NUMERIC(10,4),source:TEXT,rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,original_cost:NUMERIC(10,4))
 TABLE	charging_processes_tou_cost	(charging_process_id:INT,cost_tou:NUMERIC(10,4),energy_by_period:JSONB,computed_at:TIMESTAMPTZ,rates_signature:TEXT)
 TABLE	tou_rates	(id:SERIAL,geofence_id:INT,hour_start:INT,hour_end:INT,rate:NUMERIC(10,4),weekday_mask:SMALLINT,valid_from:DATE,valid_to:DATE,apply_to_dc:BOOLEAN,label:TEXT,timezone:TEXT,created_at:TIMESTAMPTZ)
+TABLE	tou_settings	(id:BOOLEAN,default_rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,legacy_default_migrated_at:TIMESTAMPTZ,legacy_default_note:TEXT)
 TRIGGER	tou_recalc	AFTER INSERT OR UPDATE OF END_DATE, COST ON CHARGING_PROCESSES FOR EACH ROW WHEN (NEW.END_DATE IS NOT NULL) EXECUTE FUNCTION TRIGGER_COMPUTE_TOU()
 VIEW	charging_processes_v	EXISTS

@@ -4,8 +4,12 @@
 -- 架构（v1.4.2 GCJ-02 同款思路）：
 --   tou_rates 表          → 用户配置的峰平谷时段 + 单价（按 geofence + 季节）
 --   charging_processes_tou_cost 表 → 旁路 cost，不动 TeslaMate 原表
+--   charging_process_cost_overrides 表 → 单笔手工单价（+ 早期版本搬迁来的原始金额）
+--   tou_settings 表       → 默认电价（一行），费用由 effective_cost 读取时现算
 --   compute_tou_cost()    → 核心算法，按 charges 表每秒级 sample 切片求和
 --   lookup_tou_rate()     → 给定时间+地点+AC/DC，查命中的 rate
+--   effective_cost()      → 仪表盘统一入口，费用优先级：
+--                           手工单价 > TeslaMate 记录的金额 > 分时电价 > 默认电价
 --
 -- 使用：
 --   1) 跑本文件灌函数+表
@@ -84,7 +88,16 @@ COMMENT ON TABLE charging_processes_tou_cost IS '旁路存储 TOU 计算后的 c
 -- 现在一律写这张旁路表，charging_processes 保持 TeslaMate 自己的原貌。
 --
 -- 一笔充电最多一行（主键即 charging_process_id）；source 记清楚来源，
--- 取值优先级由 effective_cost() 定义：手工 > 分时电价 > 默认电价 > TeslaMate 原值。
+-- 取值优先级由 effective_cost() 定义：
+--   手工单价 > TeslaMate 记录的金额 > 分时电价 > 默认电价
+--
+-- source 现在只有两种含义：
+--   'manual'  用户对这一笔明确指定的单价，参与上面的优先级
+--   'default' **只剩历史遗留一种形态**：adopt_legacy_default_costs() 从
+--             charging_processes.cost 里搬过来的原始金额（original_cost 非空）。
+--             这种行不参与优先级取值，它存在的唯一理由是卸载时把原值写回去。
+--             「默认电价」本身不再逐笔写覆盖行——它存在 tou_settings 里，读取时现算
+--             （见 2d 和 _tou_default_cost）。
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS charging_process_cost_overrides (
   charging_process_id INT PRIMARY KEY REFERENCES charging_processes(id) ON DELETE CASCADE,
@@ -96,11 +109,14 @@ CREATE TABLE IF NOT EXISTS charging_process_cost_overrides (
   -- 它把早期版本写进 charging_processes.cost 的值搬到这张表、原位置清成空，那个值从此
   -- 只剩这一个落脚点，卸载时必须原样搬回去（详见 uninstall_tou()）。
   --
-  -- 为什么单开一列而不是给行打个「我是搬来的」标记：cost 那一列是会被改的——改默认电价
-  -- 会重算它、手工指定单价会覆盖它。标记只能告诉你「这行搬过」，改一次价原值就没了。
+  -- 为什么单开一列而不是给行打个「我是搬来的」标记：cost 那一列是会被改的——手工指定
+  -- 单价会覆盖它。标记只能告诉你「这行搬过」，覆盖一次原值就没了。
   -- 单独存一列，cost 随便改，要还给 TeslaMate 的那个数一直在。
-  -- 默认电价 / 手工单价生成的行这一列是空的：那些值从来不属于 TeslaMate 的记录，
+  -- 手工单价生成的行这一列是空的：那些值从来不属于 TeslaMate 的记录，
   -- 卸载时应当随表一起消失，而不是被写进 TeslaMate 原表。
+  --
+  -- 「清空手工单价」时也要认这一列：这一列非空的行删不得（原值会永久丢失），
+  -- 只能把它改回 source='default' / cost=original_cost，也就是搬迁刚做完时的样子。
   original_cost NUMERIC(10,4)
 );
 
@@ -109,7 +125,78 @@ ALTER TABLE charging_process_cost_overrides
   ADD COLUMN IF NOT EXISTS original_cost NUMERIC(10,4);
 
 COMMENT ON TABLE charging_process_cost_overrides IS
-'费用覆盖（手工单价 / 默认电价），带来源标记；不写 TeslaMate 原表';
+'费用覆盖（手工单价 / 早期版本搬迁过来的原始金额），带来源标记；不写 TeslaMate 原表';
+
+-- ----------------------------------------------------------------------------
+-- 2d. 全局设置（单行表）：tou_settings
+--
+-- 目前只存一件事：**默认电价**（没有更好信息时按这个价估算的单价，元/度）。
+--
+-- 为什么必须持久化：默认电价以前是「设价那一刻，给当时已经存在的充电各写一行覆盖值」，
+-- 数据库里没有任何地方记着「这个价是多少」。于是设完价之后新产生的充电拿不到它——
+-- 用户设了 1.0 元/度，第二天新来一笔家充，界面上是空的，只能再点一次「保存」。
+-- 现在价格存在这里，effective_cost() 读取时现算，新充电自动适用、改价立刻全库生效。
+--
+-- default_rate 的三种取值严格区分：
+--   NULL  没设过 → 不做任何估算，费用按 TeslaMate 记录的金额显示（没有就是空的）
+--   0     明确说「这里的电是免费的」→ 估算结果就是 0 元
+--   > 0   正常电价
+-- 所以这一列不能有 NOT NULL，也不能拿 0 当「没设」。
+--
+-- 单行的做法：主键固定为 TRUE 且 CHECK(id)，第二行插不进来。
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tou_settings (
+  id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+  default_rate NUMERIC(10,4) CHECK (default_rate IS NULL OR default_rate >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- 「有没有从旧版的 default 覆盖行里迁过一次默认电价」的一次性标记。
+  -- 没有它的话，用户主动把默认电价清空之后，下一次升级重跑本文件又会把旧值迁回来。
+  legacy_default_migrated_at TIMESTAMPTZ,
+  -- 迁移时有话要跟用户说就写在这里（目前只有一种：旧数据里存着好几个不同的电价，
+  -- 猜不出该用哪个，需要用户自己重设一次）。安装/升级脚本装完 SQL 会把它打出来；
+  -- 用户真的重设了默认电价，set_default_charging_rate 会把它清掉，提示不再出现。
+  -- psql 的 RAISE NOTICE 走 stderr、被安装脚本丢进日志文件，用户看不见，所以这种
+  -- 「需要用户动手」的话不能只靠 NOTICE，必须留在库里让脚本主动查出来讲。
+  legacy_default_note TEXT
+);
+
+INSERT INTO tou_settings (id, default_rate) VALUES (TRUE, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+COMMENT ON TABLE tou_settings IS
+'分时电价系统的全局设置（单行）。default_rate = 默认电价元/度：NULL 未设置、0 明确免费';
+
+-- ----------------------------------------------------------------------------
+-- 2e. _tou_default_cost(cp_id) — 按默认电价现算这一笔的费用
+--
+-- 「现算」是这次改动的核心：不落库、不回填，读一次算一次。
+--   · 设完价之后新产生的充电自动适用（旧实现最伤人的那个 bug）
+--   · 改一次价，全库历史立刻跟着变，不需要点「重算」
+--   · TeslaMate 后来补上真实账单时，优先级里它排在默认电价前面，当场就顶上来
+--
+-- 口径与「充电记录」表的电价列（cost / GREATEST(added, used)）一致，
+-- 这样用户看到的「电价」就正好是他设的那个数。
+-- charge_energy_used 是充电桩输出（含损耗），通常 > charge_energy_added（车实际收到）。
+-- GREATEST 会忽略 NULL，两边都空才返回 NULL。
+--
+-- 只算已完成的充电（end_date 非空）：进行中的记录电量还在涨，估出来的数没有意义。
+-- 不排除地理围栏、不排除直流：默认电价在优先级里排在 TeslaMate 记录的金额**之后**，
+-- 盖不掉任何真实账单，所以没有理由把家充（收藏点内）挡在外面——那恰恰是主力场景。
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _tou_default_cost(cp_id INT) RETURNS NUMERIC AS $$
+  SELECT ROUND(
+           (GREATEST(cp.charge_energy_added, cp.charge_energy_used) * s.default_rate)::NUMERIC,
+           2)
+  FROM charging_processes cp
+  CROSS JOIN tou_settings s
+  WHERE cp.id = cp_id
+    AND cp.end_date IS NOT NULL
+    AND s.default_rate IS NOT NULL
+    AND GREATEST(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL
+$$ LANGUAGE sql STABLE;
+
+COMMENT ON FUNCTION _tou_default_cost IS
+'按 tou_settings.default_rate 现算一笔充电的费用；没设默认电价 / 充电未结束 / 无电量时返回 NULL';
 
 -- ----------------------------------------------------------------------------
 -- 2b. 季节判断：忽略年份只看 MM-DD，处理跨年环绕（如 12/01 ~ 02/28 冬季）
@@ -261,8 +348,8 @@ BEGIN
 
   -- 配置完整性检查放在最前面：是否有任一 rate 能匹配此次充电。
   -- 顺序要紧——这一段以前排在「电量为 0 就返回 0」后面，于是没配任何分时电价的用户，
-  -- 每一笔 0 度的充电都会被算出 0 元写进旁路表，而旁路表优先级高于默认电价和
-  -- TeslaMate 原值，等于凭空把那笔费用抹成 0。没配就是没配，一律 NULL 交给上层回退。
+  -- 每一笔 0 度的充电都会被算出 0 元写进旁路表，而旁路表优先级高于默认电价，
+  -- 等于凭空把那笔费用抹成 0。没配就是没配，一律 NULL 交给上层回退。
   has_any_rate := _tou_has_matching_rate(cp_id);
   IF NOT has_any_rate THEN RETURN NULL; END IF;  -- 用户没配 → 回退原 cost
 
@@ -554,8 +641,8 @@ BEGIN
     -- 电价配全时算出一个数存进旁路表 → 用户把配置改成只覆盖一半 → 这里返回 NULL →
     -- 旧值原封不动留在表里 → 界面继续显示那个已知算错的数字，而且怎么重算都不会变。
     -- 「电价缺口按 0 元算」那个 bug 的受害者正是这批人：修好算法之后，他们库里那些
-    -- 低估值一个都不会自己消失。删掉之后费用按优先级回退（默认电价 → TeslaMate 原值），
-    -- 显示一个来源明确的数，好过显示一个来源不明的错数。
+    -- 低估值一个都不会自己消失。删掉之后费用按优先级回退（TeslaMate 记录的金额 →
+    -- 默认电价），显示一个来源明确的数，好过显示一个来源不明的错数。
     IF computed IS NOT NULL THEN
       INSERT INTO charging_processes_tou_cost (charging_process_id, cost_tou, computed_at)
       VALUES (NEW.id, computed, NOW())
@@ -619,78 +706,89 @@ BEGIN
         RETURN;
     END;
 
-    -- ⚠ cost_effective 只看「分时电价 → TeslaMate 原值」两档，**不认识费用覆盖表**
-    --   （手工单价 / 默认电价）。同一笔充电，这个视图给的数可能和仪表盘上显示的不一样。
-    --   要拿「用户实际看到的费用」，一律用 effective_cost(cp.id, cp.cost)。
-    --   这里保持现状是因为没有任何仪表盘读它，改成四档要重定义视图列、代价大于收益；
-    --   但下一个人别把它当权威——它不是。
+    -- ⚠ cost_effective 只看「TeslaMate 记录的金额 → 分时电价」两档，**不认识费用覆盖表**
+    --   （手工单价），也不做默认电价的现算。同一笔充电，这个视图给的数可能和仪表盘上
+    --   显示的不一样。要拿「用户实际看到的费用」，一律用 effective_cost(cp.id, cp.cost)。
+    --   这里只把两档的先后顺序跟 effective_cost 对齐（TeslaMate 记录的金额在前），
+    --   免得留下一个跟主口径互相矛盾的算钱视图；补齐另外两档要重定义视图列，
+    --   代价大于收益——但下一个人别把它当权威，它不是。
     EXECUTE $v$
         CREATE VIEW charging_processes_v AS
         SELECT
           cp.*,
-          COALESCE(t.cost_tou, cp.cost) AS cost_effective,
+          COALESCE(cp.cost, t.cost_tou) AS cost_effective,
           t.cost_tou,
           t.energy_by_period,
           CASE
-            WHEN t.cost_tou IS NOT NULL THEN 'TOU'
             WHEN cp.cost IS NOT NULL THEN 'flat'
+            WHEN t.cost_tou IS NOT NULL THEN 'TOU'
             ELSE 'unknown'
           END AS cost_mode
         FROM charging_processes cp
         LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
     $v$;
 
-    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含分时电价与 TeslaMate 原值，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
+    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含 TeslaMate 原值与分时电价，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
 END
 $view$;
 
 -- ----------------------------------------------------------------------------
--- 7e. effective_cost(cp_id, fallback) — 让 dashboards 透明拿到 TOU 计算后的 cost
---     旁路表里有 → 返回 cost_tou；没有 → 回退原 cost
+-- 7e. effective_cost(cp_id, fallback) — 仪表盘统一从这里取「这笔充电多少钱」
 --     函数调用不破坏 PK 函数依赖，所以 GROUP BY cp.id 的 SQL 也能用
---     回滚：TRUNCATE charging_processes_tou_cost → 函数自动 fallback 原 cost
 -- ----------------------------------------------------------------------------
 -- 取值优先级（越靠前越优先）：
 --   1. 手工单价——用户对这一笔明确指定的价格，最强意图，压过一切
---   2. 分时电价——按时段算出来的结果，比一口价精确
---   3. 默认电价——用户设的"没有更好信息时按这个算"
---   4. TeslaMate 原值——上面都没有时用它（fallback 参数，调用方传 cp.cost）
+--   2. TeslaMate 记录的金额——fallback 参数，调用方传 cp.cost
+--   3. 分时电价——按你配的峰谷时段算出来的结果
+--   4. 默认电价——「没有更好信息时按这个价估」，读取时按 tou_settings 现算
+--
+-- 【为什么 TeslaMate 记录的金额排在我们的估算之前】
+-- charging_processes.cost 这一列混着好几种来源：充电桩上报的账单、上游按地点算的
+-- 固定价、会话费、以及用户自己在 TeslaMate 界面里填的数。这一列**没有任何来源标记**，
+-- 我们无法可靠地区分「这是真账单」和「这是上游估的」。而免费超充会合法地写 cost=0，
+-- 所以连「0 不算数」都不成立。
+-- 实测过的事故形状：设默认电价时账单还没到，界面显示估算的 50 元；TeslaMate 隔天补上
+-- 真实账单 120 元，界面仍然是 50——因为估算值当时已经落库，谁也顶不掉它。
+-- 现在规则简化成一句话：**任何估算都不得覆盖非空的 cp.cost（含 0）**。估算只在
+-- TeslaMate 确实没有金额时出场，账单一到就自动让位，不需要重算、不需要重设电价。
+--
+-- 想让分时电价压过上游金额的用户：用「✏️ 单笔充电单价」逐笔指定，那是最高优先级。
+-- 不提供「这个地点永久优先分时电价」的开关——那个开关会把上面这个事故原样造回来
+-- （开了它之后上游写入真实账单，用户永远看不到）。
 CREATE OR REPLACE FUNCTION effective_cost(cp_id INT, fallback NUMERIC) RETURNS NUMERIC AS $$
   SELECT COALESCE(
     (SELECT cost FROM charging_process_cost_overrides
       WHERE charging_process_id = cp_id AND source = 'manual'),
+    fallback,
     (SELECT cost_tou FROM charging_processes_tou_cost WHERE charging_process_id = cp_id),
-    (SELECT cost FROM charging_process_cost_overrides
-      WHERE charging_process_id = cp_id AND source = 'default'),
-    fallback
+    _tou_default_cost(cp_id)
   )
 $$ LANGUAGE sql STABLE;
 
 COMMENT ON FUNCTION effective_cost IS
-'透明 TOU cost：旁路表有则返回 TOU 值，否则回退原 cost。dashboards 用 effective_cost(cp.id, cp.cost) 替代 cp.cost 即可';
+'仪表盘统一取费用：手工单价 > TeslaMate 记录的金额 > 分时电价 > 默认电价（现算）。dashboards 用 effective_cost(cp.id, cp.cost) 替代 cp.cost 即可';
 
 -- ----------------------------------------------------------------------------
 -- 7f. cost_before_tou(cp_id, fallback) — 「如果不按分时电价算，这笔会显示多少钱」
 --
--- 就是把 effective_cost 的优先级里「分时电价」那一档拿掉：手工单价 > 默认电价 >
--- TeslaMate 原值。分时电价对账面板拿它当基准。
+-- 就是把 effective_cost 的优先级里「分时电价」那一档拿掉：
+-- 手工单价 > TeslaMate 记录的金额 > 默认电价。分时电价对账面板拿它当基准。
 --
--- 为什么不能直接用 charging_processes.cost 当基准：手工单价和默认电价都写在覆盖表里、
--- 不写 TeslaMate 原表，所以家充这类 TeslaMate 本来就没有金额的记录，cp.cost 是空的，
--- 「差额」一栏会整列为空——而那批充电恰恰是这个面板唯一要对账的对象。
+-- 为什么不能直接用 charging_processes.cost 当基准：家充这类 TeslaMate 本来就没有金额的
+-- 记录，cp.cost 是空的，「差额」一栏会整列为空——而那批充电恰恰是这个面板唯一要对账的
+-- 对象。所以基准里必须含手工单价和默认电价。
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION cost_before_tou(cp_id INT, fallback NUMERIC) RETURNS NUMERIC AS $$
   SELECT COALESCE(
     (SELECT cost FROM charging_process_cost_overrides
       WHERE charging_process_id = cp_id AND source = 'manual'),
-    (SELECT cost FROM charging_process_cost_overrides
-      WHERE charging_process_id = cp_id AND source = 'default'),
-    fallback
+    fallback,
+    _tou_default_cost(cp_id)
   )
 $$ LANGUAGE sql STABLE;
 
 COMMENT ON FUNCTION cost_before_tou IS
-'不含分时电价的费用：手工单价 > 默认电价 > TeslaMate 原值。给分时电价对账面板当基准';
+'不含分时电价的费用：手工单价 > TeslaMate 记录的金额 > 默认电价（现算）。给分时电价对账面板当基准';
 
 -- ----------------------------------------------------------------------------
 -- 7d. 一键去重：dedup_tou_rates()
@@ -892,7 +990,7 @@ RETURNS TABLE(
   detail TEXT
 ) AS $$
 -- cfg = 这个充电点的慢充分时时段配置。**默认电价不在这里面**：设默认电价只会写
--- charging_process_cost_overrides，不会往 tou_rates 塞一条 24 小时规则（早期版本会，
+-- tou_settings 那一行，不会往 tou_rates 塞一条 24 小时规则（早期版本会，
 -- 那条规则会把超充等真实账单顶掉）。所以「只设了默认电价」的用户 cfg 是空的，
 -- 这不是故障，下面单独给一行说明，而不是报 12 个月全部空缺。
 WITH cfg AS (
@@ -999,7 +1097,7 @@ COMMENT ON FUNCTION audit_tou_config(INT) IS
 --   processed 扫过的充电笔数
 --   updated   算出了分时电价费用并写进旁路表
 --   skipped   这笔没有任何分时电价规则适用（你没配分时时段，或者只配了别的充电点/别的
---             充放类型）——属于正常情况，费用按默认电价或 TeslaMate 原值显示
+--             充放类型）——属于正常情况，费用按 TeslaMate 记录的金额或默认电价显示
 --   gapped    有规则、但这笔充电有时段没被覆盖到，算不出可信金额
 --   cleared   上面 gapped 这批里，清掉了多少条**以前算出来的旧值**。这个数不为 0 说明
 --             你库里原本存着一批算错的费用，现在它们被清掉了，界面上的数字会变
@@ -1086,9 +1184,9 @@ BEGIN
   --    覆盖表是那个值当时唯一的落脚点。直接删表 = 把 TeslaMate 自己的数据一起删了，
   --    与「卸载之后费用完全回到 TeslaMate 自己的数据」正好相反。
   --    只还 original_cost 不为空的行、而且还的是 original_cost 而不是 cost：
-  --    cost 可能已经被「改默认电价」重算过、被「手工指定单价」覆盖过，还回去就成了
-  --    我们算的数冒充 TeslaMate 的记录。默认电价 / 手工单价生成的行 original_cost 是空的，
-  --    它们本就不属于 TeslaMate 的记录，随表消失即可。
+  --    cost 可能已经被「手工指定单价」覆盖过，还回去就成了我们算的数冒充 TeslaMate 的
+  --    记录。手工单价生成的行 original_cost 是空的，它们本就不属于 TeslaMate 的记录，
+  --    随表消失即可。
   --    cp.cost IS NULL 的条件是防覆盖：期间用户自己填过金额就以他填的为准。
   UPDATE charging_processes cp
   SET cost = o.original_cost
@@ -1106,6 +1204,8 @@ BEGIN
   -- 覆盖表也要删：卸载之后费用显示应当完全回到 TeslaMate 自己的数据。
   -- 这正是当初直接写原表做不到的事——那些值留在 charging_processes 里，卸载也带不走。
   DROP TABLE IF EXISTS charging_process_cost_overrides CASCADE;
+  -- 默认电价（tou_settings）也要删：卸载之后不该再有任何我们估算出来的费用。
+  DROP TABLE IF EXISTS tou_settings CASCADE;
   DROP TABLE IF EXISTS tou_rates CASCADE;
 
   -- 5. 全部 tou_* / _tou_* / *_tou_* 函数（除 uninstall_tou 自己）
@@ -1163,23 +1263,29 @@ COMMENT ON FUNCTION list_city_templates IS
 -- 9. set_default_charging_rate — 一键设默认电价
 --
 -- 用法：
---   SELECT * FROM set_default_charging_rate(1.0);
+--   SELECT * FROM set_default_charging_rate(1.0);   -- 设成 1.0 元/度
+--   SELECT * FROM set_default_charging_rate(0);     -- 明确说「这里的电免费」
+--   SELECT * FROM set_default_charging_rate(NULL);  -- 清空，不再做任何估算
 -- 行为：
---   - 给「TeslaMate 没有费用、且不在任何地理围栏内」的已完成充电写一行 default 覆盖
---     （charging_process_cost_overrides），cost = ROUND(kWh × p_rate, 2)
+--   - 只把电价写进 tou_settings 这一行，**不逐笔写任何费用**
 --   - **不写 tou_rates**：默认电价不是分时电价
 --   - **不动 charging_processes.cost**：TeslaMate 的原值、用户手工指定的价格都不受影响
 --
--- 早期实现是直接 UPDATE 原表的，那样一旦写下去就分不清费用来源、改默认价历史不跟着变、
--- 卸载也恢复不了。改成覆盖表之后这三件事都成立了（见 charging_process_cost_overrides）。
+-- 【为什么改成只存一个数】
+-- 上一版是「设价这一刻，给当时已经存在的充电各写一行覆盖值」。那有两个会伤到用户的后果：
+--   ① 设完价之后**新产生**的充电拿不到这个价——数据库里根本没记着「默认电价是多少」，
+--      新充电进来时没有任何东西会给它算。用户设了 1.0，第二天新来一笔家充，界面是空的。
+--   ② 写下去的估算值会盖住**后来才到**的真实账单：设价时账单没到，写了 50；TeslaMate
+--      隔天补上 120，界面还是 50，重设电价、点重算都不自愈。
+-- 现在电价存在 tou_settings，费用由 effective_cost() 读取时现算（见 _tou_default_cost）：
+-- 新充电自动适用，改价立刻全库生效，账单一到当场让位。两个 bug 的结构性根因一起消失。
 --
 -- 【为什么不再往 tou_rates 写「0-24 点全天 p_rate」的 AC/DC 两条规则】
 -- 那两条规则一写下去，就等于告诉系统「所有充电、所有时段都按这个价」。触发器于是给
--- **每一笔**充电都算出一个分时电价值写进旁路表，而分时电价的优先级高于 TeslaMate 原值——
--- 结果是超充这种桩侧已经报了真实金额的充电，账单 120 元、界面显示 7 元。用户设的是
--- 「没有更好信息时按这个价估」，拿到的却是「用这个价覆盖掉所有真实账单」。
--- 现在默认电价只写覆盖表，优先级排在 TeslaMate 原值之上、分时电价之下，
--- 只对真正没有费用的记录生效；tou_rates 里有规则，就说明用户真的配过分时时段。
+-- **每一笔**充电都算出一个分时电价值写进旁路表，而当时分时电价的优先级高于 TeslaMate
+-- 记录的金额——结果是超充这种桩侧已经报了真实账单的充电，账单 120 元、界面显示 7 元。
+-- 现在默认电价排在优先级最末，只对 TeslaMate 确实没有金额的充电生效；
+-- tou_rates 里有规则，就说明用户真的配过分时时段。
 -- ----------------------------------------------------------------------------
 -- 早期版本写进 tou_rates 的那两条「默认」全天规则的清理函数。
 -- 标签是我们自己写死的，只有 set_default_charging_rate 会产生，按标签认得准；
@@ -1206,12 +1312,14 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION set_default_charging_rate(p_rate NUMERIC)
 RETURNS TABLE(message TEXT) AS $$
 DECLARE
-  v_updated_cp INT;
+  v_covered INT;
   v_dropped_rules INT;
   v_note TEXT := '';
 BEGIN
-  IF p_rate IS NULL OR p_rate <= 0 THEN
-    RETURN QUERY SELECT '❌ 默认电价必须 > 0'::TEXT;
+  -- 负数没有意义，直接挡掉。0 是**合法**的：它表示「这里的电是免费的」，
+  -- 跟「没设过」（NULL）是两件事，必须区分开——否则免费充电的用户没法表达这件事。
+  IF p_rate IS NOT NULL AND p_rate < 0 THEN
+    RETURN QUERY SELECT '❌ 默认电价不能是负数（0 表示免费，留空表示不做估算）'::TEXT;
     RETURN;
   END IF;
 
@@ -1228,38 +1336,46 @@ BEGIN
       v_dropped_rules);
   END IF;
 
-  -- 写覆盖表，不碰 charging_processes.cost（见 charging_process_cost_overrides 注释）。
-  -- 用 GREATEST(charge_energy_added, charge_energy_used) 与 charges 仪表盘「电价」列
-  -- （cost / GREATEST(added, used)）的算法一致，让用户看到的「电价」就是 p_rate；
-  -- charge_energy_used 是充电桩输出（含损耗），通常 > charge_energy_added（车实际收到）。
-  --
-  -- 只覆盖 TeslaMate 自己没有费用的记录（cost IS NULL）：它报了实际费用的，那是比
-  -- 我们的估算更好的数据，不该被一口价盖掉。
-  --
-  -- ON CONFLICT DO UPDATE 是这次改动顺带修掉的一个老毛病：以前写进原表之后
-  -- cost 就不再是 NULL，用户第二次改默认电价时那些历史记录不会跟着变，只有新充电才用新价。
-  -- 现在改一次默认价，所有由默认价生成的记录都会重算——手工指定的那些不受影响。
-  INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate, updated_at)
-  SELECT cp.id,
-         ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * p_rate)::NUMERIC, 2),
-         'default', p_rate, NOW()
-  FROM charging_processes cp
-  WHERE cp.geofence_id IS NULL
-    AND cp.end_date IS NOT NULL
-    AND (cp.charge_energy_added IS NOT NULL OR cp.charge_energy_used IS NOT NULL)
-    AND cp.cost IS NULL
-  ON CONFLICT (charging_process_id) DO UPDATE
-    SET cost = EXCLUDED.cost, rate = EXCLUDED.rate, updated_at = NOW()
-    -- 手工指定过的那笔不动：用户明确表达过意图，默认价不该覆盖它
-    WHERE charging_process_cost_overrides.source = 'default';
-  GET DIAGNOSTICS v_updated_cp = ROW_COUNT;
+  -- 全部工作就这一句：把电价记下来。不写任何逐笔费用——费用由 effective_cost()
+  -- 读取时现算，所以设完之后新产生的充电自动适用，改价立刻全库生效。
+  -- 用户自己设过价，「旧数据里有好几个电价、请重设一次」那条提示就完成使命了，清掉。
+  UPDATE tou_settings
+     SET default_rate = p_rate, updated_at = NOW(), legacy_default_note = NULL
+   WHERE id;
+  IF NOT FOUND THEN
+    INSERT INTO tou_settings (id, default_rate) VALUES (TRUE, p_rate)
+    ON CONFLICT (id) DO UPDATE
+      SET default_rate = EXCLUDED.default_rate, updated_at = NOW(), legacy_default_note = NULL;
+  END IF;
 
-  RETURN QUERY SELECT format('✅ 默认电价 %s 元/度 已保存。按此价计费的充电记录：%s 笔（TeslaMate 已经报了金额的充电、以及你手工指定过价格的充电，都不受影响）%s', p_rate, v_updated_cp, v_note);
+  IF p_rate IS NULL THEN
+    RETURN QUERY SELECT format(
+      '✅ 默认电价已清空。TeslaMate 没有记录金额的充电，费用会显示为空（除非它命中了你配的分时电价，或者你给它单独填过单价）。%s',
+      v_note);
+    RETURN;
+  END IF;
+
+  -- 报一个「现在有多少笔充电按这个价显示」，让用户知道这次设置影响了什么。
+  -- 判据跟 effective_cost 的优先级一字不差：手工指定过的、TeslaMate 有金额的、
+  -- 命中分时电价的，都轮不到默认电价。
+  SELECT count(*)::INT INTO v_covered
+  FROM charging_processes cp
+  WHERE cp.end_date IS NOT NULL
+    AND cp.cost IS NULL
+    AND GREATEST(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM charging_process_cost_overrides o
+                     WHERE o.charging_process_id = cp.id AND o.source = 'manual')
+    AND NOT EXISTS (SELECT 1 FROM charging_processes_tou_cost t
+                     WHERE t.charging_process_id = cp.id);
+
+  RETURN QUERY SELECT format(
+    '✅ 默认电价 %s 元/度 已保存，以后新产生的充电也会自动按这个价估算。现在按此价显示的充电：%s 笔（TeslaMate 已经报了金额的充电、命中分时电价的充电、你手工指定过价格的充电，都不受影响）。改一次这个价，全部历史立刻跟着变。%s',
+    p_rate, v_covered, v_note);
 END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION set_default_charging_rate IS
-'tou-config 仪表盘调此函数。设默认电价 = 为无费用的充电写入 default 覆盖（不写 tou_rates、不改 TeslaMate 原表）';
+'tou-config 仪表盘调此函数。把默认电价存进 tou_settings（NULL=清空、0=免费）；不写逐笔费用、不写 tou_rates、不改 TeslaMate 原表';
 
 -- ----------------------------------------------------------------------------
 -- 9b. adopt_legacy_default_costs(p_old_rate) — 把早期写进原表的默认电价搬进覆盖表
@@ -1312,6 +1428,7 @@ DECLARE
   v_movable INT;
   v_blocked INT;
   v_moved INT;
+  v_note TEXT := '';
 BEGIN
   IF p_old_rate IS NULL OR p_old_rate <= 0 THEN
     RETURN QUERY SELECT '请提供你当初设置的默认电价，例如：SELECT * FROM adopt_legacy_default_costs(1.0);'::TEXT;
@@ -1356,9 +1473,9 @@ BEGIN
   ins AS (
     INSERT INTO charging_process_cost_overrides
       (charging_process_id, cost, source, rate, updated_at, original_cost)
-    -- cost 和 original_cost 一开始是同一个数，但用途不同：cost 是「现在显示多少钱」，
-    -- 以后改默认电价会跟着重算；original_cost 是「TeslaMate 记录里原本是多少钱」，
-    -- 谁都不许改，卸载时按它还原。
+    -- cost 和 original_cost 一开始是同一个数，但用途不同。original_cost 是
+    -- 「TeslaMate 记录里原本是多少钱」，谁都不许改，卸载时按它还原；cost 只是留个底，
+    -- 费用取值已经不看它了（默认电价改成读取时现算，见 _tou_default_cost）。
     SELECT h.id, h.cost, 'default', p_old_rate, NOW(), h.cost FROM hits h
     ON CONFLICT (charging_process_id) DO NOTHING
     RETURNING charging_process_id
@@ -1370,7 +1487,18 @@ BEGIN
   )
   SELECT count(*)::INT INTO v_moved FROM upd;
 
-  RETURN QUERY SELECT format('✅ 已把 %s 笔按「%s 元/度」生成的费用搬进覆盖表，TeslaMate 原始记录恢复为空。以后改默认电价，这些记录会跟着重算；卸载分时电价功能时，这些值会原样写回 TeslaMate 记录。', v_moved, p_old_rate);
+  -- 搬走之后这些充电在 TeslaMate 记录里就没有金额了，费用要靠默认电价现算才显示得出来。
+  -- 用户刚刚亲口说了当年用的是哪个价，而默认电价又还空着，就用它——不然搬完一刷新，
+  -- 这批充电的费用全变成空的。已经设过默认电价的不动，用户当前的设置优先。
+  IF v_moved > 0 THEN
+    UPDATE tou_settings SET default_rate = p_old_rate, updated_at = NOW()
+     WHERE id AND default_rate IS NULL;
+    IF FOUND THEN
+      v_note := format('｜顺带把默认电价设成了 %s 元/度（原先是空的），这批充电才显示得出费用；随时可以到「默认电价」面板改。', p_old_rate);
+    END IF;
+  END IF;
+
+  RETURN QUERY SELECT format('✅ 已把 %s 笔按「%s 元/度」生成的费用搬进覆盖表，TeslaMate 原始记录恢复为空。这些充电以后按默认电价显示费用；卸载分时电价功能时，原始金额会原样写回 TeslaMate 记录。%s', v_moved, p_old_rate, v_note);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1401,6 +1529,92 @@ BEGIN
   END IF;
 END
 $legacy_default$;
+
+-- ----------------------------------------------------------------------------
+-- 9d. 升级迁移：把旧版逐笔写下的「默认电价」搬进 tou_settings，再清掉派生的覆盖行
+--
+-- 上一版的默认电价没有存在任何地方，只留下一批 source='default' 的逐笔覆盖行，
+-- 每行的 rate 列记着当时用的电价。升级后如果不管，用户的默认电价会凭空消失。
+-- 所以这里从那些行里把电价取回来：
+--   · 只有一个不同的 rate → 就是它，直接迁进 tou_settings
+--   · 有好几个不同的 rate → **不猜**。留空，并把一句话留在 legacy_default_note 里，
+--     由安装/升级脚本讲给用户听，请他重新设一次。猜错就是账目算错，宁可让他动一次手。
+--
+-- 迁完之后把「纯派生」的覆盖行删掉（source='default' 且 original_cost 为空）：
+-- 它们的值现在由 effective_cost 现算，留着只会跟现算的结果打架（改了电价它们不会变）。
+--
+-- **绝不删** original_cost 非空的行：那是 adopt_legacy_default_costs() 从
+-- charging_processes.cost 里搬出来的 TeslaMate 原始金额，删了就再也还不回去，
+-- 卸载时的还原也就没了依据。这类行会保留下来，只是不再参与费用取值。
+--
+-- 整段只跑一次（legacy_default_migrated_at 标记）：否则用户主动把默认电价清空之后，
+-- 下一次升级又会把旧值迁回来，等于用户的操作被无声撤销。
+-- ----------------------------------------------------------------------------
+DO $settings_migration$
+DECLARE
+  v_rates NUMERIC[];
+  v_rate_list TEXT;
+  v_purged INT;
+  v_kept INT;
+BEGIN
+  PERFORM 1 FROM tou_settings WHERE id AND legacy_default_migrated_at IS NULL;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  SELECT array_agg(DISTINCT o.rate)
+    INTO v_rates
+    FROM charging_process_cost_overrides o
+   WHERE o.source = 'default' AND o.rate IS NOT NULL;
+
+  IF v_rates IS NULL OR array_length(v_rates, 1) = 0 THEN
+    -- 没有可迁的东西：全新安装，或者用户从来没设过默认电价。
+    UPDATE tou_settings
+       SET legacy_default_migrated_at = NOW(), legacy_default_note = NULL WHERE id;
+  ELSE
+    -- NUMERIC(10,4) 直接转字符串会带一串没意义的零（1.0000），讲给用户听时先去掉
+    SELECT string_agg(rtrim(rtrim(r::TEXT, '0'), '.'), '、' ORDER BY r)
+      INTO v_rate_list FROM unnest(v_rates) AS r;
+
+    IF array_length(v_rates, 1) = 1 THEN
+      UPDATE tou_settings
+         SET default_rate = v_rates[1], updated_at = NOW(),
+             legacy_default_migrated_at = NOW(), legacy_default_note = NULL
+       WHERE id;
+      RAISE NOTICE '已把你原来设置的默认电价 % 元/度 迁移到新的存储方式。', v_rate_list;
+      RAISE NOTICE '  以后新产生的充电会自动按这个价估算，改一次价全部历史立刻跟着变。';
+    ELSE
+      UPDATE tou_settings
+         SET legacy_default_migrated_at = NOW(),
+             legacy_default_note = format(
+               '⚠ 你的历史数据里存着 %s 个不同的默认电价（%s 元/度），没办法判断哪个是你现在要用的，'
+               || '所以默认电价这次留空了。请到「⚡ 分时电价配置」仪表盘的「💡 默认电价」面板重新设一次。'
+               || '在你重设之前，TeslaMate 没有记录金额的充电，费用会显示为空。',
+               array_length(v_rates, 1), v_rate_list)
+       WHERE id;
+      RAISE NOTICE '历史数据里有 % 个不同的默认电价（%），无法判断该用哪个，已留空等你重新设置。',
+                   array_length(v_rates, 1), v_rate_list;
+    END IF;
+  END IF;
+
+  -- 纯派生的覆盖行（改电价不会跟着变的那批）清掉，改由现算接管
+  DELETE FROM charging_process_cost_overrides
+   WHERE source = 'default' AND original_cost IS NULL;
+  GET DIAGNOSTICS v_purged = ROW_COUNT;
+
+  SELECT count(*)::INT INTO v_kept
+    FROM charging_process_cost_overrides
+   WHERE source = 'default' AND original_cost IS NOT NULL;
+
+  IF v_purged > 0 THEN
+    RAISE NOTICE '清理了 % 条由旧版默认电价逐笔写下的费用；这些充电的费用改为按默认电价实时计算。',
+                 v_purged;
+  END IF;
+  IF v_kept > 0 THEN
+    RAISE NOTICE '保留 % 条记录着 TeslaMate 原始金额的行（卸载分时电价功能时要靠它们还原）。', v_kept;
+  END IF;
+END
+$settings_migration$;
 
 -- ----------------------------------------------------------------------------
 -- 10. 自检：函数装好但需要用户配 tou_rates 才能算

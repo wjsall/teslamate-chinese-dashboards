@@ -503,6 +503,39 @@ install_sql() {
     return 1
 }
 
+# 装完分时电价 SQL 之后**无条件**回算一次历史充电费用。
+#
+# 为什么必须在这里做：install-tou.sql 内部也有一次回算，但它被包在「删掉了旧版写进
+# tou_rates 的全天规则」这个条件里。真正配了峰谷时段、踩了「电价缺口被当成 0 元算」
+# 那个 bug 的用户，一条旧规则都没有，那次回算一次都不会跑——算法修好了，库里那批用
+# 旧算法算出的低估值却没人清，界面继续显示错数。回算是唯一能清掉它们的动作。
+#
+# 大库上要几十秒，所以动手之前先说一句，别让用户以为卡住了。
+run_tou_backfill() {
+    local note
+    if [[ -z "${DB_CONTAINER:-}" ]]; then
+        return 0
+    fi
+    echo "→ 重算历史充电的分时电价费用（充电记录多的话要几十秒，请稍候）"
+    if ! docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At -v ON_ERROR_STOP=1 \
+            -c "SELECT format('✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
+                    || CASE WHEN cleared > 0 THEN format(E'\n  · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按 TeslaMate 记录的金额或默认电价显示，跟之前会不一样', cleared) ELSE '' END
+                    || CASE WHEN gapped  > 0 THEN format(E'\n  · %s 笔充电有时段没被你配的分时电价规则覆盖，算不出可信金额；想让它们按分时电价计费，去「⚡ 分时电价配置」仪表盘的「配置审计」看缺哪几个小时', gapped) ELSE '' END
+                    || CASE WHEN failed  > 0 THEN format(E'\n  ⚠ %s 笔充电回算时出错，已跳过；这些充电的费用维持原样，可稍后手动跑 SELECT * FROM backfill_all_tou(); 重试', failed) ELSE '' END
+                    FROM backfill_all_tou();"; then
+        echo "⚠️  重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
+        WARN_STEPS+=("tou-backfill")
+    fi
+    # 升级时如果判断不出你原来设的默认电价是多少，安装 SQL 会把要跟你说的话留在库里。
+    # psql 的 NOTICE 走 stderr，安装那一步把它丢掉了，所以这里主动查出来讲。
+    note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
+        -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || note=""
+    if [[ -n "$note" ]]; then
+        echo "$note"
+    fi
+    return 0
+}
+
 # 三组兼容性 SQL（coord-sql / unit-sql / tou-sql）是否全部装成功——用于判断能不能记录
 # SQL 兼容性 revision。FAILED_STEPS 是全局数组，可能混着别的失败项（如 volkov-plugin），
 # 所以必须逐个 key 精确比对，不能只看数组是否为空。indexes-sql 不在这三个 key 里，
@@ -802,9 +835,11 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FIL
                 "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
                 "unit-sql" || true
         fi
-        install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
-            "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
-            "tou-sql" || true
+        if install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
+                "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
+                "tou-sql"; then
+            run_tou_backfill
+        fi
         install_sql "性能优化索引（positions 表 car_id+date btree）" \
             "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql" \
             "indexes-sql" "warning" || true
@@ -912,9 +947,11 @@ else
         "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-unit-functions.sql" \
         "unit-sql" || true
 fi
-install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
-    "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
-    "tou-sql" || true
+if install_sql "分时电价旁路表（不动 TeslaMate 任何表）" \
+        "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-tou.sql" \
+        "tou-sql"; then
+    run_tou_backfill
+fi
 install_sql "性能优化索引（positions 表 car_id+date btree）" \
     "https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards/${REPO_REF}/sql/install-indexes.sql" \
     "indexes-sql" "warning" || true

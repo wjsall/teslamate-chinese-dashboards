@@ -78,7 +78,7 @@
       "title": "",
       "options": {
         "mode": "markdown",
-        "content": "\n# ⚡ 分时电价配置\n\n**最快 3 步：**\n1. 「**🌆 一键导入城市模板**」选你城市（90% 用户够用）\n2. **不够用** → 用「**⚡ 一键填一整季节**」：只填**谷时段 + 峰时段 + 3 档单价**，平段自动占满剩余\n3. 看「**⏰ 24 小时电价分布**」 + 「**⚠ 配置审计**」核对覆盖\n\n> 时段格式：`22-7`（跨夜）或 `0-7, 23-24`（多段用逗号）。**两档电网**：峰时段留空、峰价填 0。\n\n> ⚡ **范围说明**：本配置只作用于**家充（交流慢充）**。**直流快充（超充 / 第三方快充）按桩侧上报金额计费**，不参与本表的分时重算 —— 因为快充价格随桩、随时段、随会员浮动，桩侧上报已是真实金额，覆盖反而会算错。\n\n> 💡 **默认电价 ≠ 分时时段**：页面底部的「默认电价」是一口价，只用在 TeslaMate 没有记录金额的充电上，**不会**在这里生成任何时段规则 —— 所以只设了默认电价的话，上面的「24 小时电价分布」是空的，这是正常的。费用取值顺序：你手工指定的单价 → 分时电价 → 默认电价 → TeslaMate 记录的费用。\n"
+        "content": "\n# ⚡ 分时电价配置\n\n**最快 3 步：**\n1. 「**🌆 一键导入城市模板**」选你城市（90% 用户够用）\n2. **不够用** → 用「**⚡ 一键填一整季节**」：只填**谷时段 + 峰时段 + 3 档单价**，平段自动占满剩余\n3. 看「**⏰ 24 小时电价分布**」 + 「**⚠ 配置审计**」核对覆盖\n\n> 时段格式：`22-7`（跨夜）或 `0-7, 23-24`（多段用逗号）。**两档电网**：峰时段留空、峰价填 0。\n\n> ⚡ **范围说明**：本配置只作用于**家充（交流慢充）**。**直流快充（超充 / 第三方快充）按桩侧上报金额计费**，不参与本表的分时重算 —— 因为快充价格随桩、随时段、随会员浮动，桩侧上报已是真实金额，覆盖反而会算错。\n\n> 💡 **默认电价 ≠ 分时时段**：页面底部的「默认电价」是一口价，只用在 TeslaMate 没有记录金额的充电上，**不会**在这里生成任何时段规则 —— 所以只设了默认电价的话，上面的「24 小时电价分布」是空的，这是正常的。费用取值顺序：你手工指定的单价 → TeslaMate 记录的金额 → 分时电价 → 默认电价。\n"
       },
       "gridPos": {
         "x": 0,
@@ -1574,7 +1574,7 @@
           "success": {
             "type": "success",
             "title": "成功",
-            "body": "✅ 历史已按当前分时电价配置重算。若某笔充电有时段没被电价规则覆盖，它会改为按默认电价 / TeslaMate 记录的费用显示 —— 刷新「最近 10 笔对账」面板核对"
+            "body": "✅ 历史已按当前分时电价配置重算。若某笔充电有时段没被电价规则覆盖，它会改为按 TeslaMate 记录的金额 / 默认电价显示 —— 刷新「最近 10 笔对账」面板核对"
           },
           "error": {
             "type": "error",
@@ -1599,7 +1599,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "TeslaMate"
           },
-          "rawSql": "\nSELECT\n  cp.id AS \"充电编号\",\n  date_trunc('second', cp.start_date AT TIME ZONE 'UTC') AS \"本地时间\",\n  ROUND(cp.charge_energy_added::numeric, 2) AS \"充电度数\",\n  cost_before_tou(cp.id, cp.cost) AS \"不按分时电价的费用 ¥\",\n  CASE\n    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o\n                  WHERE o.charging_process_id = cp.id AND o.source = 'manual')\n      THEN '你手工指定的单价'\n    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o\n                  WHERE o.charging_process_id = cp.id AND o.source = 'default')\n      THEN '默认电价'\n    WHEN cp.cost IS NOT NULL THEN 'TeslaMate 记录的费用'\n    ELSE '没有可对比的费用'\n  END AS \"对比基准\",\n  compute_tou_cost(cp.id) AS \"分时电价费用 ¥\",\n  ROUND((compute_tou_cost(cp.id) - cost_before_tou(cp.id, cp.cost))::numeric, 2) AS \"差额 ¥\",\n  COALESCE(g.name, '(无)') AS \"充电点\"\nFROM charging_processes cp\nLEFT JOIN geofences g ON g.id = cp.geofence_id\nWHERE cp.car_id = $car_id\n  AND cp.geofence_id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL)\nORDER BY cp.start_date DESC\nLIMIT 10\n",
+          "rawSql": "\nSELECT\n  cp.id AS \"充电编号\",\n  date_trunc('second', cp.start_date AT TIME ZONE 'UTC') AS \"本地时间\",\n  ROUND(cp.charge_energy_added::numeric, 2) AS \"充电度数\",\n  cost_before_tou(cp.id, cp.cost) AS \"不按分时电价的费用 ¥\",\n  CASE\n    WHEN EXISTS (SELECT 1 FROM charging_process_cost_overrides o\n                  WHERE o.charging_process_id = cp.id AND o.source = 'manual')\n      THEN '你手工指定的单价'\n    WHEN cp.cost IS NOT NULL THEN 'TeslaMate 记录的金额'\n    WHEN cost_before_tou(cp.id, cp.cost) IS NOT NULL THEN '默认电价'\n    ELSE '没有可对比的费用'\n  END AS \"对比基准\",\n  compute_tou_cost(cp.id) AS \"分时电价费用 ¥\",\n  ROUND((compute_tou_cost(cp.id) - cost_before_tou(cp.id, cp.cost))::numeric, 2) AS \"差额 ¥\",\n  COALESCE(g.name, '(无)') AS \"充电点\"\nFROM charging_processes cp\nLEFT JOIN geofences g ON g.id = cp.geofence_id\nWHERE cp.car_id = $car_id\n  AND cp.geofence_id IN (SELECT DISTINCT geofence_id FROM tou_rates WHERE geofence_id IS NOT NULL)\nORDER BY cp.start_date DESC\nLIMIT 10\n",
           "format": "table"
         }
       ],
@@ -1621,12 +1621,12 @@
         "w": 24,
         "h": 10
       },
-      "description": "「不按分时电价的费用」= 这笔充电在没有分时电价时会显示的金额，优先取你手工指定的单价，其次默认电价，最后才是 TeslaMate 自己记录的费用；「对比基准」那一列写明了这次用的是哪一种。「差额」为正表示按分时电价算更贵，为负表示更便宜。分时电价费用为空 = 这笔充电有时段没被电价规则覆盖，算不出可信金额，去「配置审计」看缺哪几个小时。"
+      "description": "「不按分时电价的费用」= 这笔充电在没有分时电价时会显示的金额，优先取你手工指定的单价，其次是 TeslaMate 自己记录的金额，最后才是默认电价；「对比基准」那一列写明了这次用的是哪一种。「差额」为正表示按分时电价算更贵，为负表示更便宜。分时电价费用为空 = 这笔充电有时段没被电价规则覆盖，算不出可信金额，去「配置审计」看缺哪几个小时。"
     },
     {
       "id": 21,
       "type": "volkovlabs-form-panel",
-      "title": "💡 默认电价（无位置充电用此价）",
+      "title": "💡 默认电价（TeslaMate 没记金额时按此价算）",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
@@ -1677,7 +1677,7 @@
             "step": 0.01,
             "helpers": [
               {
-                "display": "一口价，只用在 TeslaMate 没有记录金额的充电上。不会生成分时时段规则，也不会覆盖超充等已有真实账单的充电；你手工指定过单价的那些也不受影响。改一次价，按此价计费的历史记录会全部跟着重算。"
+                "display": "一口价，只用在 TeslaMate 没有记录金额的充电上——家里、外面、慢充、快充都算，收藏点里的家充也算。它排在优先级最后，盖不掉任何已有金额：TeslaMate 报了金额的、命中分时电价的、你手工指定过单价的，都不受影响。设完之后新产生的充电会自动按这个价估算，改一次价全部历史立刻跟着变。填 0 表示这里的电是免费的；留空保存 = 不做估算。"
               }
             ]
           }
@@ -1715,7 +1715,7 @@
         "sections": [],
         "confirmModal": {
           "title": "确认",
-          "body": "保存默认电价？会替换你之前设置的默认电价，并把按此价计费的历史记录全部重算",
+          "body": "保存默认电价？会替换你之前设置的默认电价，所有按此价显示的充电（含以后新产生的）立刻跟着变。留空保存 = 清掉默认电价，不再做估算。",
           "columns": {
             "name": "字段",
             "oldValue": "原值",
@@ -1732,7 +1732,7 @@
           "success": {
             "type": "success",
             "title": "成功",
-            "body": "✅ 默认电价已保存，按此价计费的充电记录已全部重算。刷新「充电记录」仪表盘看效果。"
+            "body": "✅ 默认电价已保存，按此价显示的充电立刻全部生效，以后新产生的充电也会自动适用。刷新「充电记录」仪表盘看效果。"
           },
           "error": {
             "type": "error",
@@ -1741,7 +1741,7 @@
           }
         }
       },
-      "description": "给 TeslaMate 没有记录金额的充电（外出、无收藏点等场景）统一按一个价钱算。它**不是**分时电价：不会在上面的电价配置里生成任何时段规则，也不会覆盖超充等桩侧已上报真实金额的充电。费用取值顺序：你手工指定的单价 → 分时电价 → 默认电价 → TeslaMate 记录的费用。改一次默认价，所有按此价计费的历史记录都会跟着重算。"
+      "description": "给 TeslaMate 没有记录金额的充电统一按一个价钱算——家充、外出、慢充、快充都算，收藏点（比如「家」）里面的充电也算。它**不是**分时电价：不会在上面的电价配置里生成任何时段规则；它排在费用优先级的最后一档，盖不掉超充等桩侧已上报的真实金额。费用取值顺序：你手工指定的单价 → TeslaMate 记录的金额 → 分时电价 → 默认电价。费用是读取时现算的：设完之后新产生的充电自动适用，改一次价全部历史立刻跟着变，不需要点任何「重算」。填 0 = 明确说这里的电免费；留空保存 = 清掉默认电价。"
     }
   ],
   "links": [

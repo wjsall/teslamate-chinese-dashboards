@@ -1742,7 +1742,7 @@
       "id": 22,
       "type": "volkovlabs-form-panel",
       "title": "✏️ 单笔充电单价（手动填/改）",
-      "description": "逐笔手动设充电单价 ¥/度，覆盖默认电价。下拉里【空】排前优先填。公式：cost = GREATEST(charge_energy_added, charge_energy_used) × 单价 （与「充电记录」表的电价列一致，所以保存后看到的电价就是你设的）。手填的值不会被「重算所有历史充电」或默认电价覆盖。Tip：清空单价 + 保存 = 把该笔 cost 清回【空】，可作误填回滚。",
+      "description": "逐笔手动设充电单价 ¥/度。这是优先级最高的一档：它压过 TeslaMate 记录的金额、分时电价和默认电价，所以想让某一笔按你的价算，就填在这里。公式：cost = GREATEST(charge_energy_added, charge_energy_used) × 单价（与「充电记录」表的电价列一致，所以保存后看到的电价就是你设的）。手填的值不会被「重算所有历史充电」或默认电价覆盖。下拉框里【空】排在最前面，其次是 TeslaMate 已有金额的，最后是你已经填过的。Tip：把单价清空再保存 = 删掉这一笔的手填价，费用回到下一优先级。",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
@@ -1760,7 +1760,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "TeslaMate"
           },
-          "rawSql": "(SELECT cp.id, '【空】 | ' || to_char(cp.end_date, 'MM/DD HH24:MI') || ' | ' || LEFT(COALESCE(NULLIF(g.name, ''), NULLIF(addresses.city, ''), '?'), 16) || ' | ' || ROUND(GREATEST(cp.charge_energy_added, cp.charge_energy_used)::numeric, 1) || 'kWh' AS display_name FROM charging_processes cp LEFT JOIN addresses ON addresses.id = cp.address_id LEFT JOIN geofences g ON g.id = cp.geofence_id WHERE cp.car_id = $car_id AND cp.end_date IS NOT NULL AND COALESCE(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL AND cp.cost IS NULL ORDER BY cp.end_date DESC LIMIT 50) UNION ALL (SELECT cp.id, '已填 ¥' || cp.cost::text || ' | ' || to_char(cp.end_date, 'MM/DD HH24:MI') || ' | ' || LEFT(COALESCE(NULLIF(g.name, ''), NULLIF(addresses.city, ''), '?'), 16) || ' | ' || ROUND(GREATEST(cp.charge_energy_added, cp.charge_energy_used)::numeric, 1) || 'kWh' AS display_name FROM charging_processes cp LEFT JOIN addresses ON addresses.id = cp.address_id LEFT JOIN geofences g ON g.id = cp.geofence_id WHERE cp.car_id = $car_id AND cp.end_date IS NOT NULL AND COALESCE(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL AND cp.cost IS NOT NULL ORDER BY cp.end_date DESC LIMIT 30)",
+          "rawSql": "-- 状态标记按「手填价覆盖表」判定：手填的价现在写覆盖表、不写 TeslaMate 原始记录，\n-- 只看 cp.cost 的话，刚填过的充电会一直显示成【空】。\nSELECT cp.id,\n       CASE\n         WHEN o.charging_process_id IS NOT NULL THEN '已填 ¥' || rtrim(rtrim(o.cost::text, '0'), '.')\n         WHEN cp.cost IS NOT NULL THEN '已有金额 ¥' || cp.cost::text\n         ELSE '【空】'\n       END\n       || ' | ' || to_char(cp.end_date, 'MM/DD HH24:MI')\n       || ' | ' || LEFT(COALESCE(NULLIF(g.name, ''), NULLIF(addresses.city, ''), '?'), 16)\n       || ' | ' || ROUND(GREATEST(cp.charge_energy_added, cp.charge_energy_used)::numeric, 1) || 'kWh' AS display_name\nFROM charging_processes cp\nLEFT JOIN addresses ON addresses.id = cp.address_id\nLEFT JOIN geofences g ON g.id = cp.geofence_id\nLEFT JOIN charging_process_cost_overrides o ON o.charging_process_id = cp.id AND o.source = 'manual'\nWHERE cp.car_id = $car_id\n  AND cp.end_date IS NOT NULL\n  AND COALESCE(cp.charge_energy_added, cp.charge_energy_used) IS NOT NULL\nORDER BY CASE WHEN o.charging_process_id IS NOT NULL THEN 2 WHEN cp.cost IS NOT NULL THEN 1 ELSE 0 END, cp.end_date DESC\nLIMIT 80",
           "format": "table"
         }
       ],
@@ -1832,7 +1832,7 @@
               "uid": "TeslaMate"
             },
             "format": "table",
-            "rawSql": "-- 写费用覆盖表，不改 TeslaMate 原始记录（来源标记为 manual，优先级高于分时电价与默认电价）\nINSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate, updated_at)\nSELECT cp.id,\n       ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * NULLIF(NULLIF('${payload.unit_price}', ''), 'undefined')::NUMERIC)::NUMERIC, 2),\n       'manual',\n       NULLIF(NULLIF('${payload.unit_price}', ''), 'undefined')::NUMERIC,\n       NOW()\nFROM charging_processes cp\nWHERE cp.id = NULLIF(NULLIF('${payload.cp_id}', ''), 'undefined')::INT\n  AND cp.car_id = $car_id\nON CONFLICT (charging_process_id) DO UPDATE\n  SET cost = EXCLUDED.cost, source = 'manual', rate = EXCLUDED.rate, updated_at = NOW()"
+            "rawSql": "-- 写费用覆盖表，不改 TeslaMate 原始记录（来源标记为 manual，是优先级最高的一档）。\n-- 单价留空 = 删掉这一笔的手填价，费用回到下一优先级。\n-- 之前这里是一条 INSERT，单价留空就等于往一个不允许为空的列里写空值，\n-- 于是「清空保存即可删除」这句话每次都以报错收场。现在删除走真正的 DELETE。\nWITH input AS (\n  SELECT NULLIF(NULLIF('${payload.cp_id}', ''), 'undefined')::INT AS cp_id,\n         NULLIF(NULLIF('${payload.unit_price}', ''), 'undefined')::NUMERIC AS unit_price\n),\ntarget AS (\n  SELECT cp.id, GREATEST(cp.charge_energy_added, cp.charge_energy_used) AS kwh, i.unit_price\n  FROM charging_processes cp\n  JOIN input i ON cp.id = i.cp_id\n  WHERE cp.car_id = $car_id\n),\nremoved AS (\n  DELETE FROM charging_process_cost_overrides o\n  USING target t\n  WHERE o.charging_process_id = t.id\n    AND t.unit_price IS NULL\n    AND o.original_cost IS NULL\n  RETURNING o.charging_process_id\n),\nrestored AS (\n  -- original_cost 非空 = 这一行还存着 TeslaMate 的原始金额（卸载时要靠它还原），\n  -- 删掉就永久丢了。所以这种行不删，只还原成没填过手工价的样子。\n  UPDATE charging_process_cost_overrides o\n     SET cost = o.original_cost, source = 'default', rate = NULL, updated_at = NOW()\n    FROM target t\n   WHERE o.charging_process_id = t.id\n     AND t.unit_price IS NULL\n     AND o.original_cost IS NOT NULL\n  RETURNING o.charging_process_id\n),\nsaved AS (\n  INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate, updated_at)\n  SELECT t.id, ROUND((t.kwh * t.unit_price)::NUMERIC, 2), 'manual', t.unit_price, NOW()\n  FROM target t\n  WHERE t.unit_price IS NOT NULL\n  ON CONFLICT (charging_process_id) DO UPDATE\n    SET cost = EXCLUDED.cost, source = 'manual', rate = EXCLUDED.rate, updated_at = NOW()\n  RETURNING charging_process_id\n)\nSELECT count(*)::INT AS affected\nFROM (\n  SELECT charging_process_id FROM removed\n  UNION ALL SELECT charging_process_id FROM restored\n  UNION ALL SELECT charging_process_id FROM saved\n) x"
           },
           "payloadMode": "all",
           "code": "",
@@ -1849,7 +1849,7 @@
         "sections": [],
         "confirmModal": {
           "title": "确认",
-          "body": "确认保存？将覆盖该笔充电的 cost。空单价 = 清空回【空】。",
+          "body": "确认保存？这一笔的费用会按你填的单价显示。单价留空 = 删掉手填价，费用回到下一优先级（TeslaMate 记录的金额 → 分时电价 → 默认电价）。",
           "columns": {
             "name": "字段",
             "oldValue": "原值",
@@ -1866,7 +1866,7 @@
           "success": {
             "type": "success",
             "title": "成功",
-            "body": "✅ 单价已保存，刷新页面看 cost 列"
+            "body": "✅ 已保存，刷新页面看费用列（单价留空的话，这一笔的手填价已删除）"
           },
           "error": {
             "type": "error",
