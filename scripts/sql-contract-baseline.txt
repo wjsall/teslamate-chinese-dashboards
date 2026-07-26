@@ -6,8 +6,8 @@
 # SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，
 # 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。
 FORMAT_VERSION=2
-RECORDED_REVISION=9
-SOURCE_DIGEST=395e6a476f6e5e6b927f17b580b50f20737dc8a4bd3d8755b6b03a6c7a290a8b
+RECORDED_REVISION=10
+SOURCE_DIGEST=01cfb95c22115587c96f16744baabf8aab0f99c563f54abb75222db9fce2aab9
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
@@ -47,10 +47,10 @@ FUNCTION	wgs84_to_gcj02_lat	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECI
 FUNCTION	wgs84_to_gcj02_lng	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 FUNCTION_BODY	_tou_default_cost	3dbb514a25de9809
 FUNCTION_BODY	_tou_has_matching_rate	a404c607b90c287a
-FUNCTION_BODY	_tou_long_gap_kind	998da0f1801b61bd
+FUNCTION_BODY	_tou_long_gap_kind	aa8968c7fe5faabb
 FUNCTION_BODY	adopt_legacy_default_costs	82870f0218b901f4
-FUNCTION_BODY	backfill_all_tou	d27035500e6bc242
-FUNCTION_BODY	compute_tou_cost	1a2e0ff6cca96469
+FUNCTION_BODY	backfill_all_tou	e0f128bf009cd8ca
+FUNCTION_BODY	compute_tou_cost	e93c56a63fd88071
 FUNCTION_BODY	cost_before_tou	cb3e6b00bdd1f8ab
 FUNCTION_BODY	effective_cost	fa33602e104f7069
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
@@ -62,6 +62,6 @@ INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_STA
 TABLE	charging_process_cost_overrides	(charging_process_id:INT,cost:NUMERIC(10,4),source:TEXT,rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,original_cost:NUMERIC(10,4))
 TABLE	charging_processes_tou_cost	(charging_process_id:INT,cost_tou:NUMERIC(10,4),energy_by_period:JSONB,computed_at:TIMESTAMPTZ,rates_signature:TEXT)
 TABLE	tou_rates	(id:SERIAL,geofence_id:INT,hour_start:INT,hour_end:INT,rate:NUMERIC(10,4),weekday_mask:SMALLINT,valid_from:DATE,valid_to:DATE,apply_to_dc:BOOLEAN,label:TEXT,timezone:TEXT,created_at:TIMESTAMPTZ)
-TABLE	tou_settings	(id:BOOLEAN,default_rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,legacy_default_migrated_at:TIMESTAMPTZ,legacy_default_note:TEXT)
+TABLE	tou_settings	(id:BOOLEAN,default_rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,legacy_default_migrated_at:TIMESTAMPTZ,legacy_default_note:TEXT,view_rebuild_note:TEXT)
 TRIGGER	tou_recalc	AFTER INSERT OR UPDATE OF END_DATE, COST ON CHARGING_PROCESSES FOR EACH ROW WHEN (NEW.END_DATE IS NOT NULL) EXECUTE FUNCTION TRIGGER_COMPUTE_TOU()
 VIEW	charging_processes_v	EXISTS

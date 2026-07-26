@@ -511,7 +511,7 @@ install_sql() {
 #
 # 大库上要几十秒，所以动手之前先说一句，别让用户以为卡住了。
 run_tou_backfill() {
-    local note
+    local default_note view_note
     if [[ -z "${DB_CONTAINER:-}" ]]; then
         return 0
     fi
@@ -526,12 +526,16 @@ run_tou_backfill() {
         echo "⚠️  重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
         WARN_STEPS+=("tou-backfill")
     fi
-    # 升级时如果判断不出你原来设的默认电价是多少，安装 SQL 会把要跟你说的话留在库里。
-    # psql 的 NOTICE 走 stderr，安装那一步把它丢掉了，所以这里主动查出来讲。
-    note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
-        -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || note=""
-    if [[ -n "$note" ]]; then
-        echo "$note"
+    # 两类提示是两个独立待办，分别读取；默认电价迁移不能覆盖尚未处理的视图重建提示。
+    default_note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
+        -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || default_note=""
+    if [[ -n "$default_note" ]]; then
+        echo "$default_note"
+    fi
+    view_note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
+        -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" 2>/dev/null) || view_note=""
+    if [[ -n "$view_note" ]]; then
+        echo "$view_note"
     fi
     return 0
 }
