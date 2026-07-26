@@ -326,7 +326,34 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- ----------------------------------------------------------------------------
--- 3c. _tou_long_gap_kind(cp_id) — 长采样断档是否让电量无法归属到唯一电价
+-- 3c. _tou_sample_raw_kwh(...) — 单个相邻样本区间参与分时加权的电量
+--
+-- 这是 compute_tou_cost、长断档噪声预算和回算缺价归因的共同口径：
+--   · >=10 分钟且累计值可用、未掉回：用累计电量差，避免残留功率乘上整段断档；
+--   · 其余情况：沿用起点功率积分。
+-- 金额计算和失败归因必须调用同一个函数，不能各自复制 CASE 后再次漂移。
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _tou_sample_raw_kwh(
+  sample_date TIMESTAMP,
+  charger_power NUMERIC,
+  charge_energy_added NUMERIC,
+  next_date TIMESTAMP,
+  next_charge_energy_added NUMERIC
+) RETURNS NUMERIC AS $$
+  SELECT CASE
+    WHEN EXTRACT(EPOCH FROM (next_date - sample_date)) >= 600
+         AND charge_energy_added IS NOT NULL
+         AND next_charge_energy_added IS NOT NULL
+         AND next_charge_energy_added >= charge_energy_added
+      THEN next_charge_energy_added - charge_energy_added
+    ELSE
+      COALESCE(charger_power, 0)
+        * EXTRACT(EPOCH FROM (next_date - sample_date)) / 3600.0
+  END;
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ----------------------------------------------------------------------------
+-- 3d. _tou_long_gap_kind(cp_id) — 长采样断档是否让电量无法归属到唯一电价
 --
 -- 返回：
 --   NULL            没有会影响费用归属的长断档
@@ -345,7 +372,6 @@ DECLARE
   gap_noise_abs_kwh CONSTANT NUMERIC := 0.5;
   gap_noise_ratio CONSTANT NUMERIC := 0.01;
   cp_geofence_id INT;
-  actual_kwh NUMERIC;
   is_dc BOOLEAN;
   gap_record RECORD;
   probe_date TIMESTAMP;
@@ -356,9 +382,10 @@ DECLARE
   has_sampling_gap BOOLEAN := FALSE;
   has_unknown_gap_energy BOOLEAN := FALSE;
   total_gap_kwh NUMERIC := 0;
+  total_raw_kwh NUMERIC := 0;
 BEGIN
-  SELECT geofence_id, GREATEST(charge_energy_added, charge_energy_used)
-  INTO cp_geofence_id, actual_kwh
+  SELECT geofence_id
+  INTO cp_geofence_id
   FROM charging_processes
   WHERE id = cp_id;
 
@@ -387,17 +414,6 @@ BEGIN
         ELSE COALESCE(charger_power, 0) > 0
       END
   LOOP
-    -- 阈值看整笔所有长断档的总电量，不能让多段各自很小的断档分别钻过豁免。
-    -- 累计值掉回代表计数器重置，无法从差值知道断档电量；这种旧数据继续保守拒算。
-    IF gap_record.charge_energy_added IS NOT NULL
-       AND gap_record.next_charge_energy_added IS NOT NULL
-       AND gap_record.next_charge_energy_added >= gap_record.charge_energy_added THEN
-      total_gap_kwh := total_gap_kwh
-        + (gap_record.next_charge_energy_added - gap_record.charge_energy_added);
-    ELSE
-      has_unknown_gap_energy := TRUE;
-    END IF;
-
     start_rate := lookup_tou_rate(gap_record.date, cp_geofence_id, is_dc);
     has_rate_change := FALSE;
     has_missing_rate := start_rate IS NULL;
@@ -425,15 +441,53 @@ BEGIN
       RETURN 'configuration';
     ELSIF has_rate_change THEN
       has_sampling_gap := TRUE;
+
+      -- 预算只统计真正跨价、因而无法唯一归属的断档。同一个有效电价内部即使断档很长，
+      -- 也不会改变金额，不应白白吃掉前面等待期噪声的豁免额度。
+      -- 阈值仍看整笔所有跨价断档的总电量，防止多段各自很小的断档分别钻过绝对界。
+      -- 累计值掉回代表计数器重置，无法从差值知道断档电量；这种旧数据继续保守拒算。
+      IF gap_record.charge_energy_added IS NOT NULL
+         AND gap_record.next_charge_energy_added IS NOT NULL
+         AND gap_record.next_charge_energy_added >= gap_record.charge_energy_added THEN
+        total_gap_kwh := total_gap_kwh
+          + (gap_record.next_charge_energy_added - gap_record.charge_energy_added);
+      ELSE
+        has_unknown_gap_energy := TRUE;
+      END IF;
     END IF;
   END LOOP;
+
+  IF has_sampling_gap THEN
+    -- 噪声预算的相对分母必须和 compute_tou_cost 的加权分母完全一致。若采样功率与
+    -- charging_processes 总电量不自洽，拿后者当分母会放大获准断档在定价里的实际权重。
+    WITH samples AS (
+      SELECT
+        date,
+        charger_power,
+        charge_energy_added,
+        LEAD(date) OVER (ORDER BY date) AS next_date,
+        LEAD(charge_energy_added) OVER (ORDER BY date) AS next_charge_energy_added
+      FROM charges
+      WHERE charging_process_id = cp_id
+    )
+    SELECT COALESCE(SUM(_tou_sample_raw_kwh(
+             date,
+             charger_power,
+             charge_energy_added,
+             next_date,
+             next_charge_energy_added
+           )), 0)
+    INTO total_raw_kwh
+    FROM samples
+    WHERE next_date IS NOT NULL;
+  END IF;
 
   IF has_sampling_gap
      AND (
        has_unknown_gap_energy
        OR total_gap_kwh > GREATEST(
             gap_noise_abs_kwh,
-            COALESCE(actual_kwh, 0) * gap_noise_ratio
+            total_raw_kwh * gap_noise_ratio
           )
      ) THEN
     RETURN 'sampling';
@@ -498,18 +552,15 @@ BEGIN
   ),
   sample_kwh AS (
     SELECT
-      CASE
-        -- 获准作为噪声的长断档按断档起点电价计入。累计差值比“起点功率 × 整段时长”
-        -- 更贴近等待期的真实墙电；负重置无法量化，仍沿用功率积分并由上面的判据保守处理。
-        WHEN EXTRACT(EPOCH FROM (s.next_date - s.date)) >= 600
-             AND s.charge_energy_added IS NOT NULL
-             AND s.next_charge_energy_added IS NOT NULL
-             AND s.next_charge_energy_added >= s.charge_energy_added
-          THEN s.next_charge_energy_added - s.charge_energy_added
-        ELSE
-          COALESCE(s.charger_power, 0)
-            * EXTRACT(EPOCH FROM (s.next_date - s.date)) / 3600.0
-      END AS raw_kwh,
+      -- 获准作为噪声的长断档按断档起点电价计入。累计差值比“起点功率 × 整段时长”
+      -- 更贴近等待期的真实墙电；负重置无法量化，仍沿用功率积分并由上面的判据保守处理。
+      _tou_sample_raw_kwh(
+        s.date,
+        s.charger_power,
+        s.charge_energy_added,
+        s.next_date,
+        s.next_charge_energy_added
+      ) AS raw_kwh,
       lookup_tou_rate(s.date, cp_geofence_id, is_dc) AS rate
     FROM samples s
     WHERE s.next_date IS NOT NULL
@@ -855,26 +906,33 @@ DECLARE
     $v$;
     v_user_note CONSTANT TEXT :=
         '你的 charging_processes_v 对账视图仍是旧口径，可能继续让分时估算覆盖 TeslaMate 已记录的费用。'
-        || '请先删除依赖 charging_processes_v 的自建对象，再重新运行分时电价安装；'
-        || '安装完成后再按需重建这些对象。';
+        || '请检查该名称是否被其他表、视图、序列或索引占用，当前数据库用户是否拥有该对象，'
+        || '以及是否有自建对象依赖它；如果 charging_processes 已有 cost_effective、cost_tou、'
+        || 'energy_by_period 或 cost_mode 同名列，请先确认兼容方案。处理后请重新运行分时电价安装。';
     v_replace_error TEXT;
 BEGIN
     -- 常见升级只改表达式、列布局不变。先走这条路径，用户建在本视图上的对象会原样保留，
     -- 同时拿到最新的费用优先级。
     BEGIN
         EXECUTE 'CREATE OR REPLACE VIEW charging_processes_v AS ' || v_query;
-    EXCEPTION WHEN invalid_table_definition OR wrong_object_type THEN
+    EXCEPTION
+      WHEN invalid_table_definition OR wrong_object_type OR insufficient_privilege
+        OR duplicate_column THEN
         v_replace_error := SQLERRM;
     END;
 
     IF v_replace_error IS NOT NULL THEN
         BEGIN
             DROP VIEW IF EXISTS charging_processes_v;
-        -- 两种都要捕获：dependent_objects_still_exist = 列布局不兼容且有对象依赖它；
-        -- wrong_object_type = 同名对象存在但不是普通视图（例如用户把它换成了物化视图），
-        -- 这时 DROP VIEW 报 "is not a view"，不捕获同样会中断整份文件。
+            EXECUTE 'CREATE VIEW charging_processes_v AS ' || v_query;
+        -- dependent_objects_still_exist：列布局不兼容且有对象依赖旧视图；
+        -- wrong_object_type：同名对象不是普通视图；insufficient_privilege：视图归属别的角色；
+        -- duplicate_column：charging_processes 新增了与派生列同名的列。最后一种会在 DROP
+        -- 成功后的 CREATE 再次抛出，因此 DROP + CREATE 必须同处这个子事务：异常时自动恢复
+        -- 旧视图，再留下提示并继续安装后半段对象。
         EXCEPTION
-          WHEN dependent_objects_still_exist OR wrong_object_type OR insufficient_privilege THEN
+          WHEN dependent_objects_still_exist OR wrong_object_type OR insufficient_privilege
+            OR duplicate_column THEN
             UPDATE tou_settings
             SET view_rebuild_note = v_user_note,
                 updated_at = NOW()
@@ -882,9 +940,6 @@ BEGIN
             RAISE NOTICE '%', v_user_note;
             RETURN;
         END;
-
-        -- DROP 与 CREATE 仍在同一个 DO 事务中；CREATE 失败会自动回滚 DROP。
-        EXECUTE 'CREATE VIEW charging_processes_v AS ' || v_query;
     END IF;
 
     EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含 TeslaMate 原值与分时电价，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
@@ -1340,7 +1395,9 @@ BEGIN
             SELECT
               date,
               charger_power,
-              LEAD(date) OVER (ORDER BY date) AS next_date
+              charge_energy_added,
+              LEAD(date) OVER (ORDER BY date) AS next_date,
+              LEAD(charge_energy_added) OVER (ORDER BY date) AS next_charge_energy_added
             FROM charges
             WHERE charging_process_id = cp_record.id
           )
@@ -1348,8 +1405,13 @@ BEGIN
             SELECT 1
             FROM samples
             WHERE next_date IS NOT NULL
-              AND COALESCE(charger_power, 0)
-                  * EXTRACT(EPOCH FROM (next_date - date)) / 3600.0 > 0
+              AND _tou_sample_raw_kwh(
+                    date,
+                    charger_power,
+                    charge_energy_added,
+                    next_date,
+                    next_charge_energy_added
+                  ) > 0
               AND lookup_tou_rate(
                     date,
                     cp_record.geofence_id,
