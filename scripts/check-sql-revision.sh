@@ -25,7 +25,8 @@
 #   bash scripts/check-sql-revision.sh                # 只读比对，CI 用
 #   bash scripts/check-sql-revision.sh --update-baseline
 #       # 把当前契约写入 scripts/sql-contract-baseline.txt。
-#       # 仅当「契约无变化」或「契约变了且 SQL_COMPAT_REVISION 已相应 bump」时才允许写入；
+#       # 契约变化时，只有 SQL_COMPAT_REVISION 已相应 bump 才允许写入；
+#       # 契约未变但 revision 已按规则 bump 时，只同步 RECORDED_REVISION 与 SOURCE_DIGEST；
 #       # 契约变了但 revision 没变会拒绝更新（跟直接跑默认模式一样报错），
 #       # 防止有人绕过检查、只重新生成基线而不真的 bump 版本号。
 #       # 唯一例外：diff 只是「新增 FUNCTION_BODY 行」**且**三组 SQL 的内容摘要
@@ -51,14 +52,15 @@
 #   光有上面那套还不够。「删掉基线文件再 --create-baseline」能在**不 bump
 #   SQL_COMPAT_REVISION** 的情况下重写基线，之后所有门全绿——实测走过一次：把
 #   uninstall_tou 的语义反转，走这条路只产生 4 行 diff，RECORDED_REVISION 纹丝不动。
-#   所以默认模式还会把基线文件跟**它自己的上一版**（git 里的）比一次：
+#   所以默认模式还会把基线文件跟**上一个真正改过它的提交**比一次：
 #   契约行变了、RECORDED_REVISION 却没变 → 报红。判据是机器可校验的，不依赖有没有人
-#   认真看那次 diff。工作区的基线跟 HEAD 不一致时比的是 HEAD（还没提交的改动也拦得住）。
+#   认真看那次 diff。工作区的基线跟 HEAD 不一致时比 HEAD；已提交时用
+#   `git log -n 2 -- <baseline>` 找上一个真实版本，不受中间隔了多少个无关提交影响。
 #   本地拿不到上一版时明确跳过并说明原因；CI（CI / GITHUB_ACTIONS 非空）则 fail-closed，
 #   防止浅克隆让棘轮失效。确有意从零建立历史时，可显式设置
 #   SQL_REVISION_ALLOW_MISSING_HISTORY=1 豁免一次，并让日志保留这次选择。
-#   ⚠ CI 里正常比对需要 checkout 深度 ≥ 2；.github/workflows/ghcr-build.yml 的 lint job
-#     已经设了 fetch-depth: 2。
+#   ⚠ CI 里正常比对需要完整的基线文件历史；.github/workflows/ghcr-build.yml 的 lint job
+#     已经设了 fetch-depth: 0。
 #
 # 退出码：0 = 契约与基线一致（或 --update-baseline / --create-baseline 成功写入）；
 # 1 = 有未经 revision 确认的契约变化，或写入被拒绝。
@@ -393,6 +395,7 @@ CORE_BODY_FUNCTIONS = {
     '_tou_has_matching_rate',    # 「这笔充电有没有电价规则可用」——compute_tou_cost 用它决定
                                  # 算 TOU 还是回退原 cost，改这里就等于改用户看到的费用，
                                  # 而 compute_tou_cost 自己的函数体一个字都不用动
+    '_tou_long_gap_kind',        # 长采样断档是配置缺口还是纯采样问题，并决定是否拒绝计费
 }
 
 _COMMENT_LINE_RE = re.compile(r'--[^\n]*')
@@ -689,6 +692,21 @@ def _git_show(spec):
     return r.stdout
 
 
+def _git_commits_for_path(path, limit):
+    """按新到旧返回真正修改过 path 的提交；拿不到历史时返回 None。"""
+    try:
+        r = subprocess.run(
+            ['git', 'log', '--format=%H', '-n', str(limit), '--', path],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if r.returncode != 0:
+        return None
+    return [line for line in r.stdout.splitlines() if line]
+
+
 def history_unavailable(reason):
     """本地允许说明后跳过；CI 默认拒绝，除非显式声明这次没有可比历史。"""
     in_ci = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
@@ -703,7 +721,7 @@ def history_unavailable(reason):
 
     print("❌ CI 中无法取得上一版 SQL 契约基线，历史棘轮不能安全执行。")
     print(f"   原因：{reason}")
-    print("   请把 checkout 深度设为至少 2，并确保上一版基线文件可读取。")
+    print("   请使用完整 checkout（fetch-depth: 0），并确保上一个真实基线版本可读取。")
     print(
         "   只有确实在建立全新基线、且本次变更已经另行核验时，才可显式设置 "
         "SQL_REVISION_ALLOW_MISSING_HISTORY=1。"
@@ -720,9 +738,9 @@ def ratchet_against_history():
     的语义反转，只产生 4 行 diff，门一声不吭。--create-baseline 那条路靠的是「整文件
     diff 摆在评审面前」，也就是靠人看；这里补的是机器判据。
 
-    判据：拿当前基线文件跟它的上一版比。
+    判据：拿当前基线文件跟它的上一个真实版本比。
       · 工作区的基线跟 HEAD 里的不一样 → 上一版就是 HEAD 里的那份（还没提交的改动）
-      · 一样 → 上一版是 HEAD~1 里的那份（这次提交带来的改动）
+      · 一样 → 从真正修改过基线的提交中取前两个，第二个才是上一版
     契约行有增删改、而 RECORDED_REVISION 两版相同 → 报红。
     （「把函数纳入核心函数体指纹监视范围」那条豁免同样适用，判据与 --update-baseline
     完全一致，否则那条合法路径会在这里假红。）
@@ -749,12 +767,21 @@ def ratchet_against_history():
         prev_text = head_text
         prev_label = 'HEAD（已提交的那一版）'
     else:
-        prev_text = _git_show('HEAD~1:' + BASELINE_PATH)
-        prev_label = 'HEAD~1（上一次提交）'
+        baseline_commits = _git_commits_for_path(BASELINE_PATH, 2)
+        if baseline_commits is None or len(baseline_commits) < 2:
+            return history_unavailable(
+                '取不到上一个真正修改过基线文件的提交（基线只有一个版本？'
+                'CI 没有拉取完整历史？）'
+            )
+        previous_baseline_commit = baseline_commits[1]
+        prev_text = _git_show(previous_baseline_commit + ':' + BASELINE_PATH)
+        prev_label = (
+            f'{previous_baseline_commit[:12]}'
+            '（上一个真正修改基线文件的提交）'
+        )
         if prev_text is None:
             return history_unavailable(
-                '取不到上一次提交里的基线文件（仓库只有一个提交？'
-                'CI 的 checkout 深度是 1？基线是上一次提交才加进来的？）'
+                f'取不到 {prev_label} 里的基线文件（CI 没有拉取完整历史？）'
             )
 
     parsed = parse_baseline_text(prev_text, strict=False)
@@ -921,7 +948,15 @@ def main():
 
     if update:
         if not has_diff:
-            print(f"契约与基线一致（{len(current)} 个对象），无需更新。基线文件未改动。")
+            if current_rev == recorded_rev:
+                print(f"契约与基线一致（{len(current)} 个对象），无需更新。基线文件未改动。")
+                sys.exit(0)
+            write_baseline(current, current_rev, current_digest)
+            print(
+                f"✅ 基线已更新：{BASELINE_PATH}（revision {recorded_rev} → {current_rev}，"
+                f"{len(current)} 个对象）"
+            )
+            print("   本次只同步 revision，契约未变；SOURCE_DIGEST 已刷新。")
             sys.exit(0)
         if current_rev == recorded_rev and not widening:
             print(

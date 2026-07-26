@@ -214,6 +214,12 @@ for line_no in calls:
     if '-v ON_ERROR_STOP=1' not in command:
         print(f'第 {line_no + 1} 行回算调用缺少 -v ON_ERROR_STOP=1')
         raise SystemExit(1)
+    if 'sampling_gapped > 0' not in command:
+        print(f'第 {line_no + 1} 行回算结果没有单独报告采样断档')
+        raise SystemExit(1)
+    if '不是你的电价配置问题' not in command or '不需要修改配置' not in command:
+        print(f'第 {line_no + 1} 行没有告诉用户采样断档无需修改电价配置')
+        raise SystemExit(1)
 PY
     ); then
         echo "  ✓ $entry"

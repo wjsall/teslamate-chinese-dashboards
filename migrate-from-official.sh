@@ -520,6 +520,7 @@ run_tou_backfill() {
             -c "SELECT format('✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
                     || CASE WHEN cleared > 0 THEN format(E'\n  · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按 TeslaMate 记录的金额或默认电价显示，跟之前会不一样', cleared) ELSE '' END
                     || CASE WHEN gapped  > 0 THEN format(E'\n  · %s 笔充电有时段没被你配的分时电价规则覆盖，算不出可信金额；想让它们按分时电价计费，去「⚡ 分时电价配置」仪表盘的「配置审计」看缺哪几个小时', gapped) ELSE '' END
+                    || CASE WHEN sampling_gapped > 0 THEN format(E'\n  · %s 笔充电因采样断档跨过不同电价，无法可靠计算分时金额；这不是你的电价配置问题，也不需要修改配置，这些充电的费用已保持原样', sampling_gapped) ELSE '' END
                     || CASE WHEN failed  > 0 THEN format(E'\n  ⚠ %s 笔充电回算时出错，已跳过；这些充电的费用维持原样，可稍后手动跑 SELECT * FROM backfill_all_tou(); 重试', failed) ELSE '' END
                     FROM backfill_all_tou();"; then
         echo "⚠️  重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
