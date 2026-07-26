@@ -369,14 +369,18 @@ else
             sed 's/^/      /' /tmp/tou-backfill.log | head -10
             WARN_STEPS+=("TOU 历史费用回算")
         fi
-        # 升级时如果判断不出你原来设的默认电价是多少，安装 SQL 会把要跟你说的话留在库里。
-        # psql 的 NOTICE 走 stderr、上面已经丢进 /tmp/tou-install.log 了，用户看不见，
-        # 所以这里主动查出来讲一遍。
+        # 两类提示是两个独立待办，分别读取；默认电价迁移不能覆盖尚未处理的视图重建提示。
         TOU_DEFAULT_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
             -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" \
             2>/dev/null) || TOU_DEFAULT_NOTE=""
         if [ -n "$TOU_DEFAULT_NOTE" ]; then
             echo -e "${YELLOW}    ${TOU_DEFAULT_NOTE}${NC}"
+        fi
+        TOU_VIEW_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
+            -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" \
+            2>/dev/null) || TOU_VIEW_NOTE=""
+        if [ -n "$TOU_VIEW_NOTE" ]; then
+            echo -e "${YELLOW}    ${TOU_VIEW_NOTE}${NC}"
         fi
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"

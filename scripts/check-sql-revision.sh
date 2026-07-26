@@ -541,6 +541,14 @@ def read_current_revision():
     return m.group(1).strip()
 
 
+def revision_number(value, source):
+    """Revision 是只增不减的十进制整数；拒绝词法比较和含糊格式。"""
+    if not re.fullmatch(r'[0-9]+', value):
+        print(f"{source} 里的 SQL revision 不是非负整数：{value!r}", file=sys.stderr)
+        sys.exit(2)
+    return int(value)
+
+
 def compute_source_digest(files):
     """三组 SQL 文件内容的摘要——回答的是「SQL 文件到底动没动」，不是「契约变没变」。
 
@@ -917,6 +925,20 @@ def main():
         print("   确实需要从零重建（例如脚本的 FORMAT_VERSION 升了级），用 --create-baseline，",
               file=sys.stderr)
         print("   并把整个文件的 diff 放进同一次提交交给评审。", file=sys.stderr)
+        sys.exit(1)
+
+    current_rev_number = revision_number(current_rev, VERSIONS_ENV_PATH)
+    recorded_rev_number = revision_number(recorded_rev, BASELINE_PATH)
+
+    # --update-baseline 的 revision-only 同步也是写路径，必须遵守单调性。否则把 config
+    # 从 9 误写成 8 后运行同步，会把基线也降到 8，并把这次倒退伪装成“两边一致”。
+    if update and current_rev_number < recorded_rev_number:
+        print(
+            "❌ 拒绝更新基线：SQL_COMPAT_REVISION 不能倒退，"
+            f"{VERSIONS_ENV_PATH} 是 {current_rev}，"
+            f"{BASELINE_PATH} 已记录 {recorded_rev}。"
+        )
+        print("   请恢复 config 中的 revision；需要发布新 SQL 行为时只能在已记录值上递增。")
         sys.exit(1)
 
     # 默认只读模式必须先确认两个 revision 单一事实源一致。否则只改基线里的

@@ -174,6 +174,46 @@ for entry in "${ENTRY_POINTS[@]}"; do
     esac
 done
 
+# 视图重建提示与默认电价迁移提示是两件独立的用户待办，必须分槽查询。只查旧的共用槽会
+# 让安装文件后半段的默认电价迁移无声覆盖视图提示，用户直到看到账目不一致才知道。
+echo
+echo "校验安装路径分别读取两类 TOU 提示..."
+NOTE_PATHS=(simple-deploy.sh migrate-from-official.sh scripts/upgrade.sh)
+for entry in "${NOTE_PATHS[@]}"; do
+    if detail=$(python3 - "$entry" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+lines = []
+for line in open(path, encoding='utf-8'):
+    if line.lstrip().startswith('#'):
+        continue
+    lines.append(line)
+body = ''.join(lines)
+
+missing = []
+for column in ('legacy_default_note', 'view_rebuild_note'):
+    if not re.search(
+        rf'SELECT\s+{column}\s+FROM\s+tou_settings'
+        rf'\s+WHERE\s+{column}\s+IS\s+NOT\s+NULL',
+        body,
+        re.I | re.S,
+    ):
+        missing.append(column)
+
+if missing:
+    print('没有分别查询：' + '、'.join(missing))
+    raise SystemExit(1)
+PY
+    ); then
+        echo "  ✓ $entry"
+    else
+        echo "  ✗ $entry: $detail"
+        fail=1
+    fi
+done
+
 # 同时检查 sql/ 目录下是否真的有这些文件
 echo
 echo "校验 sql/ 目录..."
