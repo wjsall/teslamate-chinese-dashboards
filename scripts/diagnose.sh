@@ -131,12 +131,10 @@ detect_service_container() {
 # ---------------- 2. 容器状态 ----------------
 echo "2. 容器状态"
 EXPECTED=(teslamate database grafana mosquitto)
-ALL_RUNNING=1
 for svc in "${EXPECTED[@]}"; do
     CID=$(detect_service_container "$svc")
     if [ -z "$CID" ]; then
         fail_r "${svc} 容器未找到（Compose service: ${svc}；兼容 ${PROJECT}-${svc}-1 / ${PROJECT}_${svc}_1）" container_down
-        ALL_RUNNING=0
         continue
     fi
 
@@ -146,7 +144,6 @@ for svc in "${EXPECTED[@]}"; do
         ok "${svc} 运行中（自 $UPTIME 起）"
     else
         fail_r "${svc} 状态异常: $STATUS" container_down
-        ALL_RUNNING=0
         info "最近 10 行日志："
         docker logs --tail 10 "$CID" 2>&1 | sed 's/^/    | /'
     fi

@@ -54,9 +54,11 @@
 #   所以默认模式还会把基线文件跟**它自己的上一版**（git 里的）比一次：
 #   契约行变了、RECORDED_REVISION 却没变 → 报红。判据是机器可校验的，不依赖有没有人
 #   认真看那次 diff。工作区的基线跟 HEAD 不一致时比的是 HEAD（还没提交的改动也拦得住）。
-#   拿不到上一版时明确跳过并说明原因，绝不假红（见 ratchet_against_history 的注释）。
-#   ⚠ CI 里要能比对，checkout 深度必须 ≥ 2；深度不够只会跳过、不会假红，但那道门也就
-#     形同虚设。.github/workflows/ghcr-build.yml 的 lint job 已经设了 fetch-depth: 2。
+#   本地拿不到上一版时明确跳过并说明原因；CI（CI / GITHUB_ACTIONS 非空）则 fail-closed，
+#   防止浅克隆让棘轮失效。确有意从零建立历史时，可显式设置
+#   SQL_REVISION_ALLOW_MISSING_HISTORY=1 豁免一次，并让日志保留这次选择。
+#   ⚠ CI 里正常比对需要 checkout 深度 ≥ 2；.github/workflows/ghcr-build.yml 的 lint job
+#     已经设了 fetch-depth: 2。
 #
 # 退出码：0 = 契约与基线一致（或 --update-baseline / --create-baseline 成功写入）；
 # 1 = 有未经 revision 确认的契约变化，或写入被拒绝。
@@ -382,6 +384,7 @@ CORE_BODY_FUNCTIONS = {
     'lookup_tou_rate',           # 时段/地点/AC-DC → 电价 的匹配规则
     'effective_cost',            # 仪表盘取费用的统一入口（11 个仪表盘在用）
     'cost_before_tou',           # 「不按分时电价时显示多少钱」——对账面板的比较基准
+    '_tou_default_cost',         # 默认兜底费用公式；只改电量口径/舍入也会改变历史显示金额
     'backfill_all_tou',          # 历史费用回算
     'set_default_charging_rate', # 默认电价（决定它会不会顶掉真实账单）
     'trigger_compute_tou',       # 充电完成时自动算/清分时电价费用
@@ -686,6 +689,28 @@ def _git_show(spec):
     return r.stdout
 
 
+def history_unavailable(reason):
+    """本地允许说明后跳过；CI 默认拒绝，除非显式声明这次没有可比历史。"""
+    in_ci = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
+    waiver = os.environ.get('SQL_REVISION_ALLOW_MISSING_HISTORY') == '1'
+    if not in_ci:
+        return True, reason
+    if waiver:
+        return True, (
+            f'{reason}；CI 已显式设置 SQL_REVISION_ALLOW_MISSING_HISTORY=1，'
+            '本次允许跳过历史棘轮'
+        )
+
+    print("❌ CI 中无法取得上一版 SQL 契约基线，历史棘轮不能安全执行。")
+    print(f"   原因：{reason}")
+    print("   请把 checkout 深度设为至少 2，并确保上一版基线文件可读取。")
+    print(
+        "   只有确实在建立全新基线、且本次变更已经另行核验时，才可显式设置 "
+        "SQL_REVISION_ALLOW_MISSING_HISTORY=1。"
+    )
+    return False, None
+
+
 def ratchet_against_history():
     """棘轮：基线文件里的契约行相对上一版变了、RECORDED_REVISION 却没变 → 报红。
 
@@ -702,22 +727,23 @@ def ratchet_against_history():
     （「把函数纳入核心函数体指纹监视范围」那条豁免同样适用，判据与 --update-baseline
     完全一致，否则那条合法路径会在这里假红。）
 
-    拿不到上一版时**明确跳过并说明原因**，绝不假红：这道门的全部价值是「它响的时候
-    可信」，一次假红就会让人学会无视它。已知的合法跳过场景：不在 git 仓库里跑、
-    仓库还没有第二个提交、CI 只 checkout 了一层（fetch-depth: 1）、基线文件是这次新加的、
-    以及基线格式版本（FORMAT_VERSION）升级导致整文件重建。
+    本地拿不到上一版时明确跳过并说明原因；CI 必须拿到历史，否则 fail-closed。新仓库或
+    首次加入基线的 CI 可用 SQL_REVISION_ALLOW_MISSING_HISTORY=1 显式豁免一次。
+    FORMAT_VERSION 变化本身不豁免契约变化：两版仍能解析时照常比较契约行。
 
     返回 (ok: bool, skipped_reason: str|None)。
     """
     if not os.path.exists(BASELINE_PATH):
-        return True, '基线文件不存在'
+        return history_unavailable('基线文件不存在')
 
     with open(BASELINE_PATH, encoding='utf-8') as f:
         cur_text = f.read()
 
     head_text = _git_show('HEAD:' + BASELINE_PATH)
     if head_text is None:
-        return True, '取不到 HEAD 里的基线文件（不在 git 仓库里跑？基线是这次新加的？）'
+        return history_unavailable(
+            '取不到 HEAD 里的基线文件（不在 git 仓库里跑？基线是这次新加的？）'
+        )
 
     if head_text != cur_text:
         prev_text = head_text
@@ -726,23 +752,22 @@ def ratchet_against_history():
         prev_text = _git_show('HEAD~1:' + BASELINE_PATH)
         prev_label = 'HEAD~1（上一次提交）'
         if prev_text is None:
-            return True, ('取不到上一次提交里的基线文件（仓库只有一个提交？'
-                          'CI 的 checkout 深度是 1？基线是上一次提交才加进来的？）')
+            return history_unavailable(
+                '取不到上一次提交里的基线文件（仓库只有一个提交？'
+                'CI 的 checkout 深度是 1？基线是上一次提交才加进来的？）'
+            )
 
     parsed = parse_baseline_text(prev_text, strict=False)
     if parsed is None:
-        return True, f'{prev_label} 里的基线文件格式解析不了'
+        return history_unavailable(f'{prev_label} 里的基线文件格式解析不了')
     prev_contract, prev_rev, prev_digest, prev_fmt = parsed
-    if prev_fmt != str(FORMAT_VERSION):
-        return True, (f'{prev_label} 里的基线是 FORMAT_VERSION={prev_fmt!r}，'
-                      f'与当前脚本的 {FORMAT_VERSION} 不同（格式升级会整文件重建，无法逐行比对）')
     if prev_rev is None:
-        return True, f'{prev_label} 里的基线没有 RECORDED_REVISION 字段'
+        return history_unavailable(f'{prev_label} 里的基线没有 RECORDED_REVISION 字段')
 
     cur_parsed = parse_baseline_text(cur_text, strict=False)
     if cur_parsed is None:
-        return True, '当前基线文件格式解析不了（上面的比对已经会报）'
-    cur_contract, cur_rev, cur_digest, _cur_fmt = cur_parsed
+        return False, None
+    cur_contract, cur_rev, cur_digest, cur_fmt = cur_parsed
 
     added, removed, changed = diff_contracts(cur_contract, prev_contract)
     if not (added or removed or changed):
@@ -753,6 +778,11 @@ def ratchet_against_history():
         return True, None
 
     print(f"❌ 基线文件的契约行相对{prev_label}变了，但 RECORDED_REVISION 还是 {cur_rev}。")
+    if cur_fmt != prev_fmt:
+        print(
+            f"   FORMAT_VERSION 同时从 {prev_fmt!r} 变为 {cur_fmt!r}，"
+            "但格式升级不能替代 SQL_COMPAT_REVISION 对契约变化的确认。"
+        )
     print()
     print_diff(cur_contract, prev_contract, {}, added, removed, changed)
     print()
@@ -762,8 +792,8 @@ def ratchet_against_history():
           " --update-baseline → 一起提交。")
     print()
     print("如果你是用「删掉基线再 --create-baseline」重建的：那条路不检查 revision，")
-    print("这道门就是专门补它的。确实需要整文件重建（例如脚本的 FORMAT_VERSION 升级），")
-    print("请连同脚本的改动一起提交，这道门会因为格式版本不同而跳过。")
+    print("这道门就是专门补它的。即使 FORMAT_VERSION 同时升级，只要契约变了，")
+    print("仍需 bump SQL_COMPAT_REVISION；纯格式重建且契约行没变则不会报错。")
     return False, None
 
 
@@ -860,6 +890,21 @@ def main():
         print("   确实需要从零重建（例如脚本的 FORMAT_VERSION 升了级），用 --create-baseline，",
               file=sys.stderr)
         print("   并把整个文件的 diff 放进同一次提交交给评审。", file=sys.stderr)
+        sys.exit(1)
+
+    # 默认只读模式必须先确认两个 revision 单一事实源一致。否则只改基线里的
+    # RECORDED_REVISION 就能让后面的契约比对和历史棘轮都误判为已经确认。
+    if not update and current_rev != recorded_rev:
+        print(
+            "❌ SQL revision 不一致："
+            f"{VERSIONS_ENV_PATH} 记录 {current_rev}，"
+            f"{BASELINE_PATH} 记录 {recorded_rev}。"
+        )
+        print(
+            "   请确认应有的 SQL_COMPAT_REVISION：基线记录被误改就恢复它；"
+            "config 确实已 bump 且契约有变化时，再运行 "
+            "bash scripts/check-sql-revision.sh --update-baseline。"
+        )
         sys.exit(1)
 
     added, removed, changed = diff_contracts(current, baseline)

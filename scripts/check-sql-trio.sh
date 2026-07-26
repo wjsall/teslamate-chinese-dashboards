@@ -186,6 +186,43 @@ for sql in "${SQL_INSTALLS[@]}"; do
     fi
 done
 
+# 三条安装路径都会在装完分时电价 SQL 后调用 backfill_all_tou()。psql 默认遇到单条 SQL
+# 错误仍可能退出 0；每一处回算命令都必须显式启用 ON_ERROR_STOP，成功提示才可信。
+echo
+echo "校验历史分时费用回算的错误退出设置..."
+BACKFILL_PATHS=(simple-deploy.sh migrate-from-official.sh scripts/upgrade.sh)
+for entry in "${BACKFILL_PATHS[@]}"; do
+    if detail=$(python3 - "$entry" <<'PY'
+import sys
+
+path = sys.argv[1]
+lines = open(path, encoding='utf-8').read().splitlines()
+calls = [i for i, line in enumerate(lines) if 'FROM backfill_all_tou();' in line]
+if not calls:
+    print('找不到 backfill_all_tou() 的实际调用')
+    raise SystemExit(1)
+
+for line_no in calls:
+    start = line_no
+    floor = max(0, line_no - 12)
+    while start >= floor and 'docker exec' not in lines[start]:
+        start -= 1
+    if start < floor:
+        print(f'第 {line_no + 1} 行回算调用找不到对应的 docker exec psql 命令')
+        raise SystemExit(1)
+    command = '\n'.join(lines[start:line_no + 1])
+    if '-v ON_ERROR_STOP=1' not in command:
+        print(f'第 {line_no + 1} 行回算调用缺少 -v ON_ERROR_STOP=1')
+        raise SystemExit(1)
+PY
+    ); then
+        echo "  ✓ $entry"
+    else
+        echo "  ✗ $entry: $detail"
+        fail=1
+    fi
+done
+
 echo
 if [[ $fail -eq 0 ]]; then
     echo "✅ 全部 SQL 安装文件引用一致，sql/ 文件都存在"

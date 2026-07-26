@@ -14,7 +14,7 @@
 # 依赖：docker
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 
 PG_IMAGE="postgres:18-trixie"
 CONTAINER="tou-behavior-test-$$"
@@ -265,6 +265,90 @@ assert_eq "电价只配到 08:00，充电跨到 09:00 → NULL（不是把缺口
 if [ "$GOT3" = "2.1000" ]; then
     echo "       ↑ 这正是修复前的低估值，说明断言抓的就是那个 bug"
 fi
+
+# 定时充电会在真正开始前留下数小时的 0 功率等待期。这种长间隔没有电量归属不确定性，
+# 不能仅凭时长把整笔费用打成 NULL。这里保留实测回归的四个采样点；23:05→00:00 也是
+# 一个累计值缺失、起点有功率的长间隔，但全天同价时电量落在哪一分钟都不影响费用。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES (NULL, 0, 24, 0.5, '统一');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-01 18:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (90, utc_start, utc_start + INTERVAL '6 hours', 7, 7, 1, NULL);
+
+  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases) VALUES
+    (90, utc_start,                         0, 3),
+    (90, utc_start + INTERVAL '5 hours',    7, 3),
+    (90, utc_start + INTERVAL '305 minutes', 7, 3),
+    (90, utc_start + INTERVAL '6 hours',    0, 3);
+END
+$t$;
+SQL
+assert_eq "定时充电：0 功率等待 5 小时不影响分时计费" \
+    "3.5000" "$(psql_q 'SELECT compute_tou_cost(90)')"
+
+# 真正充电时丢采样仍要 fail-closed。charge_energy_added 没填时必须退回间隔起点功率：
+# 07:05→09:00 起点为 7kW，不能丢掉它再拿前 5 分钟代表整笔 14kWh。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES (NULL, 0, 8, 0.3, '谷');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-02 07:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (91, utc_start, utc_start + INTERVAL '2 hours', 14, 14, 1, NULL);
+
+  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases) VALUES
+    (91, utc_start,                         7, 3),
+    (91, utc_start + INTERVAL '5 minutes',  7, 3),
+    (91, utc_start + INTERVAL '2 hours',    0, 3);
+END
+$t$;
+SQL
+assert_eq "充电中丢采样：累计电量缺失时由起点 7kW 判定 → NULL" \
+    "<NULL>" "$(psql_q 'SELECT compute_tou_cost(91)')"
+
+# 累计电量判据优先于功率判据：长间隔起点虽然是 0kW，但累计值从 0 增到 1，
+# 证明期间确实充进了电。前面另留一个正常的有功短间隔，避免函数因 SUM(raw_kwh)=0
+# 而碰巧返回 NULL，让这条断言只在累计增量判据真正生效时才通过。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES (NULL, 0, 24, 0.5, '统一');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-03 10:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (92, utc_start, utc_start + INTERVAL '70 minutes', 1, 1, 1, NULL);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (92, utc_start,                          7, 3, 0),
+    (92, utc_start + INTERVAL '5 minutes',   0, 3, 0),
+    (92, utc_start + INTERVAL '65 minutes',  0, 3, 1),
+    (92, utc_start + INTERVAL '70 minutes',  0, 3, 1);
+END
+$t$;
+SQL
+assert_eq "长间隔起点 0kW、但累计电量有增量 → NULL" \
+    "<NULL>" "$(psql_q 'SELECT compute_tou_cost(92)')"
 
 # --- 4. 显式 0 元电价（免费充电桩）≠ 没配 ---
 psql_run <<'SQL'
@@ -555,7 +639,10 @@ make_charge 22 '2026-04-02 10:00' 60 0
 psql_run <<'SQL'
 UPDATE charging_processes SET cost = 5 WHERE id = 22;
 SQL
-assert_eq "0 度充电、没配分时时段 → 不写旁路值（TeslaMate 的 5 元不被抹成 0）" "5" "$(psql_q 'SELECT effective_cost(22, (SELECT cost FROM charging_processes WHERE id=22))')"
+assert_eq "0 度充电、没配分时时段 → TeslaMate 的 5 元不被抹成 0" \
+    "5" "$(psql_q 'SELECT effective_cost(22, (SELECT cost FROM charging_processes WHERE id=22))')"
+assert_eq "…并且没有写入 0 元分时费用旁路值" \
+    "0" "$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost WHERE charging_process_id = 22')"
 
 # 升级上来的用户库里还留着旧版写的那两条全天规则。设默认电价时会把它们清掉——
 # 这是在删用户数据库里的行，**必须当面告诉用户**，不能静默。
@@ -563,6 +650,10 @@ psql_run <<'SQL'
 INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label, apply_to_dc)
 VALUES (NULL, 0, 24, 1.0, '默认(AC)', FALSE);
 SQL
+psql_call "SELECT * FROM backfill_all_tou()"
+LEGACY_STALE_COUNT="$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost')"
+assert_eq "旧版全天规则已经留下逐笔分时费用（后面的清理断言不是空跑）" \
+    "1" "$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost WHERE charging_process_id = 20')"
 LEGACY_MSG="$(psql_q "SELECT message FROM set_default_charging_rate(1.5)")"
 case "$LEGACY_MSG" in
     *"移除了1条"*) LEGACY_TOLD="告诉了用户";;
@@ -570,6 +661,13 @@ case "$LEGACY_MSG" in
 esac
 assert_eq "清掉旧版留下的全天规则 → 必须在返回消息里说清楚" "告诉了用户" "$LEGACY_TOLD"
 assert_eq "…而且那条规则确实被删掉了" "0" "$(psql_q 'SELECT count(*) FROM tou_rates')"
+assert_eq "…按旧规则算出的逐笔费用也立即清掉" \
+    "0" "$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost WHERE charging_process_id = 20')"
+case "$LEGACY_MSG" in
+    *"清除了${LEGACY_STALE_COUNT}笔"*) LEGACY_RECALC_TOLD="报了清除笔数";;
+    *)                               LEGACY_RECALC_TOLD="没报清除笔数";;
+esac
+assert_eq "…返回消息包含重算清除的准确笔数" "报了清除笔数" "$LEGACY_RECALC_TOLD"
 
 # 反过来：没有旧规则可清时，别往正常路径上加噪音
 case "$(psql_q "SELECT message FROM set_default_charging_rate(1.0)")" in
@@ -597,9 +695,12 @@ SQL
 # 留着上一组设的价会让费用回退成一个默认电价的数，把这条断言的锋芒磨掉。清空它。
 psql_call "SELECT set_default_charging_rate(NULL)"
 
-make_charge 30 '2026-03-12 07:00' 120 7            # 07:00-09:00，14 kWh
 psql_run <<'SQL'
-INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (NULL, 0, 24, 0.5, '全天');
+INSERT INTO geofences (id, name) VALUES (30, '缺口计数测试');
+SQL
+make_charge 30 '2026-03-12 07:00' 120 7 30         # 07:00-09:00，14 kWh；独立地点便于精确计数
+psql_run <<'SQL'
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (30, 0, 24, 0.5, '全天');
 SQL
 psql_call "SELECT * FROM backfill_all_tou()"
 assert_eq "全天电价 → 回算写入 14kWh × 0.5 = 7" "7.0000" "$(psql_q 'SELECT cost_tou FROM charging_processes_tou_cost WHERE charging_process_id = 30')"
@@ -607,23 +708,24 @@ assert_eq "全天电价 → 回算写入 14kWh × 0.5 = 7" "7.0000" "$(psql_q 'S
 # 把电价改成只覆盖 0-8 点，这笔充电跨到 09:00 → 算不出来
 psql_run <<'SQL'
 DELETE FROM tou_rates;
-INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (NULL, 0, 8, 0.3, '谷');
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (30, 0, 8, 0.3, '谷');
 SQL
 psql_call "SELECT * FROM backfill_all_tou()"
 assert_eq "改成只覆盖一半 → 回算必须清掉旧值" "0" "$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost WHERE charging_process_id = 30')"
 assert_eq "清掉之后费用回退，不再显示那个算错的 7" "<NULL>" "$(psql_q 'SELECT effective_cost(30, NULL)')"
-assert_eq "回算计数：「配了但这笔有缺口」记在 gapped，不跟「没配」混在一起" "true" "$(psql_q 'SELECT (gapped > 0)::text FROM backfill_all_tou()')"
+assert_eq "回算计数：目标充电精确记为 1 笔 gapped，不借用其他夹具凑数" \
+    "1" "$(psql_q 'SELECT gapped FROM backfill_all_tou()')"
 
 # 触发器路径（充电完成/费用变更时自动算）也必须会清
 psql_run <<'SQL'
 DELETE FROM tou_rates;
-INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (NULL, 0, 24, 0.5, '全天');
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (30, 0, 24, 0.5, '全天');
 UPDATE charging_processes SET cost = cost WHERE id = 30;
 SQL
 assert_eq "触发器：电价配全时写入 7" "7.0000" "$(psql_q 'SELECT cost_tou FROM charging_processes_tou_cost WHERE charging_process_id = 30')"
 psql_run <<'SQL'
 DELETE FROM tou_rates;
-INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (NULL, 0, 8, 0.3, '谷');
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label) VALUES (30, 0, 8, 0.3, '谷');
 UPDATE charging_processes SET cost = cost WHERE id = 30;
 SQL
 assert_eq "触发器：算不出来时同样清掉旧值" "0" "$(psql_q 'SELECT count(*) FROM charging_processes_tou_cost WHERE charging_process_id = 30')"
@@ -754,6 +856,44 @@ reinstall_tou
 assert_eq "用户主动清空默认电价后再升级 → 保持清空，不被迁移撤销" "<NULL>" "$(psql_q 'SELECT default_rate FROM tou_settings')"
 
 # ===========================================================================
+# 升级重建对账视图：下游用户视图不能阻止费用优先级更新
+# ===========================================================================
+echo ""
+echo "===== 升级重建有依赖对象的对账视图 ====="
+
+# 模拟旧版本中「分时电价压过 TeslaMate 记录金额」的视图表达式，再建一个依赖它的用户视图。
+psql_run <<'SQL'
+CREATE OR REPLACE VIEW charging_processes_v AS
+SELECT
+  cp.*,
+  COALESCE(t.cost_tou, cp.cost) AS cost_effective,
+  t.cost_tou,
+  t.energy_by_period,
+  CASE
+    WHEN cp.cost IS NOT NULL THEN 'flat'
+    WHEN t.cost_tou IS NOT NULL THEN 'TOU'
+    ELSE 'unknown'
+  END AS cost_mode
+FROM charging_processes cp
+LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id;
+
+CREATE VIEW user_charging_costs AS
+SELECT id, cost_effective FROM charging_processes_v;
+SQL
+reinstall_tou
+assert_eq "重跑安装后，依赖 charging_processes_v 的用户视图仍然存在" \
+    "user_charging_costs" "$(psql_q "SELECT to_regclass('public.user_charging_costs')::text")"
+
+make_charge 46 '2026-03-11 20:00' 60 7
+psql_run <<'SQL'
+UPDATE charging_processes SET cost = 120 WHERE id = 46;
+INSERT INTO charging_processes_tou_cost (charging_process_id, cost_tou)
+VALUES (46, 7);
+SQL
+assert_eq "重跑安装后，对账视图改为 TeslaMate 金额优先（120，不是分时估算 7）" \
+    "120" "$(psql_q 'SELECT cost_effective FROM charging_processes_v WHERE id = 46')"
+
+# ===========================================================================
 # 卸载：费用显示完全回到 TeslaMate 自己的数据
 #
 # 搬迁之后，TeslaMate 的原值只存在于覆盖表里。直接删表 = 把 TeslaMate 自己的数据也删了，
@@ -765,15 +905,22 @@ echo ""
 echo "===== 卸载后回到 TeslaMate 自己的数据 ====="
 
 make_charge 44 '2026-03-11 18:00' 60 7             # TeslaMate 没有金额，靠默认电价显示
+make_charge 45 '2026-03-11 19:00' 60 7             # TeslaMate 没有金额，用户单独指定了手工价
+psql_run <<'SQL'
+INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, rate)
+VALUES (45, 3.50, 'manual', 0.5);
+SQL
 psql_call "SELECT set_default_charging_rate(2.0)"
 assert_eq "改默认电价 → 搬迁那笔的显示金额跟着变（7kWh × 2.0）" "14.00" "$(psql_q 'SELECT effective_cost(40, (SELECT cost FROM charging_processes WHERE id=40))')"
 assert_eq "…但 TeslaMate 的原值单独存着，没被重算覆盖" "7.0000" "$(psql_q 'SELECT original_cost FROM charging_process_cost_overrides WHERE charging_process_id = 40')"
+assert_eq "卸载前：专用夹具仍保留 source=manual 的手工覆盖行" \
+    "3.5000" "$(psql_q "SELECT cost FROM charging_process_cost_overrides WHERE charging_process_id = 45 AND source = 'manual'")"
 
 psql_call "SELECT uninstall_tou()"
 assert_eq "卸载后：分时电价的表都没了" "<NULL>" "$(psql_q "SELECT to_regclass('public.tou_rates')::text")"
 assert_eq "卸载后：搬走的那笔原值回到了 TeslaMate 记录（是 7，不是重算出来的 14）" "7.0000" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 40')"
 assert_eq "卸载后：默认电价算出来的数没被写进 TeslaMate 记录" "<NULL>" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 44')"
-assert_eq "卸载后：手工指定的价格也没被写进 TeslaMate 记录" "<NULL>" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 30')"
+assert_eq "卸载后：手工指定的价格也没被写进 TeslaMate 记录" "<NULL>" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 45')"
 assert_eq "卸载后：TeslaMate 自己报的费用原样不动" "6.66" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 41')"
 
 echo ""
