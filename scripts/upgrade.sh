@@ -352,10 +352,10 @@ else
         #   gapped  意味着「这些充电的时段你没配全」，是需要用户回去补配置的信号；
         #   failed  正常恒为 0，非 0 说明有笔充电算崩了，沉默等于把问题埋掉。
         # 只在非 0 时才多打那几行，正常路径保持安静。
-        echo "    回算历史分时电价费用..."
+        echo "    回算历史分时电价费用（充电记录多的话要几十秒，请稍候）..."
         if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
                 -At -c "SELECT format('  ✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
-                        || CASE WHEN cleared > 0 THEN format(E'\n      · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按默认电价或 TeslaMate 记录的金额显示，跟升级前会不一样', cleared) ELSE '' END
+                        || CASE WHEN cleared > 0 THEN format(E'\n      · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按 TeslaMate 记录的金额或默认电价显示，跟升级前会不一样', cleared) ELSE '' END
                         || CASE WHEN gapped  > 0 THEN format(E'\n      · %s 笔充电有时段没被你配的分时电价规则覆盖，算不出可信金额；想让它们按分时电价计费，去「⚡ 分时电价配置」仪表盘的「配置审计」看缺哪几个小时', gapped) ELSE '' END
                         || CASE WHEN failed  > 0 THEN format(E'\n      ⚠ %s 笔充电回算时出错，已跳过；这些充电的费用维持原样，可稍后手动跑 SELECT * FROM backfill_all_tou(); 重试', failed) ELSE '' END
                         FROM backfill_all_tou();" \
@@ -365,6 +365,15 @@ else
             echo -e "${YELLOW}    ⚠ 回算失败（不影响升级，可稍后手动跑 SELECT backfill_all_tou();）${NC}"
             sed 's/^/      /' /tmp/tou-backfill.log | head -10
             WARN_STEPS+=("TOU 历史费用回算")
+        fi
+        # 升级时如果判断不出你原来设的默认电价是多少，安装 SQL 会把要跟你说的话留在库里。
+        # psql 的 NOTICE 走 stderr、上面已经丢进 /tmp/tou-install.log 了，用户看不见，
+        # 所以这里主动查出来讲一遍。
+        TOU_DEFAULT_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
+            -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" \
+            2>/dev/null) || TOU_DEFAULT_NOTE=""
+        if [ -n "$TOU_DEFAULT_NOTE" ]; then
+            echo -e "${YELLOW}    ${TOU_DEFAULT_NOTE}${NC}"
         fi
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"
