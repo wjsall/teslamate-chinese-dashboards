@@ -294,23 +294,74 @@ jobs:
           docker pull "$REF"
           docker tag "$REF" teslamate-cn-ci:local
 
-      - name: 解析最新已发布 tag
+      - name: 解析可用的最新已发布 tag
         id: oldver
         run: |
-          # 排除当前 ref 自己：tag push 触发时（github.ref = refs/tags/vX.Y.Z），
-          # actions/checkout + fetch-depth: 0 会把刚推的这个 tag 也拉下来，若不排除，
-          # `head -1` 选中的就是"正在构建、还没跑完的这次发布"本身——拿它当"升级前的旧
-          # 基线"去 pull，而对应的多架构镜像要等本工作流并行的 build job（10+ 分钟）跑完
-          # 才存在，几乎必然 manifest unknown 导致本 job 失败。
-          # push main 时 GITHUB_REF_NAME=main，不匹配任何 v* tag，不会误排除。
-          GITTAG=$(git tag --list 'v*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1)
-          if [ -z "$GITTAG" ]; then
-            echo "❌ 仓库里没有任何 v* tag，无法测试升级路径" >&2
+          select_upgrade_baseline() {
+            local image_repository="$1"
+            local all_tags current_commit_tags candidate image_ref inspect_error
+            local attempted=0
+            local attempted_report=""
+
+            all_tags=$(git tag --list 'v*' --sort=-v:refname)
+            if [ -z "$all_tags" ]; then
+              echo "❌ 仓库里没有任何 v* tag，无法测试升级路径" >&2
+              return 1
+            fi
+
+            # 发版时 main 与 tag 指向同一个提交，任何“排除自己”的写法都必须按提交判断，
+            # 不能按 ref 名字判断。main 构建跑到这里时，新 tag 可能已经存在，但正式镜像
+            # 要等 tag 构建通过发布门后才会出现；因此排除 HEAD 上的全部 v* tag。
+            # 不再按 GITHUB_REF_NAME 过滤：按提交排除同时覆盖 main 和 tag 构建，ref 名过滤
+            # 没有额外保护能力，反而会重新引入“ref 名等于当前版本”的错误假设。
+            current_commit_tags=$(git tag --points-at HEAD --list 'v*')
+
+            while IFS= read -r candidate; do
+              [ -n "$candidate" ] || continue
+              if printf '%s\n' "$current_commit_tags" | grep -Fqx -- "$candidate"; then
+                echo "跳过指向当前提交的 tag：$candidate" >&2
+                continue
+              fi
+
+              attempted=$((attempted + 1))
+              image_ref="${image_repository}:${candidate#v}"
+              echo "检查旧版候选镜像：${candidate}（${image_ref}）" >&2
+
+              # docker manifest inspect 直接查询 registry，不需要启动 Docker daemon。
+              if inspect_error=$(docker manifest inspect "$image_ref" 2>&1); then
+                echo "已确认旧版候选镜像存在：$image_ref" >&2
+                printf '%s\n' "$candidate"
+                return 0
+              fi
+
+              inspect_error=${inspect_error//$'\n'/; }
+              if [ -z "$inspect_error" ]; then
+                inspect_error="docker manifest inspect 退出码非 0，未返回错误文本"
+              fi
+              attempted_report="${attempted_report}
+            - ${candidate}（${image_ref}）：${inspect_error}"
+              echo "候选镜像不可用，继续尝试更老版本：${candidate}（${inspect_error}）" >&2
+
+              [ "$attempted" -lt 3 ] || break
+            done <<< "$all_tags"
+
+            if [ "$attempted" -eq 0 ]; then
+              echo "❌ v* tag 全部指向当前提交，没有可作为升级基线的旧版本" >&2
+              echo "已排除：${current_commit_tags:-（无）}" >&2
+              return 1
+            fi
+
+            echo "❌ 找不到可用的旧版升级基线镜像（已检查 ${attempted} 个，最多 3 个）" >&2
+            printf '已尝试：%s\n' "$attempted_report" >&2
+            return 1
+          }
+
+          if ! GITTAG=$(select_upgrade_baseline "bswlhbhmt816/teslamate-chinese-dashboards"); then
             exit 1
           fi
           echo "git_tag=$GITTAG" >> "$GITHUB_OUTPUT"
           echo "img_tag=${GITTAG#v}" >> "$GITHUB_OUTPUT"
-          echo "找到最新已发布版本：$GITTAG（Docker Hub tag：${GITTAG#v}）"
+          echo "找到最新已发布版本：${GITTAG}（Docker Hub tag：${GITTAG#v}）"
 
       - name: 部署旧版本作为升级前基线（镜像 + SQL 均锁定在旧 tag）
         env:
