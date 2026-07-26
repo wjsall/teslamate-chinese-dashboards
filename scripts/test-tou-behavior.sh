@@ -558,7 +558,8 @@ SQL
 assert_eq "跨峰谷等待期增加 3kWh → 超过噪声界，拒绝计费" \
     "<NULL>" "$(psql_q 'SELECT compute_tou_cost(97)')"
 
-# 阈值按整笔所有长断档的累计电量判断：两段各 0.3kWh 不能分别钻过 0.5kWh 的绝对界。
+# 阈值按整笔所有跨价长断档的累计电量判断：两段各 0.3kWh 不能分别钻过 0.5kWh 的绝对界。
+# 除这两段外全部保持 5 分钟采样，避免别的长断档单独越界、替聚合逻辑把断言撑绿。
 psql_run <<'SQL'
 DO $t$
 DECLARE
@@ -572,16 +573,194 @@ BEGIN
   INSERT INTO charges
     (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
   VALUES
-    (98, utc_start,                           0, 3, 0),
-    (98, utc_start + INTERVAL '2 hours',      0, 3, 0.3),
-    (98, utc_start + INTERVAL '24 hours',     0, 3, 0.3),
-    (98, utc_start + INTERVAL '26 hours',     7, 3, 0.6),
-    (98, utc_start + INTERVAL '27 hours',     0, 3, 7.6);
+    (98, utc_start,                       0, 3, 0),
+    (98, utc_start + INTERVAL '2 hours',  0, 3, 0.3);
+
+  -- 第一段之后到第二段之前没有充电，但仍每 5 分钟留一条样本。
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    98,
+    utc_start + INTERVAL '2 hours' + i * INTERVAL '5 minutes',
+    0,
+    3,
+    0.3
+  FROM generate_series(1, 264) AS i;
+
+  -- 第二段同样只增加 0.3kWh；随后真实充电的 7kWh 也全部是 5 分钟采样。
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (98, utc_start + INTERVAL '26 hours', 7, 3, 0.6);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    98,
+    utc_start + INTERVAL '26 hours' + i * INTERVAL '5 minutes',
+    CASE WHEN i = 12 THEN 0 ELSE 7 END,
+    3,
+    0.6 + 7 * i / 12.0
+  FROM generate_series(1, 12) AS i;
 END
 $t$;
 SQL
 assert_eq "两段跨价长断档各 0.3kWh、合计 0.6kWh → 按整笔聚合后拒绝计费" \
     "<NULL>" "$(psql_q 'SELECT compute_tou_cost(98)')"
+
+# 噪声豁免只处理“跨价但配置完整”的微小歧义。起点有价、断档跨进缺价时段时，
+# 即使累计值只增加 0.3kWh，也必须回退，不能把“缺配置”当成“可忽略噪声”。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES (NULL, 0, 8, 0.6, '已配置');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-09 07:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id)
+  VALUES
+    (501, utc_start, utc_start + INTERVAL '2 hours', 0.3, 0.3, 1);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (501, utc_start,                       0, 3, 0),
+    (501, utc_start + INTERVAL '2 hours',  0, 3, 0.3);
+END
+$t$;
+SQL
+assert_eq "跨价噪声豁免不得跨进未配价时段（仅 0.3kWh 也要回退）" \
+    "<NULL>" "$(psql_q 'SELECT compute_tou_cost(501)')"
+
+# B1：19:00 插枪，等待到 23:30；等待期累计增加 0.4kWh，随后用 5 分钟采样充 40kWh。
+# 峰价 0.7、谷价 0.3，真值 = 0.4×0.7 + 40×0.3 = 12.28。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES
+  (NULL, 0, 8, 0.3, '谷'),
+  (NULL, 8, 22, 0.7, '峰'),
+  (NULL, 22, 24, 0.3, '谷');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-10 19:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id)
+  VALUES
+    (502, utc_start, utc_start + INTERVAL '9 hours 30 minutes', 40.4, 40.4, 1);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (502, utc_start,                               0, 3, 0),
+    (502, utc_start + INTERVAL '4 hours 30 minutes', 8, 3, 0.4);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    502,
+    utc_start + INTERVAL '4 hours 30 minutes' + i * INTERVAL '5 minutes',
+    CASE WHEN i = 60 THEN 0 ELSE 8 END,
+    3,
+    0.4 + 8 * i / 12.0
+  FROM generate_series(1, 60) AS i;
+END
+$t$;
+SQL
+assert_eq "B1：跨价等待期 0.4kWh + 谷时短采样 40kWh → 12.28" \
+    "12.2800" "$(psql_q 'SELECT compute_tou_cost(502)')"
+
+# B2：总电量和真值不变，但把谷时 01:00→03:00 的 14kWh 换成一段长断档。
+# 这段起止同价、没有归属歧义，不应消耗前面 0.4kWh 跨价等待期的噪声预算。
+psql_run <<'SQL'
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-11 19:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id)
+  VALUES
+    (503, utc_start, utc_start + INTERVAL '9 hours 45 minutes', 40.4, 40.4, 1);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (503, utc_start,                               0, 3, 0),
+    (503, utc_start + INTERVAL '4 hours 30 minutes', 8, 3, 0.4);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    503,
+    utc_start + INTERVAL '4 hours 30 minutes' + i * INTERVAL '5 minutes',
+    8,
+    3,
+    0.4 + 8 * i / 12.0
+  FROM generate_series(1, 18) AS i;
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (503, utc_start + INTERVAL '8 hours', 8, 3, 26.4);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    503,
+    utc_start + INTERVAL '8 hours' + i * INTERVAL '5 minutes',
+    CASE WHEN i = 21 THEN 0 ELSE 8 END,
+    3,
+    26.4 + 8 * i / 12.0
+  FROM generate_series(1, 21) AS i;
+END
+$t$;
+SQL
+assert_eq "B2：另有谷时内部 14kWh 长断档 → 不吃噪声预算，仍为 12.28" \
+    "12.2800" "$(psql_q 'SELECT compute_tou_cost(503)')"
+
+# 1% 相对预算必须相对于真正参与定价的 raw_kwh。这个结构性夹具故意让 99.4kWh 的
+# 短间隔累计增量与 charger_power=0 冲突：若拿 charging_processes 的 100kWh 当分母，
+# 0.6kWh 跨价断档会被放过，全部 100kWh 被错误加权到 0.7 元，得到 70 元；按累计位置
+# 计算的真值是 30.24 元，偏高 131.48%。选择 2% 上界，是给 1% 电量预算乘以本夹具
+# 最大价差后的理论 1.33% 留出舍入余量；超过它就必须回退 NULL。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES
+  (NULL, 0, 8, 0.7, '峰'),
+  (NULL, 8, 24, 0.3, '谷');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-12 07:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id)
+  VALUES
+    (504, utc_start, utc_start + INTERVAL '70 minutes', 100, 100, 1);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (504, utc_start,                          0, 3, 0),
+    (504, utc_start + INTERVAL '65 minutes',  0, 3, 0.6),
+    (504, utc_start + INTERVAL '70 minutes',  0, 3, 100);
+END
+$t$;
+SQL
+assert_eq "大电量夹具：允许估算时偏差不得超过 2%，否则回退" \
+    "回退(NULL)" "$(psql_q "WITH r AS (SELECT compute_tou_cost(504) AS cost)
+      SELECT CASE
+        WHEN cost IS NULL THEN '回退(NULL)'
+        WHEN ABS(cost - 30.24) / 30.24 * 100 <= 2 THEN '≤2%'
+        ELSE ROUND(ABS(cost - 30.24) / 30.24 * 100, 2)::text || '%'
+      END
+      FROM r")"
 
 # --- 4. 显式 0 元电价（免费充电桩）≠ 没配 ---
 psql_run <<'SQL'
@@ -1045,6 +1224,43 @@ psql_run <<'SQL'
 DELETE FROM tou_rates;
 SQL
 
+# 真因是跨价采样断档；同一笔另有一段“累计电量没涨，但残留功率非零”的未配价长间隔。
+# compute_tou_cost 对后者按累计差值取 0，回算归因必须使用同一口径，不能误报配置缺口。
+psql_run <<'SQL'
+INSERT INTO geofences (id, name) VALUES (33, '残留功率归因测试');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-03-15 07:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (33, utc_start, utc_start + INTERVAL '16 hours', 14, 14, 1, 33);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (33, utc_start,                                7, 3, 0),
+    (33, utc_start + INTERVAL '5 minutes',         7, 3, 0.583333),
+    (33, utc_start + INTERVAL '2 hours',           0, 3, 14),
+    (33, utc_start + INTERVAL '14 hours 55 minutes', 0, 3, 14),
+    (33, utc_start + INTERVAL '15 hours',          7, 3, 14),
+    (33, utc_start + INTERVAL '16 hours',          0, 3, 14);
+END
+$t$;
+
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES
+  (33, 0, 8, 0.3, '谷'),
+  (33, 8, 22, 0.6, '峰');
+SQL
+assert_eq "真因是采样断档，另有零电量残留功率落在缺价时段 → 不误报配置缺口" \
+    "0,1" "$(psql_q "SELECT gapped || ',' || sampling_gapped FROM backfill_all_tou()")"
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+SQL
+
 # ===========================================================================
 # 老数据迁移：只认算得出来的行，且一行都不能丢
 # ===========================================================================
@@ -1121,15 +1337,14 @@ reinstall_tou() {
         || { echo "❌ 重跑 install-tou.sql 失败（模拟升级）"; exit 1; }
 }
 
-# 把对账对象换成非普通视图，并先删掉位于安装文件后半段的两个函数。这样不仅能断言
-# psql 的退出码，还能证明安装没有在视图重建处提前中止。
-prepare_non_view_fixture() {
-    local db="$1" object_kind="$2" object_sql
-
+# 建一个已完成首次安装、但刻意删掉后半段函数的数据库。重跑安装后检查这两个函数，
+# 可以证明脚本没有在 charging_processes_v 处提前中止。
+prepare_install_fixture() {
+    local db="$1" db_owner="${2:-teslamate}"
     docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 \
-        -c "CREATE DATABASE ${db}" >/dev/null \
+        -c "CREATE DATABASE ${db} OWNER ${db_owner}" >/dev/null \
         || { echo "❌ 无法创建安装兼容性夹具数据库 ${db}"; exit 1; }
-    docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
+    docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
         || { echo "❌ 无法创建安装兼容性最小表结构"; exit 1; }
 CREATE TABLE geofences (id SERIAL PRIMARY KEY, name TEXT);
 CREATE TABLE charging_processes (
@@ -1154,14 +1369,24 @@ CREATE TABLE charges (
   battery_level INT
 );
 SQL
-    docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
+    docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1 \
         || { echo "❌ 安装兼容性夹具首次安装失败"; exit 1; }
-    docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
+    docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 \
         -c "DROP FUNCTION effective_cost(INT, NUMERIC);
-            DROP FUNCTION backfill_all_tou();
-            DROP VIEW charging_processes_v;" >/dev/null \
-        || { echo "❌ 无法准备非视图安装夹具"; exit 1; }
+            DROP FUNCTION backfill_all_tou();" >/dev/null \
+        || { echo "❌ 无法准备安装完整性夹具"; exit 1; }
+}
+
+# 把对账对象换成非普通视图。CREATE OR REPLACE 与 DROP VIEW 都必须安全跳过同名对象，
+# 且后半段函数仍要装完整。
+prepare_non_view_fixture() {
+    local db="$1" object_kind="$2" object_sql
+
+    prepare_install_fixture "$db"
+    docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
+        -c "DROP VIEW charging_processes_v;" >/dev/null \
+        || { echo "❌ 无法删除安装兼容性夹具视图"; exit 1; }
 
     case "$object_kind" in
         materialized)
@@ -1169,6 +1394,12 @@ SQL
             ;;
         table)
             object_sql="CREATE TABLE charging_processes_v (id INT)"
+            ;;
+        sequence)
+            object_sql="CREATE SEQUENCE charging_processes_v"
+            ;;
+        index)
+            object_sql="CREATE INDEX charging_processes_v ON charging_processes(id)"
             ;;
         *)
             echo "❌ 未知的对账对象夹具类型：${object_kind}"
@@ -1206,6 +1437,81 @@ assert_eq "charging_processes_v 是普通表 → 重跑安装退出码 0" \
     "0" "$TABLE_INSTALL_RC"
 assert_eq "普通表同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
     "1" "$(psql_q_db tou_install_table "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+prepare_non_view_fixture tou_install_sequence sequence
+if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_sequence -v ON_ERROR_STOP=1 \
+        < sql/install-tou.sql >/dev/null 2>&1; then
+    SEQUENCE_INSTALL_RC=0
+else
+    SEQUENCE_INSTALL_RC=$?
+fi
+assert_eq "charging_processes_v 是序列 → 重跑安装退出码 0" \
+    "0" "$SEQUENCE_INSTALL_RC"
+assert_eq "序列同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_sequence "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+prepare_non_view_fixture tou_install_index index
+if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_index -v ON_ERROR_STOP=1 \
+        < sql/install-tou.sql >/dev/null 2>&1; then
+    INDEX_INSTALL_RC=0
+else
+    INDEX_INSTALL_RC=$?
+fi
+assert_eq "charging_processes_v 是索引 → 重跑安装退出码 0" \
+    "0" "$INDEX_INSTALL_RC"
+assert_eq "索引同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_index "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+# 上游新增了与派生列同名的列时，cp.* 会让 SELECT 出现重复列名（42701）。
+# 安装要保留旧视图、留下提示并继续，不得因为第二次 CREATE 仍失败而中断。
+prepare_install_fixture tou_install_duplicate_column
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_duplicate_column \
+    -v ON_ERROR_STOP=1 -c "ALTER TABLE charging_processes ADD COLUMN cost_effective NUMERIC" \
+    >/dev/null || { echo "❌ 无法准备重复列安装夹具"; exit 1; }
+if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_duplicate_column \
+        -v ON_ERROR_STOP=1 < sql/install-tou.sql >/dev/null 2>&1; then
+    DUPLICATE_COLUMN_INSTALL_RC=0
+else
+    DUPLICATE_COLUMN_INSTALL_RC=$?
+fi
+assert_eq "charging_processes 新增 cost_effective 同名列 → 重跑安装退出码 0" \
+    "0" "$DUPLICATE_COLUMN_INSTALL_RC"
+assert_eq "重复列冲突后 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_duplicate_column "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+# 用普通安装角色建完整套对象，再把视图转给另一个角色。重跑时 CREATE OR REPLACE 会先报
+# must be owner of view（42501）；安装应保留该视图并继续创建后半段函数。
+docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
+    || { echo "❌ 无法创建视图所有权夹具角色"; exit 1; }
+CREATE ROLE tou_fixture_installer LOGIN;
+CREATE ROLE tou_fixture_view_owner;
+SQL
+prepare_install_fixture tou_install_owned_view tou_fixture_installer
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_owned_view \
+    -v ON_ERROR_STOP=1 -c "ALTER VIEW charging_processes_v OWNER TO tou_fixture_view_owner" \
+    >/dev/null || { echo "❌ 无法转移对账视图所有权"; exit 1; }
+if docker exec -i "$CONTAINER" psql -U tou_fixture_installer -d tou_install_owned_view \
+        -v ON_ERROR_STOP=1 < sql/install-tou.sql >/dev/null 2>&1; then
+    OWNED_VIEW_INSTALL_RC=0
+else
+    OWNED_VIEW_INSTALL_RC=$?
+fi
+assert_eq "charging_processes_v 归属别的角色 → 重跑安装退出码 0" \
+    "0" "$OWNED_VIEW_INSTALL_RC"
+assert_eq "外部角色拥有视图时 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_owned_view "SELECT (
         to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"

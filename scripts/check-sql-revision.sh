@@ -395,6 +395,8 @@ CORE_BODY_FUNCTIONS = {
     '_tou_has_matching_rate',    # 「这笔充电有没有电价规则可用」——compute_tou_cost 用它决定
                                  # 算 TOU 还是回退原 cost，改这里就等于改用户看到的费用，
                                  # 而 compute_tou_cost 自己的函数体一个字都不用动
+    '_tou_sample_raw_kwh',       # 计费、断档噪声预算和回算归因共用的单区间电量口径；
+                                 # 漂移会让失败原因和实际金额再次互相矛盾
     '_tou_long_gap_kind',        # 长采样断档是配置缺口还是纯采样问题，并决定是否拒绝计费
 }
 
