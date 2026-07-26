@@ -34,9 +34,22 @@
 #       # 用户被判成「装的 SQL 过期了」。摘要这一条不能省：新加进名单的函数在基线里
 #       # 没有旧指纹，「加名单 + 同时改它的函数体」产生的是「新增」而不是「变化」，
 #       # 只看行类型会把这次改动直接漂白。判定见 is_watchlist_widening()。
+#       # 基线文件不存在时 --update-baseline 直接报错，**不会**替你重新生成——见下面
+#       # --create-baseline 的说明。
+#   bash scripts/check-sql-revision.sh --create-baseline
+#       # 从无到有创建基线，只在文件确实不存在时可用（已存在会拒绝）。
+#       # 为什么要跟 --update-baseline 分成两个 flag：基线缺失时无从比对，凭空生成等于
+#       # 把当前 SQL 一股脑认作「已确认」，任何未经 SQL_COMPAT_REVISION 确认的改动都会
+#       # 被一并洗白。也就是说「删掉基线再重新生成」本来是一条绕过 bump 的路。拆成两个
+#       # flag 之后，日常那条命令碰不到这个行为，重建必须显式说出口。
+#       # 它挡不住存心的人（谁都能删文件再跑 --create-baseline），但重建出来的是**整个
+#       # 文件重写**，diff 摆在评审面前，这一步靠的是可见性而不是门。
+#       # FORMAT_VERSION 升级导致的重建属于这一类：应当由**改脚本的那个人**在同一次提交
+#       # 里跑 --create-baseline，让基线 diff 跟脚本改动一起被评审看到；不要让用户各自
+#       # 在自己机器上重建（那样每个人洗白的东西都不一样，而且谁都没看见）。
 #
-# 退出码：0 = 契约与基线一致（或 --update-baseline 成功写入）；1 = 有未经 revision
-# 确认的契约变化，或 --update-baseline 被拒绝。
+# 退出码：0 = 契约与基线一致（或 --update-baseline / --create-baseline 成功写入）；
+# 1 = 有未经 revision 确认的契约变化，或写入被拒绝。
 #
 # 已知局限（诚实挂账，不假装覆盖）：
 #   - 函数重载（同名不同参数类型）按「函数名」为 key，后出现的定义会覆盖前一个的
@@ -560,8 +573,11 @@ def load_baseline():
     if fmt_ver != str(FORMAT_VERSION):
         print(
             f"基线文件版本无效：期待 FORMAT_VERSION={FORMAT_VERSION}，实际 {fmt_ver!r}。\n"
-            f"这个文件是自动生成的：删掉 {BASELINE_PATH} 再跑 --update-baseline 重新生成，"
-            "然后人工核对一遍内容（尤其是 RECORDED_REVISION）再提交。",
+            "格式升级后的重建应当由**改本脚本的那个人**在同一次提交里做完，让基线 diff 跟"
+            "脚本改动一起被评审看到：\n"
+            f"  rm {BASELINE_PATH} && bash scripts/check-sql-revision.sh --create-baseline\n"
+            "如果你只是拉到了别人的改动却看到这条消息，说明脚本和基线没被一起提交，"
+            "请找改动的作者补，不要在自己机器上重建——那会把你本地的 SQL 状态直接认作基线。",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -662,13 +678,24 @@ def print_diff(current, baseline, defined_in, added, removed, changed):
 def main():
     args = sys.argv[1:]
     update = False
+    create = False
+    usage = ("用法: bash scripts/check-sql-revision.sh "
+             "[--update-baseline | --create-baseline]")
     for a in args:
         if a == '--update-baseline':
             update = True
+        elif a == '--create-baseline':
+            create = True
         else:
             print(f"未知参数: {a}", file=sys.stderr)
-            print("用法: bash scripts/check-sql-revision.sh [--update-baseline]", file=sys.stderr)
+            print(usage, file=sys.stderr)
             sys.exit(2)
+    if update and create:
+        print("--update-baseline 和 --create-baseline 不能一起用："
+              "前者更新已有基线（会检查 SQL_COMPAT_REVISION），"
+              "后者只负责从无到有创建。", file=sys.stderr)
+        print(usage, file=sys.stderr)
+        sys.exit(2)
 
     for path in SQL_FILES:
         if not os.path.exists(path):
@@ -678,15 +705,45 @@ def main():
     current, defined_in = extract_contract(SQL_FILES)
     current_rev = read_current_revision()
     current_digest = compute_source_digest(SQL_FILES)
-    baseline, recorded_rev, recorded_digest = load_baseline()
 
-    if baseline is None:
-        if not update:
-            print(f"缺少基线文件 {BASELINE_PATH}；请先运行 --update-baseline 创建", file=sys.stderr)
+    # --create-baseline 自己判断文件在不在，不走 load_baseline()：FORMAT_VERSION 不匹配时
+    # load_baseline() 会直接退出，而「格式升级后重建」正是这个 flag 要服务的场景之一。
+    if create:
+        if os.path.exists(BASELINE_PATH):
+            print(f"❌ 拒绝创建基线：{BASELINE_PATH} 已经存在。", file=sys.stderr)
+            print("   --create-baseline 只负责「从无到有」。对已有基线的任何更新都走 "
+                  "--update-baseline，", file=sys.stderr)
+            print("   那条路会检查 SQL_COMPAT_REVISION。如果这个 flag 也能覆盖已有基线，"
+                  "两个 flag 合起来", file=sys.stderr)
+            print("   又变成一条「不用 bump 就能重写基线」的路，等于白拆。", file=sys.stderr)
             sys.exit(1)
         write_baseline(current, current_rev, current_digest)
         print(f"✅ 基线已创建：{BASELINE_PATH}（revision={current_rev}，{len(current)} 个对象）")
+        print()
+        print("⚠ 这是**整个基线文件的重新生成**，不是增量更新：它把当前 SQL 的契约原样认作")
+        print("  「已确认」，没有跟任何旧记录比对过，所以这一步不检查 SQL_COMPAT_REVISION。")
+        print("  请把这个文件和触发重建的那次改动放进同一次提交，并在评审时确认：")
+        print(f"    - RECORDED_REVISION={current_rev} 是否确实是当前 SQL 应有的 revision")
+        print("    - 契约行相对上一版只有你预期中的变化（整文件 diff 一眼可见）")
         sys.exit(0)
+
+    baseline, recorded_rev, recorded_digest = load_baseline()
+
+    if baseline is None:
+        print(f"❌ 找不到基线文件 {BASELINE_PATH}。", file=sys.stderr)
+        print("   它是仓库里跟踪的文件，正常情况下不会缺——多半是被误删了。先找回来：",
+              file=sys.stderr)
+        print(f"     git checkout -- {BASELINE_PATH}", file=sys.stderr)
+        print(file=sys.stderr)
+        print("   --update-baseline 刻意不在这里替你重新生成：基线缺失时无从比对，凭空生成",
+              file=sys.stderr)
+        print("   等于把当前 SQL 一股脑认作「已确认」，任何未经 SQL_COMPAT_REVISION 确认的",
+              file=sys.stderr)
+        print("   改动都会被一并洗白。", file=sys.stderr)
+        print("   确实需要从零重建（例如脚本的 FORMAT_VERSION 升了级），用 --create-baseline，",
+              file=sys.stderr)
+        print("   并把整个文件的 diff 放进同一次提交交给评审。", file=sys.stderr)
+        sys.exit(1)
 
     added, removed, changed = diff_contracts(current, baseline)
     has_diff = bool(added or removed or changed)
