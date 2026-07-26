@@ -45,11 +45,31 @@ docker run -d --name "$APP" --network "$NET" \
     -e DATABASE_NAME=teslamate -e DATABASE_HOST="$DB" -e DISABLE_MQTT=true \
     teslamate/teslamate:latest >/dev/null 2>&1
 
+# 等 TeslaMate 把迁移跑完。判据是「迁移条数连续 STABLE_SAMPLES 次采样不变」，
+# 不是「条数超过某个数」。
+#
+# 原来写的是 `-gt 90`，而 TeslaMate 当前有 100 条迁移——也就是说脚本可能在第 91 条
+# 就往下走。实测确实见过 95 和 100 两种结果。剩下几条迁移新增的列这时还不存在，
+# 用到它们的面板会解析失败，门就报一次假红。这道门的全部价值是「它响的时候可信」，
+# 假红比慢几秒糟糕得多。
+#
+# 用「不再增长」当判据的额外好处：将来 TeslaMate 加迁移，这里不用跟着改数字。
+STABLE_SAMPLES=5   # ×2 秒 ≈ 10 秒没有新迁移才算跑完
 migrated=0
-for _ in $(seq 1 90); do
+stable=0
+last=-1
+for _ in $(seq 1 120); do
     n=$(docker exec "$DB" psql -U teslamate -d teslamate -tAc \
         "SELECT count(*) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$n" ] && [ "$n" -gt 90 ] 2>/dev/null; then migrated=$n; break; fi
+    # 表还没建好 / psql 报错时拿到的是空串或非数字，一律当 0 继续等
+    case "${n:-x}" in ''|*[!0-9]*) n=0 ;; esac
+    if [ "$n" -gt 0 ] && [ "$n" -eq "$last" ]; then
+        stable=$((stable + 1))
+        if [ "$stable" -ge "$STABLE_SAMPLES" ]; then migrated=$n; break; fi
+    else
+        stable=0
+    fi
+    last=$n
     sleep 2
 done
 if [ "$migrated" -eq 0 ]; then
@@ -165,7 +185,11 @@ for f in files:
     walk(d)
 
     for idx, (title, sql) in enumerate(items):
-        key = f'{os.path.basename(f)}::{idx}::{title[:40]}'
+        # key 用**完整路径**而不是文件名：grafana/dashboards 下有 internal/ 和 zh-cn/
+        # 两个目录，只用文件名的话，两边一旦出现同名文件，两个不同面板会挤进同一个 key，
+        # 后写的静默覆盖先写的——基线少一条、而且少的那条谁都看不出来。
+        # 今天还没有重名，但这道门的判据不该依赖「以后也不会重名」。
+        key = f'{f}::{idx}::{title[:40]}'
         rendered = render(sql)
         # 多语句（表单写入类面板）不做解析——PREPARE 只接一条语句，而真跑会写数据
         if rendered.count(';') > 1 or re.match(r'\s*(INSERT|UPDATE|DELETE|SELECT\s+\w+\s*\()', rendered, re.I) and ';' in rendered.strip()[:-1]:

@@ -3,8 +3,11 @@
 # 记录 sql/install-coord-functions.sql / install-unit-functions.sql / install-tou.sql
 # 三组 SQL 的对象契约快照（表列/函数签名/视图名/触发器/索引），配合
 # config/versions.env 的 SQL_COMPAT_REVISION 做 CI 强制门（issue #33 同类教训）。
-FORMAT_VERSION=1
+# SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，
+# 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。
+FORMAT_VERSION=2
 RECORDED_REVISION=5
+SOURCE_DIGEST=7803eca510e010ff870906b0551d9bddf5945f73a018a59f82741fec39a22650
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
