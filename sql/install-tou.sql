@@ -364,17 +364,46 @@ BEGIN
     SELECT
       date,
       charger_power,
-      LEAD(date) OVER (ORDER BY date) AS next_date
+      charge_energy_added,
+      LEAD(date) OVER (ORDER BY date) AS next_date,
+      LEAD(charge_energy_added) OVER (ORDER BY date) AS next_charge_energy_added
     FROM charges
     WHERE charging_process_id = cp_id
   ),
   sample_kwh AS (
     SELECT
-      COALESCE(charger_power, 0) * EXTRACT(EPOCH FROM (next_date - date)) / 3600.0 AS raw_kwh,
-      lookup_tou_rate(date, cp_geofence_id, is_dc) AS rate
-    FROM samples
-    WHERE next_date IS NOT NULL
-      AND EXTRACT(EPOCH FROM (next_date - date)) < 600  -- 跳过 > 10 分钟的异常 gap
+      COALESCE(s.charger_power, 0) * EXTRACT(EPOCH FROM (s.next_date - s.date)) / 3600.0 AS raw_kwh,
+      lookup_tou_rate(s.date, cp_geofence_id, is_dc) AS rate,
+      CASE
+        WHEN EXTRACT(EPOCH FROM (s.next_date - s.date)) < 600 THEN FALSE
+        -- TeslaMate 的 charges.charge_energy_added 是本次充电的累计值。两端都有值时，
+        -- 增量是判断 gap 内是否真的充进电的第一事实源；增量为 0 的等待期无害。
+        WHEN s.charge_energy_added IS NOT NULL AND s.next_charge_energy_added IS NOT NULL
+          THEN s.next_charge_energy_added - s.charge_energy_added > 0
+        -- 老数据/测试夹具可能没有累计值，此时才退回间隔起点功率。起点有功率说明
+        -- gap 内可能有电流过；再看 gap 是否跨价/缺价。若整段同价，电量落在哪一分钟
+        -- 都不影响费用，不能因为功率这一层的保守猜测误伤全天同价的定时充电。
+        ELSE COALESCE(s.charger_power, 0) > 0
+          AND EXISTS (
+            SELECT 1
+            FROM (
+              -- 电价只会在整点（含跨日、季节/工作日切换）发生变化；逐个整点探测，
+              -- 再补区间末端，避免一个不足 1 小时但恰好跨整点的 gap 漏检。
+              SELECT boundary AS probe_date
+              FROM generate_series(
+                date_trunc('hour', s.date) + INTERVAL '1 hour',
+                s.next_date - INTERVAL '1 microsecond',
+                INTERVAL '1 hour'
+              ) AS gap_hours(boundary)
+              UNION ALL
+              SELECT s.next_date - INTERVAL '1 microsecond'
+            ) probes
+            WHERE lookup_tou_rate(probes.probe_date, cp_geofence_id, is_dc)
+                  IS DISTINCT FROM lookup_tou_rate(s.date, cp_geofence_id, is_dc)
+          )
+      END AS has_uncertain_long_gap
+    FROM samples s
+    WHERE s.next_date IS NOT NULL
   )
   --【电价覆盖必须完整，缺口不能当免费电】
   -- 这里曾经写的是 SUM(raw_kwh * COALESCE(rate, 0)) / SUM(raw_kwh)：没匹配到电价的采样点
@@ -385,8 +414,12 @@ BEGIN
   -- 回退 TeslaMate 原 cost，而不是给一个偏低的数。
   -- 注意区分两件事：rate = 0（用户明确配了 0 元，比如免费充电桩）是有效电价，照常计算；
   -- rate IS NULL（压根没配到这个时段）才是缺口。
+  -- 相邻采样达到 10 分钟时，优先看累计电量增量：确认有增量就整笔回退。累计值缺失才
+  -- 退回间隔起点功率；这层保守猜测还要同时跨价/缺价才有归属风险。0 功率等待期以及
+  -- 全天同一有效电价都不产生费用不确定性，不能误伤定时充电。
   SELECT
     CASE
+      WHEN COALESCE(bool_or(has_uncertain_long_gap), FALSE) THEN NULL
       WHEN SUM(raw_kwh) = 0 THEN NULL
       WHEN SUM(CASE WHEN raw_kwh > 0 AND rate IS NULL THEN raw_kwh ELSE 0 END) > 0 THEN NULL
       ELSE SUM(raw_kwh * rate) / SUM(raw_kwh)
@@ -689,31 +722,16 @@ EXECUTE FUNCTION trigger_compute_tou();
 --    此刻刷新仪表盘会报 relation does not exist；更糟的是 DROP 成功而 CREATE 因故失败
 --    （连接断、进程被杀）会让视图永久消失。DO 块是单条语句、单个事务，没有这个窗口。
 --
--- 所以：在 DO 块里试着 DROP，撞到依赖就保留旧视图并 RAISE NOTICE 告诉用户怎么处理，
--- 然后正常继续装后面的对象（本视图只用于对账查询，没有任何仪表盘引用它，旧一点没关系）；
--- 能 DROP 掉就重建成最新定义。无论哪条路径，本文件后面的 effective_cost 等对象都照装。
+-- 所以先 CREATE OR REPLACE：列名/列序没变时，它能在不动下游依赖对象的前提下更新表达式。
+-- 只有列布局不兼容等原因让替换失败时，才退回 DROP + CREATE；DROP 又撞到依赖或同名对象
+-- 不是普通视图时，才保留原对象并提示用户。无论哪条路径，本文件后面的对象都照常安装。
+--
+-- ⚠ cost_effective 只看「TeslaMate 记录的金额 → 分时电价」两档，不认识手工覆盖表，也不做
+-- 默认电价现算。同一笔充电可能与仪表盘显示不同；用户实际看到的费用应调用
+-- effective_cost(cp.id, cp.cost)。这里只把现有两档的顺序与主口径对齐。
 DO $view$
-BEGIN
-    BEGIN
-        DROP VIEW IF EXISTS charging_processes_v;
-    -- 两种都要捕获：dependent_objects_still_exist = 有对象依赖它；
-    -- wrong_object_type = 同名对象存在但不是普通视图（例如用户把它换成了物化视图），
-    -- 这时 DROP VIEW 报 "is not a view"，不捕获同样会中断整份文件。
-    EXCEPTION WHEN dependent_objects_still_exist OR wrong_object_type THEN
-        RAISE NOTICE '跳过重建视图 charging_processes_v：有其他对象依赖它，或它已被换成别的对象类型。';
-        RAISE NOTICE '  其余分时电价对象会照常安装，不受影响。';
-        RAISE NOTICE '  想让这个视图也更新到最新定义：先删掉依赖它的对象，再重跑本文件。';
-        RETURN;
-    END;
-
-    -- ⚠ cost_effective 只看「TeslaMate 记录的金额 → 分时电价」两档，**不认识费用覆盖表**
-    --   （手工单价），也不做默认电价的现算。同一笔充电，这个视图给的数可能和仪表盘上
-    --   显示的不一样。要拿「用户实际看到的费用」，一律用 effective_cost(cp.id, cp.cost)。
-    --   这里只把两档的先后顺序跟 effective_cost 对齐（TeslaMate 记录的金额在前），
-    --   免得留下一个跟主口径互相矛盾的算钱视图；补齐另外两档要重定义视图列，
-    --   代价大于收益——但下一个人别把它当权威，它不是。
-    EXECUTE $v$
-        CREATE VIEW charging_processes_v AS
+DECLARE
+    v_query CONSTANT TEXT := $v$
         SELECT
           cp.*,
           COALESCE(cp.cost, t.cost_tou) AS cost_effective,
@@ -727,6 +745,32 @@ BEGIN
         FROM charging_processes cp
         LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
     $v$;
+    v_replace_error TEXT;
+BEGIN
+    -- 常见升级只改表达式、列布局不变。先走这条路径，用户建在本视图上的对象会原样保留，
+    -- 同时拿到最新的费用优先级。
+    BEGIN
+        EXECUTE 'CREATE OR REPLACE VIEW charging_processes_v AS ' || v_query;
+    EXCEPTION WHEN OTHERS THEN
+        v_replace_error := SQLERRM;
+    END;
+
+    IF v_replace_error IS NOT NULL THEN
+        BEGIN
+            DROP VIEW IF EXISTS charging_processes_v;
+        -- 两种都要捕获：dependent_objects_still_exist = 列布局不兼容且有对象依赖它；
+        -- wrong_object_type = 同名对象存在但不是普通视图（例如用户把它换成了物化视图），
+        -- 这时 DROP VIEW 报 "is not a view"，不捕获同样会中断整份文件。
+        EXCEPTION WHEN dependent_objects_still_exist OR wrong_object_type THEN
+            RAISE NOTICE '跳过重建视图 charging_processes_v：原地替换失败（%），且无法在保留下游对象的前提下重建。', v_replace_error;
+            RAISE NOTICE '  其余分时电价对象会照常安装，不受影响。';
+            RAISE NOTICE '  想让这个视图也更新到最新定义：先删掉依赖它的对象或同名非视图对象，再重跑本文件。';
+            RETURN;
+        END;
+
+        -- DROP 与 CREATE 仍在同一个 DO 事务中；CREATE 失败会自动回滚 DROP。
+        EXECUTE 'CREATE VIEW charging_processes_v AS ' || v_query;
+    END IF;
 
     EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含 TeslaMate 原值与分时电价，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
 END
@@ -1314,6 +1358,7 @@ RETURNS TABLE(message TEXT) AS $$
 DECLARE
   v_covered INT;
   v_dropped_rules INT;
+  v_backfill RECORD;
   v_note TEXT := '';
 BEGIN
   -- 负数没有意义，直接挡掉。0 是**合法**的：它表示「这里的电是免费的」，
@@ -1328,12 +1373,16 @@ BEGIN
   -- 没删到就一个字都不多讲，别给正常路径添噪音。
   v_dropped_rules := _tou_drop_legacy_default_rates();
   IF v_dropped_rules > 0 THEN
+    -- 光删规则不够：以前按这些规则算出的旁路值仍会继续生效。立刻回算，让算不出的旧值
+    -- 由 backfill_all_tou() 清掉；正常设置路径没有旧规则，不承担这次全库扫描。
+    SELECT * INTO v_backfill FROM backfill_all_tou();
     v_note := format(
       '｜⚠ 顺带清理：发现并移除了 %s 条由旧版「默认电价」写进分时电价表的全天规则。'
       || '那些规则会让所有充电都按这个统一电价重算，把 TeslaMate 自己报的充电金额（比如超充账单）顶掉；'
       || '移除之后，统一电价只用在 TeslaMate 没有金额的充电上。'
+      || '清理规则后已重算历史，清除了 %s 笔按旧规则算出的费用。'
       || '你自己配的峰谷时段不受影响。',
-      v_dropped_rules);
+      v_dropped_rules, v_backfill.cleared);
   END IF;
 
   -- 全部工作就这一句：把电价记下来。不写任何逐笔费用——费用由 effective_cost()

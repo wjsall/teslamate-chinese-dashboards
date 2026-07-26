@@ -277,7 +277,6 @@ check_pg_version() {
         -tAc "SHOW server_version_num" 2>/dev/null | tr -d '[:space:]' || true)
     [[ -z "$ver" ]] && return 0  # 探测失败不阻塞
     local major=$(( ver / 10000 ))
-    PG_MAJOR=$major
     if (( major >= 18 )); then
         echo "✓ PostgreSQL ${major}（与官方对齐）"
         return 0

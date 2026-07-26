@@ -90,8 +90,8 @@ teslamate_published_port() {
 
 wait_teslamate_migrated() {
     local db="$1" u="$2" d="$3"
-    local i cur last="" stable=0 code tm_st tm_port bad=0
-    for i in $(seq 1 60); do
+    local cur last="" stable=0 code tm_st tm_port bad=0
+    for _ in $(seq 1 60); do
         if docker exec "$db" psql -U "$u" -d "$d" -tAc \
             "SELECT 1 FROM pg_class WHERE relname='charging_processes'" 2>/dev/null | grep -qx 1; then
             break
@@ -117,7 +117,7 @@ wait_teslamate_migrated() {
         return 1
     fi
 
-    for i in $(seq 1 60); do
+    for _ in $(seq 1 60); do
         # 主判据：TeslaMate 的 HTTP 端口能应答。它的 entrypoint 是先跑完整套迁移
         # 再 exec 启动服务，所以端口一应答就等于迁移结束——比数迁移行数准得多。
         tm_port=$(teslamate_published_port)
@@ -353,7 +353,7 @@ else
         #   failed  正常恒为 0，非 0 说明有笔充电算崩了，沉默等于把问题埋掉。
         # 只在非 0 时才多打那几行，正常路径保持安静。
         echo "    回算历史分时电价费用（充电记录多的话要几十秒，请稍候）..."
-        if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate \
+        if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
                 -At -c "SELECT format('  ✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
                         || CASE WHEN cleared > 0 THEN format(E'\n      · 其中 %s 笔原先存着按旧算法算出的费用，已清除；这些充电现在按 TeslaMate 记录的金额或默认电价显示，跟升级前会不一样', cleared) ELSE '' END
                         || CASE WHEN gapped  > 0 THEN format(E'\n      · %s 笔充电有时段没被你配的分时电价规则覆盖，算不出可信金额；想让它们按分时电价计费，去「⚡ 分时电价配置」仪表盘的「配置审计」看缺哪几个小时', gapped) ELSE '' END

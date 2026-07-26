@@ -18,7 +18,7 @@
 # 依赖：docker
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 
 DB="dash-sql-check-$$"
 NET="dash-sql-net-$$"
