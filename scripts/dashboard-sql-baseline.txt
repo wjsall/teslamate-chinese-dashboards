@@ -1,358 +1,375 @@
 # 自动生成——跑 `bash scripts/check-dashboard-sql-runs.sh --update-baseline` 重建。
 # 列出「能被 PostgreSQL 解析」的面板查询。不在表里的多半是变量渲染器还原不了，
-# 不代表面板有问题；在表里却解析失败 = 真回归，门会报红。
-AmortizationTracker.json::0::折旧曲线
-ChargingCostsStats.json::0::总充电量 (kWh)
-ChargingCostsStats.json::10::交流充电费用
-ChargingCostsStats.json::11::直流充电费用
-ChargingCostsStats.json::12::超充站充电费用
-ChargingCostsStats.json::13::总充电费用
-ChargingCostsStats.json::14::每100$length_unit费用
-ChargingCostsStats.json::15::平均每度电费用
-ChargingCostsStats.json::16::行驶能耗
-ChargingCostsStats.json::17::综合能耗
-ChargingCostsStats.json::18::充电站排名（按充电量）
-ChargingCostsStats.json::19::充电站排名（按费用）
-ChargingCostsStats.json::1::总免费充电量 (kWh)
-ChargingCostsStats.json::20::超级充电站排名
-ChargingCostsStats.json::21::免费充电站排名
-ChargingCostsStats.json::22::每月统计
-ChargingCostsStats.json::23::每月统计
-ChargingCostsStats.json::24::每月统计
-ChargingCostsStats.json::2::每公里电耗 (kWh/km)
-ChargingCostsStats.json::3::充电次数
-ChargingCostsStats.json::4::充电费用统计
-ChargingCostsStats.json::5::交流/直流充电能量汇总
-ChargingCostsStats.json::6::在$geofence的充电里程
-ChargingCostsStats.json::7::免费充电里程（无费用）
-ChargingCostsStats.json::8::超充站充电量
-ChargingCostsStats.json::9::总行驶里程
-ChargingCurveStats.json::0::超级充电站充电曲线
-ChargingCurveStats.json::1::超级充电站充电曲线
-ChargingCurveStats.json::2::其他直流充电曲线
-ChargingCurveStats.json::3::其他直流充电曲线
-ChargingCurveStats.json::4::快充曲线统计
-ChargingCurveStats.json::5::最大功率
-ContinuousTrips.json::0::长途行程
-CurrentChargeView.json::0::当前充电状态
-CurrentChargeView.json::11::当前充电状态
-CurrentChargeView.json::12::当前充电状态
-CurrentChargeView.json::14::电流
-CurrentChargeView.json::15::电压
-CurrentChargeView.json::16::功率
-CurrentChargeView.json::17::当前充电状态
-CurrentChargeView.json::1::当前充电状态
-CurrentChargeView.json::2::当前充电状态
-CurrentChargeView.json::3::充电量
-CurrentChargeView.json::4::当前充电状态
-CurrentChargeView.json::6::当前充电状态
-CurrentChargeView.json::7::当前充电状态
-CurrentChargeView.json::8::充电时间
-CurrentDriveView.json::2::当前能耗
-CurrentDriveView.json::3::车辆标准能耗
-CurrentDriveView.json::4::当前驾驶状态
-CurrentDriveView.json::5::当前驾驶状态
-CurrentDriveView.json::6::车外温度
-CurrentDriveView.json::7::车内温度
-CurrentDriveView.json::9::距离
-CurrentState.json::10::车外温度
-CurrentState.json::11::位置
-CurrentState.json::12::状态
-CurrentState.json::13::里程表
-CurrentState.json::14::固件
-CurrentState.json::4::电池电量
-CurrentState.json::5::胎压 ($pressure_unit)
-CurrentState.json::9::车内温度
-DCChargingCurvesByCarrier.json::0::充电运营商包含: $carrier
-DCChargingCurvesByCarrier.json::1::充电运营商包含: $carrier
-DCChargingCurvesByCarrier.json::2::快充曲线图(按运营商)
-DCChargingCurvesByCarrier.json::3::平均充电量 (kWh)
-DCChargingCurvesByCarrier.json::4::平均耗电量 (kWh)
-DCChargingCurvesByCarrier.json::5::平均时间
-DCChargingCurvesByCarrier.json::6::平均费用
-DCChargingCurvesByCarrier.json::7::平均每度电费用
-DCChargingCurvesByCarrier.json::8::帮助
-IncompleteData.json::0::车辆信息 🚘
-IncompleteData.json::1::不完整的数据
-IncompleteData.json::2::不完整的行程 🛣️
-IncompleteData.json::3::不完整的充电 🪫
-MileageStats.json::0::每${period}统计
-MileageStats.json::1::每${period}行驶里程与行程次数
-SpeedRates.json::0::不同速度下的能耗 - $terrain_type 地形
-SpeedRates.json::1::已记录里程
-SpeedRates.json::2::行驶能耗
-SpeedRates.json::3::综合能耗
-SpeedRates.json::4::当前标准能效
-SpeedRates.json::5::不同速度下的行驶时间
-SpeedTemperature.json::0::数据查询
-SpeedTemperature.json::1::短途与长途行程按温度的能耗
-SpeedTemperature.json::2::短途与长途行程按温度的能耗
-SpeedTemperature.json::3::按日期的能耗与温度
-SpeedTemperature.json::4::按日期的能耗与温度
-TrackingDrives.json::2::驾驶记录追踪
-TrackingDrives.json::3::驾驶记录追踪
-TrackingDrives.json::4::驾驶记录追踪
-TrackingDrives.json::5::驾驶记录追踪
-TrackingDrives.json::6::耗电量
-annual-summary.json::0::年度驾驶报告
-annual-summary.json::10::最常到访地点 TOP10
-annual-summary.json::11::最常使用充电站 TOP10
-annual-summary.json::1::年度驾驶报告
-annual-summary.json::2::年度驾驶报告
-annual-summary.json::3::年度驾驶报告
-annual-summary.json::4::年度驾驶报告
-annual-summary.json::5::年度驾驶报告
-annual-summary.json::6::年度驾驶报告
-annual-summary.json::7::年度驾驶报告
-annual-summary.json::8::月度里程分布 ($length_unit)
-annual-summary.json::9::月度充电费用趋势
-battery-health.json::0::电池容量 (kWh)
-battery-health.json::10::电池统计
-battery-health.json::11::电池统计
-battery-health.json::12::电池统计
-battery-health.json::13::电池统计
-battery-health.json::14::当前电池容量
-battery-health.json::15::当前电池容量
-battery-health.json::16::能耗
-battery-health.json::17::当前电池容量 (kWh)
-battery-health.json::18::电池容量 - 按里程表
-battery-health.json::19::电池容量 - 按里程表
-battery-health.json::1::续航里程
-battery-health.json::2::行程统计
-battery-health.json::3::行程统计
-battery-health.json::4::行程统计
-battery-health.json::5::行程统计
-battery-health.json::6::交流/直流电量使用汇总
-battery-health.json::7::预估衰减
-battery-health.json::8::电池健康度
-battery-health.json::9::电池统计
-charge-details.json::10::电池电量
-charge-details.json::11::平均功率
-charge-details.json::12::平均室外温度
-charge-details.json::13::续航里程 ($preferred_range)
-charge-details.json::14::续航里程 ($preferred_range)
-charge-details.json::15::续航里程 ($preferred_range)
-charge-details.json::16::充电曲线
-charge-details.json::17::充电曲线
-charge-details.json::1::费用
-charge-details.json::2::时长
-charge-details.json::3::充电详情
-charge-details.json::4::充电能量
-charge-details.json::5::充电能量
-charge-details.json::6::充电能量
-charge-details.json::8::电池电量
-charge-details.json::9::电池电量
-charge-level.json::1::电量曲线图
-charges.json::0::充电桩类型: $charge_type
-charges.json::1::不完整的充电记录 🪫
-charges.json::2::✏️ 单笔充电单价（手动填/改）
-charges.json::3::✏️ 单笔充电单价（手动填/改）
-charging-health.json::0::充电习惯综合评分 (0-100)
-charging-health.json::2::充电健康管理
-charging-health.json::3::充电健康管理
-charging-health.json::7::充电前/后SOC分布（0-100%，每10%一档）
-charging-health.json::8::月度充电次数趋势
-charging-health.json::9::充电地点统计 TOP30
-charging-stats.json::0::次数
-charging-stats.json::10::电量变化
-charging-stats.json::11::AC/DC – 消耗电量
-charging-stats.json::12::充电热力图
-charging-stats.json::13::AC/DC – 持续时间
-charging-stats.json::14::直流充电曲线图
-charging-stats.json::15::直流充电曲线图
-charging-stats.json::16::充电结束时电量
-charging-stats.json::17::充电结束时电量
-charging-stats.json::18::充电开始时电量
-charging-stats.json::19::充电开始时电量
-charging-stats.json::1::累计总电量
-charging-stats.json::20::充电站排序 (按电量)
-charging-stats.json::21::充电站排序 (按费用)
-charging-stats.json::2::超充总费用 (¥)
-charging-stats.json::3::累计充电总费用 (¥)
-charging-stats.json::5::平均每度电价格
-charging-stats.json::6::平均每度电价格 DC
-charging-stats.json::7::平均每度电价格 AC
-charging-stats.json::9::电量变化
-cost-savings.json::0::省钱分析
-cost-savings.json::10::省钱分析
-cost-savings.json::1::省钱分析
-cost-savings.json::2::省钱分析
-cost-savings.json::3::省钱分析
-cost-savings.json::4::月度费用对比（燃油 vs 匹配电费）
-cost-savings.json::5::月度费用对比（燃油 vs 匹配电费）
-cost-savings.json::6::充电时段费用分布（现金流·仅参考）
-cost-savings.json::7::按小时充电量分布（找最优充电时间）
-cost-savings.json::8::今年充电费用 vs 年度预算（现金流·仅参考）
-cost-savings.json::9::省钱分析
-database-info.json::0::里程
-database-info.json::10::索引
-database-info.json::11::数据库总大小
-database-info.json::12::时区
-database-info.json::1::统计
-database-info.json::2::统计
-database-info.json::3::软件
-database-info.json::4::软件
-database-info.json::5::不完整的数据
-database-info.json::6::不完整的数据
-database-info.json::7::PostgreSQL 版本
-database-info.json::8::数据库信息
-database-info.json::9::数据库信息
-drive-details.json::12::能耗 (净)
-drive-details.json::13::能量回收
-drive-details.json::14::平均能耗
-drive-details.json::15::平均速度
-drive-details.json::5::里程表 (起 - 止)
-drive-details.json::6::行驶时长
-drive-details.json::8::速度分布 ($speed_unit)
-drive-details.json::9::行驶距离
-drive-stats.json::3::每次行驶里程中位数
-drive-stats.json::4::最大速度
-drive-stats.json::5::最大速度 (最近30天)
-drive-stats.json::6::最大速度 (最近七天)
-drive-stats.json::7::速度直方图 ($speed_unit)
-drives.json::0::行程
-drives.json::1::不完整的行程 🛣️
-driving-patterns.json::0::出行规律分析
-driving-patterns.json::1::出行规律分析
-driving-patterns.json::2::出行规律分析
-driving-patterns.json::3::出行规律分析
-driving-patterns.json::4::出行时段分布（按出发小时）
-driving-patterns.json::5::按月能耗趋势 (Wh/km)
-driving-patterns.json::6::高速长途行程列表（里程≥100km 且 speed_max≥100km/h）
-driving-patterns.json::7::温度区间平均能耗 (Wh/km，低温区间柱子更高)
-driving-score.json::0::综合评分
-driving-score.json::10::驾驶数据汇总
-driving-score.json::11::驾驶数据汇总
-driving-score.json::12::驾驶数据汇总
-driving-score.json::13::驾驶数据汇总
-driving-score.json::14::驾驶数据汇总
-driving-score.json::15::驾驶数据汇总
-driving-score.json::1::驾驶风格
-driving-score.json::2::效率分
-driving-score.json::3::平稳分
-driving-score.json::4::速度分
-driving-score.json::5::回收分
-driving-score.json::6::综合评分趋势
-driving-score.json::7::综合评分趋势
-driving-score.json::8::综合评分趋势
-driving-score.json::9::行程评分明细
-efficiency.json::0::能耗（行驶）
-efficiency.json::2::记录的距离
-efficiency.json::3::温度 – 能效
-efficiency.json::4::当前额定能效
-efficiency.json::5::理想能效推算
-efficiency.json::6::额定能效推算
-locations.json::0::地址
-locations.json::1::城市
-locations.json::2::省
-locations.json::3::足迹
-locations.json::4::地点
-locations.json::5::收藏点
-mileage.json::0::里程
-overview.json::0::电量
-overview.json::10::固件版本
-overview.json::15::车外温度
-overview.json::1::电量
-overview.json::4::充电功率
-overview.json::6::平均能耗(净值)
-overview.json::7::平均能耗（总计）
-overview.json::8::总行驶里程
-projected-range.json::0::预估续航里程 - 里程表
-projected-range.json::1::预估续航里程 - 里程表
-projected-range.json::2::续航曲线图 - 电池余量
-projected-range.json::3::续航曲线图 - 电池余量
-projected-range.json::4::续航曲线图 - 室外温度
-projected-range.json::5::续航曲线图 - 室外温度
-range-degradation.json::0::续航退化分析
-range-degradation.json::1::续航退化分析
-range-degradation.json::2::续航退化分析
-range-degradation.json::3::续航退化分析
-range-degradation.json::4::满电续航退化趋势（按周，$length_unit）
-range-degradation.json::5::每月最高满电续航 ($length_unit)
-range-degradation.json::7::推算满电续航散点（每次充电取最高值，$length_unit）
-regen-braking.json::0::动能回收分析
-regen-braking.json::10::温度区间平均回收率 (%，低温区间柱子更低)
-regen-braking.json::11::时速区间 vs 平均回收功率(kW)
-regen-braking.json::12::行程回收明细 TOP20（时间范围内）
-regen-braking.json::13::每周最高回收功率(kW)
-regen-braking.json::1::动能回收分析
-regen-braking.json::2::动能回收分析
-regen-braking.json::3::动能回收分析
-regen-braking.json::4::各固件版本平均回收率(%)
-regen-braking.json::5::日均回收率趋势(%)
-regen-braking.json::6::各固件版本最大回收功率(kW)
-regen-braking.json::7::各固件版本最大回收功率排名(kW)
-regen-braking.json::8::每日回收电量(kWh)
-regen-braking.json::9::每周回收电量(kWh)
-sentry-drain.json::0::🚗 行车电耗 (kWh)
-sentry-drain.json::1::🅿️ 停车耗电 (kWh)
-sentry-drain.json::2::🅿️ 停车耗电占总能耗 (%)
-sentry-drain.json::3::☀️ 醒着(未及时休眠)停车 (次)
-sentry-drain.json::4::🥧 总能耗去向
-sentry-drain.json::5::📊 月度能耗：行车 vs 停车耗电 (kWh)
-sentry-drain.json::6::🅿️ 月度停车耗电拆分：醒着掉电 vs 休眠掉电 (kWh)
-sentry-drain.json::7::🔍 醒着停车明细（可复议默认阈值：停 >15 分钟没休眠）
-states.json::2::停车比 (%)
-station-ranking.json::0::📊 总充电次数
-station-ranking.json::1::💰 总充电费用
-station-ranking.json::2::🟢 最便宜 3 个桩
-station-ranking.json::3::🔴 最贵 3 个桩
-station-ranking.json::4::🏆 充电桩排行榜（按 ¥/度 升序，分时 = 按你配的峰平谷算的真实价；原价 =
-station-ranking.json::5::💎 ¥/度 Top 10 桩（绿=便宜，红=贵）
-station-ranking.json::6::📈 最近 30 天 vs 之前的桩单价对比（红 = 涨价，绿 = 降价）
-station-ranking.json::7::🗺️ 充电桩地图（颜色=¥/度，大小=去过的次数）
-tire-pressure.json::0::当前胎压（忽略时间范围）($pressure_unit)
-tire-pressure.json::1::所选时段的胎压
-tire-pressure.json::2::最后一次行驶的胎压 ($pressure_unit)
-tou-config.json::0::⏰ 24 小时电价分布（按所选充电点 + 今日）
-tou-config.json::10::🗑️ 删除整段
-tou-config.json::11::🔄 重算所有历史充电（按当前 分时电价配置）
-tou-config.json::12::🔄 重算所有历史充电（按当前 分时电价配置）
-tou-config.json::13::💰 最近 10 笔家充电费对账
-tou-config.json::14::💡 默认电价（无位置充电用此价）
-tou-config.json::1::⚠ 配置审计
-tou-config.json::2::📋 当前电价配置
-tou-config.json::3::⚡ 一键填一整季节（只填谷+峰时段，平自动）
-tou-config.json::4::⚡ 一键填一整季节（只填谷+峰时段，平自动）
-tou-config.json::5::🌆 一键导入城市模板
-tou-config.json::6::🌆 一键导入城市模板
-tou-config.json::7::✏️ 修改单价
-tou-config.json::8::✏️ 修改单价
-tou-config.json::9::🗑️ 删除整段
-trip.json::0::行程统计（时间段）
-trip.json::11::行程
-trip.json::12::充电
-trip.json::13::电池水平及续航里程
-trip.json::15::行程统计（时间段）
-trip.json::1::行程统计（时间段）
-trip.json::2::耗时
-trip.json::3::耗时
-trip.json::4::行程统计（时间段）
-trip.json::5::行程统计（时间段）
-trip.json::6::行程统计（时间段）
-trip.json::8::行程统计（时间段）
-trip.json::9::行程统计（时间段）
-updates.json::0::系统更新
-updates.json::1::两次更新平均间隔
-updates.json::2::更新
-vampire-drain.json::0::停车电量消耗
-vehicle-comparison.json::0::综合对比一览表
-vehicle-comparison.json::1::各车电池健康度(%)
-vehicle-comparison.json::2::各车总里程($length_unit)
-vehicle-comparison.json::3::各车平均能耗(Wh/$length_unit)
-vehicle-comparison.json::4::各车充电总费用(元)
-vehicle-comparison.json::5::各车快充比例(%)
-vehicle-comparison.json::6::各车行程次数
-vehicle-comparison.json::7::各车单位里程电费(元/$length_unit)
-visited.json::0::行驶轨迹
-visited.json::1::足迹地图
-visited.json::2::足迹地图
-visited.json::3::足迹地图
-weather-efficiency.json::0::🌡 平均温度
-weather-efficiency.json::1::⚡ 平均能耗
-weather-efficiency.json::2::❄ 最冷月平均能耗
-weather-efficiency.json::3::☀ 最热月平均能耗
-weather-efficiency.json::4::📊 温度桶能耗曲线（每 2°C 一档，里程加权）
-weather-efficiency.json::5::📈 月度温度对比能耗（蓝线=温度，黄柱=能耗）
-weather-efficiency.json::6::🌡 温度区间能耗对比（每桶平均 Wh/km）
-weather-efficiency.json::7::🍂 季节能耗对比（北半球，按月份分）
+# 不代表面板有问题；在表里的每一条都必须再次通过校验，否则门报红——
+# 解析失败要报，key 整个消失（面板改名/移位/删除）同样要报。
+grafana/dashboards/internal/charge-details.json::10::电池电量
+grafana/dashboards/internal/charge-details.json::11::平均功率
+grafana/dashboards/internal/charge-details.json::12::平均室外温度
+grafana/dashboards/internal/charge-details.json::13::续航里程 ($preferred_range)
+grafana/dashboards/internal/charge-details.json::14::续航里程 ($preferred_range)
+grafana/dashboards/internal/charge-details.json::15::续航里程 ($preferred_range)
+grafana/dashboards/internal/charge-details.json::16::充电曲线
+grafana/dashboards/internal/charge-details.json::17::充电曲线
+grafana/dashboards/internal/charge-details.json::1::费用
+grafana/dashboards/internal/charge-details.json::2::时长
+grafana/dashboards/internal/charge-details.json::3::充电详情
+grafana/dashboards/internal/charge-details.json::4::充电能量
+grafana/dashboards/internal/charge-details.json::5::充电能量
+grafana/dashboards/internal/charge-details.json::6::充电能量
+grafana/dashboards/internal/charge-details.json::8::电池电量
+grafana/dashboards/internal/charge-details.json::9::电池电量
+grafana/dashboards/internal/drive-details.json::10::海拔摘要
+grafana/dashboards/internal/drive-details.json::11::海拔摘要
+grafana/dashboards/internal/drive-details.json::12::能耗 (净)
+grafana/dashboards/internal/drive-details.json::13::能量回收
+grafana/dashboards/internal/drive-details.json::14::平均能耗
+grafana/dashboards/internal/drive-details.json::15::平均速度
+grafana/dashboards/internal/drive-details.json::5::里程表 (起 - 止)
+grafana/dashboards/internal/drive-details.json::6::行驶时长
+grafana/dashboards/internal/drive-details.json::7::选中时长
+grafana/dashboards/internal/drive-details.json::8::速度分布 ($speed_unit)
+grafana/dashboards/internal/drive-details.json::9::行驶距离
+grafana/dashboards/zh-cn/AmortizationTracker.json::0::折旧曲线
+grafana/dashboards/zh-cn/AmortizationTracker.json::1::回本明细
+grafana/dashboards/zh-cn/ChargingCostsStats.json::0::总充电量 (kWh)
+grafana/dashboards/zh-cn/ChargingCostsStats.json::10::交流充电费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::11::直流充电费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::12::超充站充电费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::13::总充电费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::14::每100$length_unit费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::15::平均每度电费用
+grafana/dashboards/zh-cn/ChargingCostsStats.json::16::行驶能耗
+grafana/dashboards/zh-cn/ChargingCostsStats.json::17::综合能耗
+grafana/dashboards/zh-cn/ChargingCostsStats.json::18::充电站排名（按充电量）
+grafana/dashboards/zh-cn/ChargingCostsStats.json::19::充电站排名（按费用）
+grafana/dashboards/zh-cn/ChargingCostsStats.json::1::总免费充电量 (kWh)
+grafana/dashboards/zh-cn/ChargingCostsStats.json::20::超级充电站排名
+grafana/dashboards/zh-cn/ChargingCostsStats.json::21::免费充电站排名
+grafana/dashboards/zh-cn/ChargingCostsStats.json::22::每月统计
+grafana/dashboards/zh-cn/ChargingCostsStats.json::23::每月统计
+grafana/dashboards/zh-cn/ChargingCostsStats.json::24::每月统计
+grafana/dashboards/zh-cn/ChargingCostsStats.json::2::每公里电耗 (kWh/km)
+grafana/dashboards/zh-cn/ChargingCostsStats.json::3::充电次数
+grafana/dashboards/zh-cn/ChargingCostsStats.json::4::充电费用统计
+grafana/dashboards/zh-cn/ChargingCostsStats.json::5::交流/直流充电能量汇总
+grafana/dashboards/zh-cn/ChargingCostsStats.json::6::在$geofence的充电里程
+grafana/dashboards/zh-cn/ChargingCostsStats.json::7::免费充电里程（无费用）
+grafana/dashboards/zh-cn/ChargingCostsStats.json::8::超充站充电量
+grafana/dashboards/zh-cn/ChargingCostsStats.json::9::总行驶里程
+grafana/dashboards/zh-cn/ChargingCurveStats.json::0::超级充电站充电曲线
+grafana/dashboards/zh-cn/ChargingCurveStats.json::1::超级充电站充电曲线
+grafana/dashboards/zh-cn/ChargingCurveStats.json::2::其他直流充电曲线
+grafana/dashboards/zh-cn/ChargingCurveStats.json::3::其他直流充电曲线
+grafana/dashboards/zh-cn/ChargingCurveStats.json::4::快充曲线统计
+grafana/dashboards/zh-cn/ChargingCurveStats.json::5::最大功率
+grafana/dashboards/zh-cn/ContinuousTrips.json::0::长途行程
+grafana/dashboards/zh-cn/CurrentChargeView.json::0::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::11::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::12::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::14::电流
+grafana/dashboards/zh-cn/CurrentChargeView.json::15::电压
+grafana/dashboards/zh-cn/CurrentChargeView.json::16::功率
+grafana/dashboards/zh-cn/CurrentChargeView.json::17::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::1::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::2::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::3::充电量
+grafana/dashboards/zh-cn/CurrentChargeView.json::4::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::6::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::7::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::8::充电时间
+grafana/dashboards/zh-cn/CurrentDriveView.json::2::当前能耗
+grafana/dashboards/zh-cn/CurrentDriveView.json::3::车辆标准能耗
+grafana/dashboards/zh-cn/CurrentDriveView.json::4::当前驾驶状态
+grafana/dashboards/zh-cn/CurrentDriveView.json::5::当前驾驶状态
+grafana/dashboards/zh-cn/CurrentDriveView.json::6::车外温度
+grafana/dashboards/zh-cn/CurrentDriveView.json::7::车内温度
+grafana/dashboards/zh-cn/CurrentDriveView.json::9::距离
+grafana/dashboards/zh-cn/CurrentState.json::10::车外温度
+grafana/dashboards/zh-cn/CurrentState.json::11::位置
+grafana/dashboards/zh-cn/CurrentState.json::12::状态
+grafana/dashboards/zh-cn/CurrentState.json::13::里程表
+grafana/dashboards/zh-cn/CurrentState.json::14::固件
+grafana/dashboards/zh-cn/CurrentState.json::4::电池电量
+grafana/dashboards/zh-cn/CurrentState.json::5::胎压 ($pressure_unit)
+grafana/dashboards/zh-cn/CurrentState.json::9::车内温度
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::0::充电运营商包含: $carrier
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::1::充电运营商包含: $carrier
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::2::快充曲线图(按运营商)
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::3::平均充电量 (kWh)
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::4::平均耗电量 (kWh)
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::5::平均时间
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::6::平均费用
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::7::平均每度电费用
+grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::8::帮助
+grafana/dashboards/zh-cn/IncompleteData.json::0::车辆信息 🚘
+grafana/dashboards/zh-cn/IncompleteData.json::1::不完整的数据
+grafana/dashboards/zh-cn/IncompleteData.json::2::不完整的行程 🛣️
+grafana/dashboards/zh-cn/IncompleteData.json::3::不完整的充电 🪫
+grafana/dashboards/zh-cn/MileageStats.json::0::每${period}统计
+grafana/dashboards/zh-cn/MileageStats.json::1::每${period}行驶里程与行程次数
+grafana/dashboards/zh-cn/SpeedRates.json::0::不同速度下的能耗 - $terrain_type 地形
+grafana/dashboards/zh-cn/SpeedRates.json::1::已记录里程
+grafana/dashboards/zh-cn/SpeedRates.json::2::行驶能耗
+grafana/dashboards/zh-cn/SpeedRates.json::3::综合能耗
+grafana/dashboards/zh-cn/SpeedRates.json::4::当前标准能效
+grafana/dashboards/zh-cn/SpeedRates.json::5::不同速度下的行驶时间
+grafana/dashboards/zh-cn/SpeedTemperature.json::0::数据查询
+grafana/dashboards/zh-cn/SpeedTemperature.json::1::短途与长途行程按温度的能耗
+grafana/dashboards/zh-cn/SpeedTemperature.json::2::短途与长途行程按温度的能耗
+grafana/dashboards/zh-cn/SpeedTemperature.json::3::按日期的能耗与温度
+grafana/dashboards/zh-cn/SpeedTemperature.json::4::按日期的能耗与温度
+grafana/dashboards/zh-cn/TrackingDrives.json::2::驾驶记录追踪
+grafana/dashboards/zh-cn/TrackingDrives.json::3::驾驶记录追踪
+grafana/dashboards/zh-cn/TrackingDrives.json::4::驾驶记录追踪
+grafana/dashboards/zh-cn/TrackingDrives.json::5::驾驶记录追踪
+grafana/dashboards/zh-cn/TrackingDrives.json::6::耗电量
+grafana/dashboards/zh-cn/TrackingDrives.json::7::海拔
+grafana/dashboards/zh-cn/TrackingDrives.json::8::海拔
+grafana/dashboards/zh-cn/annual-summary.json::0::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::10::最常到访地点 TOP10
+grafana/dashboards/zh-cn/annual-summary.json::11::最常使用充电站 TOP10
+grafana/dashboards/zh-cn/annual-summary.json::1::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::2::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::3::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::4::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::5::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::6::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::7::年度驾驶报告
+grafana/dashboards/zh-cn/annual-summary.json::8::月度里程分布 ($length_unit)
+grafana/dashboards/zh-cn/annual-summary.json::9::月度充电费用趋势
+grafana/dashboards/zh-cn/battery-health.json::0::电池容量 (kWh)
+grafana/dashboards/zh-cn/battery-health.json::10::电池统计
+grafana/dashboards/zh-cn/battery-health.json::11::电池统计
+grafana/dashboards/zh-cn/battery-health.json::12::电池统计
+grafana/dashboards/zh-cn/battery-health.json::13::电池统计
+grafana/dashboards/zh-cn/battery-health.json::14::当前电池容量
+grafana/dashboards/zh-cn/battery-health.json::15::当前电池容量
+grafana/dashboards/zh-cn/battery-health.json::16::能耗
+grafana/dashboards/zh-cn/battery-health.json::17::当前电池容量 (kWh)
+grafana/dashboards/zh-cn/battery-health.json::18::电池容量 - 按里程表
+grafana/dashboards/zh-cn/battery-health.json::19::电池容量 - 按里程表
+grafana/dashboards/zh-cn/battery-health.json::1::续航里程
+grafana/dashboards/zh-cn/battery-health.json::2::行程统计
+grafana/dashboards/zh-cn/battery-health.json::3::行程统计
+grafana/dashboards/zh-cn/battery-health.json::4::行程统计
+grafana/dashboards/zh-cn/battery-health.json::5::行程统计
+grafana/dashboards/zh-cn/battery-health.json::6::交流/直流电量使用汇总
+grafana/dashboards/zh-cn/battery-health.json::7::预估衰减
+grafana/dashboards/zh-cn/battery-health.json::8::电池健康度
+grafana/dashboards/zh-cn/battery-health.json::9::电池统计
+grafana/dashboards/zh-cn/charge-level.json::0::电量曲线图
+grafana/dashboards/zh-cn/charge-level.json::1::电量曲线图
+grafana/dashboards/zh-cn/charge-level.json::2::电量曲线图
+grafana/dashboards/zh-cn/charges.json::0::充电桩类型: $charge_type
+grafana/dashboards/zh-cn/charges.json::1::不完整的充电记录 🪫
+grafana/dashboards/zh-cn/charges.json::2::✏️ 单笔充电单价（手动填/改）
+grafana/dashboards/zh-cn/charges.json::3::✏️ 单笔充电单价（手动填/改）
+grafana/dashboards/zh-cn/charging-health.json::0::充电习惯综合评分 (0-100)
+grafana/dashboards/zh-cn/charging-health.json::2::充电健康管理
+grafana/dashboards/zh-cn/charging-health.json::3::充电健康管理
+grafana/dashboards/zh-cn/charging-health.json::7::充电前/后SOC分布（0-100%，每10%一档）
+grafana/dashboards/zh-cn/charging-health.json::8::月度充电次数趋势
+grafana/dashboards/zh-cn/charging-health.json::9::充电地点统计 TOP30
+grafana/dashboards/zh-cn/charging-stats.json::0::次数
+grafana/dashboards/zh-cn/charging-stats.json::10::电量变化
+grafana/dashboards/zh-cn/charging-stats.json::11::AC/DC – 消耗电量
+grafana/dashboards/zh-cn/charging-stats.json::12::充电热力图
+grafana/dashboards/zh-cn/charging-stats.json::13::AC/DC – 持续时间
+grafana/dashboards/zh-cn/charging-stats.json::14::直流充电曲线图
+grafana/dashboards/zh-cn/charging-stats.json::15::直流充电曲线图
+grafana/dashboards/zh-cn/charging-stats.json::16::充电结束时电量
+grafana/dashboards/zh-cn/charging-stats.json::17::充电结束时电量
+grafana/dashboards/zh-cn/charging-stats.json::18::充电开始时电量
+grafana/dashboards/zh-cn/charging-stats.json::19::充电开始时电量
+grafana/dashboards/zh-cn/charging-stats.json::1::累计总电量
+grafana/dashboards/zh-cn/charging-stats.json::20::充电站排序 (按电量)
+grafana/dashboards/zh-cn/charging-stats.json::21::充电站排序 (按费用)
+grafana/dashboards/zh-cn/charging-stats.json::2::超充总费用 (¥)
+grafana/dashboards/zh-cn/charging-stats.json::3::累计充电总费用 (¥)
+grafana/dashboards/zh-cn/charging-stats.json::4::每百 $length_unit 费用
+grafana/dashboards/zh-cn/charging-stats.json::5::平均每度电价格
+grafana/dashboards/zh-cn/charging-stats.json::6::平均每度电价格 DC
+grafana/dashboards/zh-cn/charging-stats.json::7::平均每度电价格 AC
+grafana/dashboards/zh-cn/charging-stats.json::9::电量变化
+grafana/dashboards/zh-cn/cost-savings.json::0::省钱分析
+grafana/dashboards/zh-cn/cost-savings.json::10::省钱分析
+grafana/dashboards/zh-cn/cost-savings.json::1::省钱分析
+grafana/dashboards/zh-cn/cost-savings.json::2::省钱分析
+grafana/dashboards/zh-cn/cost-savings.json::3::省钱分析
+grafana/dashboards/zh-cn/cost-savings.json::4::月度费用对比（燃油 vs 匹配电费）
+grafana/dashboards/zh-cn/cost-savings.json::5::月度费用对比（燃油 vs 匹配电费）
+grafana/dashboards/zh-cn/cost-savings.json::6::充电时段费用分布（现金流·仅参考）
+grafana/dashboards/zh-cn/cost-savings.json::7::按小时充电量分布（找最优充电时间）
+grafana/dashboards/zh-cn/cost-savings.json::8::今年充电费用 vs 年度预算（现金流·仅参考）
+grafana/dashboards/zh-cn/cost-savings.json::9::省钱分析
+grafana/dashboards/zh-cn/database-info.json::0::里程
+grafana/dashboards/zh-cn/database-info.json::10::索引
+grafana/dashboards/zh-cn/database-info.json::11::数据库总大小
+grafana/dashboards/zh-cn/database-info.json::12::时区
+grafana/dashboards/zh-cn/database-info.json::1::统计
+grafana/dashboards/zh-cn/database-info.json::2::统计
+grafana/dashboards/zh-cn/database-info.json::3::软件
+grafana/dashboards/zh-cn/database-info.json::4::软件
+grafana/dashboards/zh-cn/database-info.json::5::不完整的数据
+grafana/dashboards/zh-cn/database-info.json::6::不完整的数据
+grafana/dashboards/zh-cn/database-info.json::7::PostgreSQL 版本
+grafana/dashboards/zh-cn/database-info.json::8::数据库信息
+grafana/dashboards/zh-cn/database-info.json::9::数据库信息
+grafana/dashboards/zh-cn/drive-stats.json::3::每次行驶里程中位数
+grafana/dashboards/zh-cn/drive-stats.json::4::最大速度
+grafana/dashboards/zh-cn/drive-stats.json::5::最大速度 (最近30天)
+grafana/dashboards/zh-cn/drive-stats.json::6::最大速度 (最近七天)
+grafana/dashboards/zh-cn/drive-stats.json::7::速度直方图 ($speed_unit)
+grafana/dashboards/zh-cn/drives.json::0::行程
+grafana/dashboards/zh-cn/drives.json::1::不完整的行程 🛣️
+grafana/dashboards/zh-cn/driving-patterns.json::0::出行规律分析
+grafana/dashboards/zh-cn/driving-patterns.json::1::出行规律分析
+grafana/dashboards/zh-cn/driving-patterns.json::2::出行规律分析
+grafana/dashboards/zh-cn/driving-patterns.json::3::出行规律分析
+grafana/dashboards/zh-cn/driving-patterns.json::4::出行时段分布（按出发小时）
+grafana/dashboards/zh-cn/driving-patterns.json::5::按月能耗趋势 (Wh/km)
+grafana/dashboards/zh-cn/driving-patterns.json::6::高速长途行程列表（里程≥100km 且 speed_max≥100km/h）
+grafana/dashboards/zh-cn/driving-patterns.json::7::温度区间平均能耗 (Wh/km，低温区间柱子更高)
+grafana/dashboards/zh-cn/driving-score.json::0::综合评分
+grafana/dashboards/zh-cn/driving-score.json::10::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::11::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::12::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::13::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::14::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::15::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::1::驾驶风格
+grafana/dashboards/zh-cn/driving-score.json::2::效率分
+grafana/dashboards/zh-cn/driving-score.json::3::平稳分
+grafana/dashboards/zh-cn/driving-score.json::4::速度分
+grafana/dashboards/zh-cn/driving-score.json::5::回收分
+grafana/dashboards/zh-cn/driving-score.json::6::综合评分趋势
+grafana/dashboards/zh-cn/driving-score.json::7::综合评分趋势
+grafana/dashboards/zh-cn/driving-score.json::8::综合评分趋势
+grafana/dashboards/zh-cn/driving-score.json::9::行程评分明细
+grafana/dashboards/zh-cn/efficiency.json::0::能耗（行驶）
+grafana/dashboards/zh-cn/efficiency.json::1::能耗 (总计)
+grafana/dashboards/zh-cn/efficiency.json::2::记录的距离
+grafana/dashboards/zh-cn/efficiency.json::3::温度 – 能效
+grafana/dashboards/zh-cn/efficiency.json::4::当前额定能效
+grafana/dashboards/zh-cn/efficiency.json::5::理想能效推算
+grafana/dashboards/zh-cn/efficiency.json::6::额定能效推算
+grafana/dashboards/zh-cn/locations.json::0::地址
+grafana/dashboards/zh-cn/locations.json::1::城市
+grafana/dashboards/zh-cn/locations.json::2::省
+grafana/dashboards/zh-cn/locations.json::3::足迹
+grafana/dashboards/zh-cn/locations.json::4::地点
+grafana/dashboards/zh-cn/locations.json::5::收藏点
+grafana/dashboards/zh-cn/mileage.json::0::里程
+grafana/dashboards/zh-cn/overview.json::0::电量
+grafana/dashboards/zh-cn/overview.json::10::固件版本
+grafana/dashboards/zh-cn/overview.json::15::车外温度
+grafana/dashboards/zh-cn/overview.json::1::电量
+grafana/dashboards/zh-cn/overview.json::4::充电功率
+grafana/dashboards/zh-cn/overview.json::6::平均能耗(净值)
+grafana/dashboards/zh-cn/overview.json::7::平均能耗（总计）
+grafana/dashboards/zh-cn/overview.json::8::总行驶里程
+grafana/dashboards/zh-cn/projected-range.json::0::预估续航里程 - 里程表
+grafana/dashboards/zh-cn/projected-range.json::1::预估续航里程 - 里程表
+grafana/dashboards/zh-cn/projected-range.json::2::续航曲线图 - 电池余量
+grafana/dashboards/zh-cn/projected-range.json::3::续航曲线图 - 电池余量
+grafana/dashboards/zh-cn/projected-range.json::4::续航曲线图 - 室外温度
+grafana/dashboards/zh-cn/projected-range.json::5::续航曲线图 - 室外温度
+grafana/dashboards/zh-cn/range-degradation.json::0::续航退化分析
+grafana/dashboards/zh-cn/range-degradation.json::1::续航退化分析
+grafana/dashboards/zh-cn/range-degradation.json::2::续航退化分析
+grafana/dashboards/zh-cn/range-degradation.json::3::续航退化分析
+grafana/dashboards/zh-cn/range-degradation.json::4::满电续航退化趋势（按周，$length_unit）
+grafana/dashboards/zh-cn/range-degradation.json::5::每月最高满电续航 ($length_unit)
+grafana/dashboards/zh-cn/range-degradation.json::7::推算满电续航散点（每次充电取最高值，$length_unit）
+grafana/dashboards/zh-cn/regen-braking.json::0::动能回收分析
+grafana/dashboards/zh-cn/regen-braking.json::10::温度区间平均回收率 (%，低温区间柱子更低)
+grafana/dashboards/zh-cn/regen-braking.json::11::时速区间 vs 平均回收功率(kW)
+grafana/dashboards/zh-cn/regen-braking.json::12::行程回收明细 TOP20（时间范围内）
+grafana/dashboards/zh-cn/regen-braking.json::13::每周最高回收功率(kW)
+grafana/dashboards/zh-cn/regen-braking.json::1::动能回收分析
+grafana/dashboards/zh-cn/regen-braking.json::2::动能回收分析
+grafana/dashboards/zh-cn/regen-braking.json::3::动能回收分析
+grafana/dashboards/zh-cn/regen-braking.json::4::各固件版本平均回收率(%)
+grafana/dashboards/zh-cn/regen-braking.json::5::日均回收率趋势(%)
+grafana/dashboards/zh-cn/regen-braking.json::6::各固件版本最大回收功率(kW)
+grafana/dashboards/zh-cn/regen-braking.json::7::各固件版本最大回收功率排名(kW)
+grafana/dashboards/zh-cn/regen-braking.json::8::每日回收电量(kWh)
+grafana/dashboards/zh-cn/regen-braking.json::9::每周回收电量(kWh)
+grafana/dashboards/zh-cn/sentry-drain.json::0::🚗 行车电耗 (kWh)
+grafana/dashboards/zh-cn/sentry-drain.json::1::🅿️ 停车耗电 (kWh)
+grafana/dashboards/zh-cn/sentry-drain.json::2::🅿️ 停车耗电占总能耗 (%)
+grafana/dashboards/zh-cn/sentry-drain.json::3::☀️ 醒着(未及时休眠)停车 (次)
+grafana/dashboards/zh-cn/sentry-drain.json::4::🥧 总能耗去向
+grafana/dashboards/zh-cn/sentry-drain.json::5::📊 月度能耗：行车 vs 停车耗电 (kWh)
+grafana/dashboards/zh-cn/sentry-drain.json::6::🅿️ 月度停车耗电拆分：醒着掉电 vs 休眠掉电 (kWh)
+grafana/dashboards/zh-cn/sentry-drain.json::7::🔍 醒着停车明细（可复议默认阈值：停 >15 分钟没休眠）
+grafana/dashboards/zh-cn/states.json::2::停车比 (%)
+grafana/dashboards/zh-cn/station-ranking.json::0::📊 总充电次数
+grafana/dashboards/zh-cn/station-ranking.json::1::💰 总充电费用
+grafana/dashboards/zh-cn/station-ranking.json::2::🟢 最便宜 3 个桩
+grafana/dashboards/zh-cn/station-ranking.json::3::🔴 最贵 3 个桩
+grafana/dashboards/zh-cn/station-ranking.json::4::🏆 充电桩排行榜（按 ¥/度 升序，分时 = 按你配的峰平谷算的真实价；原价 =
+grafana/dashboards/zh-cn/station-ranking.json::5::💎 ¥/度 Top 10 桩（绿=便宜，红=贵）
+grafana/dashboards/zh-cn/station-ranking.json::6::📈 最近 30 天 vs 之前的桩单价对比（红 = 涨价，绿 = 降价）
+grafana/dashboards/zh-cn/station-ranking.json::7::🗺️ 充电桩地图（颜色=¥/度，大小=去过的次数）
+grafana/dashboards/zh-cn/statistics.json::0::每${period}
+grafana/dashboards/zh-cn/statistics.json::1::每${period}
+grafana/dashboards/zh-cn/statistics.json::2::每${period}
+grafana/dashboards/zh-cn/statistics.json::3::每${period}
+grafana/dashboards/zh-cn/tire-pressure.json::0::当前胎压（忽略时间范围）($pressure_unit)
+grafana/dashboards/zh-cn/tire-pressure.json::1::所选时段的胎压
+grafana/dashboards/zh-cn/tire-pressure.json::2::最后一次行驶的胎压 ($pressure_unit)
+grafana/dashboards/zh-cn/tou-config.json::0::⏰ 24 小时电价分布（按所选充电点 + 今日）
+grafana/dashboards/zh-cn/tou-config.json::10::🗑️ 删除整段
+grafana/dashboards/zh-cn/tou-config.json::11::🔄 重算所有历史充电（按当前 分时电价配置）
+grafana/dashboards/zh-cn/tou-config.json::12::🔄 重算所有历史充电（按当前 分时电价配置）
+grafana/dashboards/zh-cn/tou-config.json::13::💰 最近 10 笔家充电费对账
+grafana/dashboards/zh-cn/tou-config.json::14::💡 默认电价（无位置充电用此价）
+grafana/dashboards/zh-cn/tou-config.json::1::⚠ 配置审计
+grafana/dashboards/zh-cn/tou-config.json::2::📋 当前电价配置
+grafana/dashboards/zh-cn/tou-config.json::3::⚡ 一键填一整季节（只填谷+峰时段，平自动）
+grafana/dashboards/zh-cn/tou-config.json::4::⚡ 一键填一整季节（只填谷+峰时段，平自动）
+grafana/dashboards/zh-cn/tou-config.json::5::🌆 一键导入城市模板
+grafana/dashboards/zh-cn/tou-config.json::6::🌆 一键导入城市模板
+grafana/dashboards/zh-cn/tou-config.json::7::✏️ 修改单价
+grafana/dashboards/zh-cn/tou-config.json::8::✏️ 修改单价
+grafana/dashboards/zh-cn/tou-config.json::9::🗑️ 删除整段
+grafana/dashboards/zh-cn/trip.json::0::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::11::行程
+grafana/dashboards/zh-cn/trip.json::12::充电
+grafana/dashboards/zh-cn/trip.json::13::电池水平及续航里程
+grafana/dashboards/zh-cn/trip.json::14::海拔
+grafana/dashboards/zh-cn/trip.json::15::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::1::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::2::耗时
+grafana/dashboards/zh-cn/trip.json::3::耗时
+grafana/dashboards/zh-cn/trip.json::4::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::5::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::6::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::7::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::8::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::9::行程统计（时间段）
+grafana/dashboards/zh-cn/updates.json::0::系统更新
+grafana/dashboards/zh-cn/updates.json::1::两次更新平均间隔
+grafana/dashboards/zh-cn/updates.json::2::更新
+grafana/dashboards/zh-cn/vampire-drain.json::0::停车电量消耗
+grafana/dashboards/zh-cn/vehicle-comparison.json::0::综合对比一览表
+grafana/dashboards/zh-cn/vehicle-comparison.json::1::各车电池健康度(%)
+grafana/dashboards/zh-cn/vehicle-comparison.json::2::各车总里程($length_unit)
+grafana/dashboards/zh-cn/vehicle-comparison.json::3::各车平均能耗(Wh/$length_unit)
+grafana/dashboards/zh-cn/vehicle-comparison.json::4::各车充电总费用(元)
+grafana/dashboards/zh-cn/vehicle-comparison.json::5::各车快充比例(%)
+grafana/dashboards/zh-cn/vehicle-comparison.json::6::各车行程次数
+grafana/dashboards/zh-cn/vehicle-comparison.json::7::各车单位里程电费(元/$length_unit)
+grafana/dashboards/zh-cn/visited.json::0::行驶轨迹
+grafana/dashboards/zh-cn/visited.json::1::足迹地图
+grafana/dashboards/zh-cn/visited.json::2::足迹地图
+grafana/dashboards/zh-cn/visited.json::3::足迹地图
+grafana/dashboards/zh-cn/weather-efficiency.json::0::🌡 平均温度
+grafana/dashboards/zh-cn/weather-efficiency.json::1::⚡ 平均能耗
+grafana/dashboards/zh-cn/weather-efficiency.json::2::❄ 最冷月平均能耗
+grafana/dashboards/zh-cn/weather-efficiency.json::3::☀ 最热月平均能耗
+grafana/dashboards/zh-cn/weather-efficiency.json::4::📊 温度桶能耗曲线（每 2°C 一档，里程加权）
+grafana/dashboards/zh-cn/weather-efficiency.json::5::📈 月度温度对比能耗（蓝线=温度，黄柱=能耗）
+grafana/dashboards/zh-cn/weather-efficiency.json::6::🌡 温度区间能耗对比（每桶平均 Wh/km）
+grafana/dashboards/zh-cn/weather-efficiency.json::7::🍂 季节能耗对比（北半球，按月份分）

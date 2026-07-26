@@ -28,9 +28,28 @@
 #       # 仅当「契约无变化」或「契约变了且 SQL_COMPAT_REVISION 已相应 bump」时才允许写入；
 #       # 契约变了但 revision 没变会拒绝更新（跟直接跑默认模式一样报错），
 #       # 防止有人绕过检查、只重新生成基线而不真的 bump 版本号。
+#       # 唯一例外：diff 只是「新增 FUNCTION_BODY 行」**且**三组 SQL 的内容摘要
+#       # （基线里的 SOURCE_DIGEST）没变——那就是只把某个已有函数加进了下面的
+#       # CORE_BODY_FUNCTIONS 名单，SQL 一个字节没动，只是门变严了，不该让所有现有
+#       # 用户被判成「装的 SQL 过期了」。摘要这一条不能省：新加进名单的函数在基线里
+#       # 没有旧指纹，「加名单 + 同时改它的函数体」产生的是「新增」而不是「变化」，
+#       # 只看行类型会把这次改动直接漂白。判定见 is_watchlist_widening()。
+#       # 基线文件不存在时 --update-baseline 直接报错，**不会**替你重新生成——见下面
+#       # --create-baseline 的说明。
+#   bash scripts/check-sql-revision.sh --create-baseline
+#       # 从无到有创建基线，只在文件确实不存在时可用（已存在会拒绝）。
+#       # 为什么要跟 --update-baseline 分成两个 flag：基线缺失时无从比对，凭空生成等于
+#       # 把当前 SQL 一股脑认作「已确认」，任何未经 SQL_COMPAT_REVISION 确认的改动都会
+#       # 被一并洗白。也就是说「删掉基线再重新生成」本来是一条绕过 bump 的路。拆成两个
+#       # flag 之后，日常那条命令碰不到这个行为，重建必须显式说出口。
+#       # 它挡不住存心的人（谁都能删文件再跑 --create-baseline），但重建出来的是**整个
+#       # 文件重写**，diff 摆在评审面前，这一步靠的是可见性而不是门。
+#       # FORMAT_VERSION 升级导致的重建属于这一类：应当由**改脚本的那个人**在同一次提交
+#       # 里跑 --create-baseline，让基线 diff 跟脚本改动一起被评审看到；不要让用户各自
+#       # 在自己机器上重建（那样每个人洗白的东西都不一样，而且谁都没看见）。
 #
-# 退出码：0 = 契约与基线一致（或 --update-baseline 成功写入）；1 = 有未经 revision
-# 确认的契约变化，或 --update-baseline 被拒绝。
+# 退出码：0 = 契约与基线一致（或 --update-baseline / --create-baseline 成功写入）；
+# 1 = 有未经 revision 确认的契约变化，或写入被拒绝。
 #
 # 已知局限（诚实挂账，不假装覆盖）：
 #   - 函数重载（同名不同参数类型）按「函数名」为 key，后出现的定义会覆盖前一个的
@@ -57,7 +76,9 @@ SQL_FILES = [
 ]
 BASELINE_PATH = "scripts/sql-contract-baseline.txt"
 VERSIONS_ENV_PATH = "config/versions.env"
-FORMAT_VERSION = 1
+# 2 = 基线文件多了一行必需的 SOURCE_DIGEST（三组 SQL 的内容摘要）。老版本脚本读不懂
+# 这一行，所以加字段必须同时 +1。
+FORMAT_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +375,10 @@ CORE_BODY_FUNCTIONS = {
     'set_default_charging_rate', # 默认电价（决定它会不会顶掉真实账单）
     'trigger_compute_tou',       # 充电完成时自动算/清分时电价费用
     'adopt_legacy_default_costs',# 老数据迁移，会改 charging_processes.cost，改错就丢数据
+    'uninstall_tou',             # 卸载，会把覆盖表里的 TeslaMate 原值写回原表，改错就丢/串数据
+    '_tou_has_matching_rate',    # 「这笔充电有没有电价规则可用」——compute_tou_cost 用它决定
+                                 # 算 TOU 还是回退原 cost，改这里就等于改用户看到的费用，
+                                 # 而 compute_tou_cost 自己的函数体一个字都不用动
 }
 
 _COMMENT_LINE_RE = re.compile(r'--[^\n]*')
@@ -499,12 +524,31 @@ def read_current_revision():
     return m.group(1).strip()
 
 
+def compute_source_digest(files):
+    """三组 SQL 文件内容的摘要——回答的是「SQL 文件到底动没动」，不是「契约变没变」。
+
+    刻意不做归一化（不去注释、不压空白）：这里要的就是「一个字节都没变」这个强判据，
+    它是 is_watchlist_widening() 放行的前提，宁可严也不能松。
+    唯一的例外是把 CRLF 归一成 LF——换行风格不同的检出不该被当成 SQL 改动。
+    """
+    h = hashlib.sha256()
+    for path in files:
+        with open(path, 'rb') as f:
+            data = f.read().replace(b'\r\n', b'\n')
+        h.update(path.encode('utf-8'))
+        h.update(b'\0')
+        h.update(hashlib.sha256(data).digest())
+    return h.hexdigest()
+
+
 def load_baseline():
-    """返回 (contract_dict, recorded_revision) 或 (None, None) 若文件不存在。"""
+    """返回 (contract_dict, recorded_revision, recorded_source_digest)；
+    文件不存在时返回 (None, None, None)。"""
     if not os.path.exists(BASELINE_PATH):
-        return None, None
+        return None, None, None
     contract = {}
     recorded_rev = None
+    recorded_digest = None
     fmt_ver = None
     with open(BASELINE_PATH, encoding='utf-8') as f:
         for line in f:
@@ -517,6 +561,9 @@ def load_baseline():
             if line.startswith('RECORDED_REVISION='):
                 recorded_rev = line.split('=', 1)[1].strip()
                 continue
+            if line.startswith('SOURCE_DIGEST='):
+                recorded_digest = line.split('=', 1)[1].strip()
+                continue
             parts = line.split('\t')
             if len(parts) != 3:
                 print(f"基线文件格式错误（期待 3 个 tab 分隔字段）：{line!r}", file=sys.stderr)
@@ -525,26 +572,36 @@ def load_baseline():
             contract[(kind, name)] = value
     if fmt_ver != str(FORMAT_VERSION):
         print(
-            f"基线文件版本无效：期待 FORMAT_VERSION={FORMAT_VERSION}，"
-            f"实际 {fmt_ver!r}。请用 --update-baseline 重新生成。",
+            f"基线文件版本无效：期待 FORMAT_VERSION={FORMAT_VERSION}，实际 {fmt_ver!r}。\n"
+            "格式升级后的重建应当由**改本脚本的那个人**在同一次提交里做完，让基线 diff 跟"
+            "脚本改动一起被评审看到：\n"
+            f"  rm {BASELINE_PATH} && bash scripts/check-sql-revision.sh --create-baseline\n"
+            "如果你只是拉到了别人的改动却看到这条消息，说明脚本和基线没被一起提交，"
+            "请找改动的作者补，不要在自己机器上重建——那会把你本地的 SQL 状态直接认作基线。",
             file=sys.stderr,
         )
         sys.exit(2)
     if recorded_rev is None:
         print(f"基线文件缺少 RECORDED_REVISION 字段：{BASELINE_PATH}", file=sys.stderr)
         sys.exit(2)
-    return contract, recorded_rev
+    if recorded_digest is None:
+        print(f"基线文件缺少 SOURCE_DIGEST 字段：{BASELINE_PATH}", file=sys.stderr)
+        sys.exit(2)
+    return contract, recorded_rev, recorded_digest
 
 
-def write_baseline(contract, revision):
+def write_baseline(contract, revision, source_digest):
     lines = [
         f"# {BASELINE_PATH}",
         "# 自动生成——不要手改。跑 `bash scripts/check-sql-revision.sh --update-baseline` 重新生成。",
         "# 记录 sql/install-coord-functions.sql / install-unit-functions.sql / install-tou.sql",
         "# 三组 SQL 的对象契约快照（表列/函数签名/视图名/触发器/索引），配合",
         "# config/versions.env 的 SQL_COMPAT_REVISION 做 CI 强制门（issue #33 同类教训）。",
+        "# SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，",
+        "# 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。",
         f"FORMAT_VERSION={FORMAT_VERSION}",
         f"RECORDED_REVISION={revision}",
+        f"SOURCE_DIGEST={source_digest}",
     ]
     for key in sorted(contract):
         kind, name = key
@@ -562,6 +619,35 @@ def diff_contracts(current, baseline):
     removed = sorted(baseline_keys - current_keys)
     changed = sorted(k for k in (current_keys & baseline_keys) if current[k] != baseline[k])
     return added, removed, changed
+
+
+def is_watchlist_widening(added, removed, changed, recorded_digest, current_digest):
+    """diff 是不是「只把某个已有函数纳入了核心函数体指纹的监视名单」。
+
+    这种改动只会让门对以后的改动更严，不改变任何用户已经装好的 SQL，因此不该 bump
+    SQL_COMPAT_REVISION：bump 了等于告诉所有现有用户「你装的 SQL 过期了，去重装」，
+    那是假警报，正是 config/versions.env 顶部反复强调要避免的噪音。
+
+    两个条件缺一不可：
+
+    1. diff 里只有**新增**的 FUNCTION_BODY 行。移除是把门改松，变化说明被监视的函数体
+       真的动了，两者都不放行。
+
+    2. 三个 SQL 文件的 SOURCE_DIGEST 与基线记录的一致，也就是 SQL 文件一个字节都没动。
+       这一条不能省。FUNCTION_BODY 行只对名单里的函数产生，所以一个原本不在名单里的
+       函数，在基线里**没有**旧的 FUNCTION_BODY 行——把它加进名单的同时改掉它的函数体，
+       那一行是「新增」而不是「变化」，只看条件 1 会直接放行，而写进基线的已经是**改过
+       之后**的指纹。后果正是这道门要防的：老用户库里装的是旧函数体，diagnose.sh 却
+       告诉他们 SQL 是最新的。摘要把「SQL 文件本身没变」从注释里的前提变成机器判据。
+
+    代价：SQL 有任何字节改动（哪怕只是改注释）又同时扩容名单时，豁免不适用、照常要求
+    bump。这个方向是安全的——宁可多 bump 一次，不能放过一次真改动。
+    """
+    if not (bool(added) and not removed and not changed):
+        return False
+    if not all(kind == 'FUNCTION_BODY' for kind, _name in added):
+        return False
+    return recorded_digest is not None and recorded_digest == current_digest
 
 
 def print_diff(current, baseline, defined_in, added, removed, changed):
@@ -592,13 +678,24 @@ def print_diff(current, baseline, defined_in, added, removed, changed):
 def main():
     args = sys.argv[1:]
     update = False
+    create = False
+    usage = ("用法: bash scripts/check-sql-revision.sh "
+             "[--update-baseline | --create-baseline]")
     for a in args:
         if a == '--update-baseline':
             update = True
+        elif a == '--create-baseline':
+            create = True
         else:
             print(f"未知参数: {a}", file=sys.stderr)
-            print("用法: bash scripts/check-sql-revision.sh [--update-baseline]", file=sys.stderr)
+            print(usage, file=sys.stderr)
             sys.exit(2)
+    if update and create:
+        print("--update-baseline 和 --create-baseline 不能一起用："
+              "前者更新已有基线（会检查 SQL_COMPAT_REVISION），"
+              "后者只负责从无到有创建。", file=sys.stderr)
+        print(usage, file=sys.stderr)
+        sys.exit(2)
 
     for path in SQL_FILES:
         if not os.path.exists(path):
@@ -607,24 +704,64 @@ def main():
 
     current, defined_in = extract_contract(SQL_FILES)
     current_rev = read_current_revision()
-    baseline, recorded_rev = load_baseline()
+    current_digest = compute_source_digest(SQL_FILES)
+
+    # --create-baseline 自己判断文件在不在，不走 load_baseline()：FORMAT_VERSION 不匹配时
+    # load_baseline() 会直接退出，而「格式升级后重建」正是这个 flag 要服务的场景之一。
+    if create:
+        if os.path.exists(BASELINE_PATH):
+            print(f"❌ 拒绝创建基线：{BASELINE_PATH} 已经存在。", file=sys.stderr)
+            print("   --create-baseline 只负责「从无到有」。对已有基线的任何更新都走 "
+                  "--update-baseline，", file=sys.stderr)
+            print("   那条路会检查 SQL_COMPAT_REVISION。如果这个 flag 也能覆盖已有基线，"
+                  "两个 flag 合起来", file=sys.stderr)
+            print("   又变成一条「不用 bump 就能重写基线」的路，等于白拆。", file=sys.stderr)
+            sys.exit(1)
+        write_baseline(current, current_rev, current_digest)
+        print(f"✅ 基线已创建：{BASELINE_PATH}（revision={current_rev}，{len(current)} 个对象）")
+        print()
+        print("⚠ 这是**整个基线文件的重新生成**，不是增量更新：它把当前 SQL 的契约原样认作")
+        print("  「已确认」，没有跟任何旧记录比对过，所以这一步不检查 SQL_COMPAT_REVISION。")
+        print("  请把这个文件和触发重建的那次改动放进同一次提交，并在评审时确认：")
+        print(f"    - RECORDED_REVISION={current_rev} 是否确实是当前 SQL 应有的 revision")
+        print("    - 契约行相对上一版只有你预期中的变化（整文件 diff 一眼可见）")
+        sys.exit(0)
+
+    baseline, recorded_rev, recorded_digest = load_baseline()
 
     if baseline is None:
-        if not update:
-            print(f"缺少基线文件 {BASELINE_PATH}；请先运行 --update-baseline 创建", file=sys.stderr)
-            sys.exit(1)
-        write_baseline(current, current_rev)
-        print(f"✅ 基线已创建：{BASELINE_PATH}（revision={current_rev}，{len(current)} 个对象）")
-        sys.exit(0)
+        print(f"❌ 找不到基线文件 {BASELINE_PATH}。", file=sys.stderr)
+        print("   它是仓库里跟踪的文件，正常情况下不会缺——多半是被误删了。先找回来：",
+              file=sys.stderr)
+        print(f"     git checkout -- {BASELINE_PATH}", file=sys.stderr)
+        print(file=sys.stderr)
+        print("   --update-baseline 刻意不在这里替你重新生成：基线缺失时无从比对，凭空生成",
+              file=sys.stderr)
+        print("   等于把当前 SQL 一股脑认作「已确认」，任何未经 SQL_COMPAT_REVISION 确认的",
+              file=sys.stderr)
+        print("   改动都会被一并洗白。", file=sys.stderr)
+        print("   确实需要从零重建（例如脚本的 FORMAT_VERSION 升了级），用 --create-baseline，",
+              file=sys.stderr)
+        print("   并把整个文件的 diff 放进同一次提交交给评审。", file=sys.stderr)
+        sys.exit(1)
 
     added, removed, changed = diff_contracts(current, baseline)
     has_diff = bool(added or removed or changed)
+    widening = is_watchlist_widening(added, removed, changed, recorded_digest, current_digest)
+    # 只新增 FUNCTION_BODY 行、但 SQL 文件动过 —— 豁免不适用，报错时要说清楚为什么，
+    # 否则看的人会以为「我只改了名单，怎么还要我 bump」。
+    widening_blocked_by_source = (
+        not widening
+        and bool(added) and not removed and not changed
+        and all(kind == 'FUNCTION_BODY' for kind, _name in added)
+        and recorded_digest != current_digest
+    )
 
     if update:
         if not has_diff:
             print(f"契约与基线一致（{len(current)} 个对象），无需更新。基线文件未改动。")
             sys.exit(0)
-        if current_rev == recorded_rev:
+        if current_rev == recorded_rev and not widening:
             print(
                 "❌ 拒绝更新基线：SQL 对象契约有变化，但 config/versions.env 的 "
                 f"SQL_COMPAT_REVISION 仍是 {current_rev}（与基线记录一致，说明没有 bump）。"
@@ -632,13 +769,33 @@ def main():
             print()
             print_diff(current, baseline, defined_in, added, removed, changed)
             print()
+            if widening_blocked_by_source:
+                print(
+                    "注意：diff 看起来只是「把函数纳入核心函数体指纹的监视范围」，但三组 SQL 的"
+                    "内容摘要与基线记录不一致，说明 SQL 文件本身也改动了。"
+                )
+                print(
+                    "  新纳入监视的函数在基线里没有旧指纹，这时候记下的会是**改动之后**的函数体，"
+                    "等于把这次改动直接漂白，所以这条豁免不适用。"
+                )
+                print()
             print("请先按 config/versions.env 顶部注释 bump 这个数字，再重跑 --update-baseline。")
             sys.exit(1)
-        write_baseline(current, current_rev)
-        print(
-            f"✅ 基线已更新：{BASELINE_PATH}（revision {recorded_rev} → {current_rev}，"
-            f"{len(current)} 个对象）"
-        )
+        write_baseline(current, current_rev, current_digest)
+        if current_rev == recorded_rev:
+            print(
+                f"✅ 基线已更新：{BASELINE_PATH}（revision 保持 {current_rev}，"
+                f"{len(current)} 个对象）"
+            )
+            print(
+                "   本次只是把下面这些函数纳入「核心函数体指纹」的监视范围，SQL 文件本身没变，"
+                "所以不用 bump SQL_COMPAT_REVISION。"
+            )
+        else:
+            print(
+                f"✅ 基线已更新：{BASELINE_PATH}（revision {recorded_rev} → {current_rev}，"
+                f"{len(current)} 个对象）"
+            )
         print()
         print_diff(current, baseline, defined_in, added, removed, changed)
         sys.exit(0)
@@ -652,7 +809,24 @@ def main():
     print()
     print_diff(current, baseline, defined_in, added, removed, changed)
     print()
-    if current_rev == recorded_rev:
+    if widening:
+        print(
+            "以上只是把某些函数纳入「核心函数体指纹」的监视范围（SQL 文件本身没变），"
+            f"不用 bump SQL_COMPAT_REVISION（保持 {current_rev} 即可）。本地跑："
+        )
+        print("  bash scripts/check-sql-revision.sh --update-baseline")
+        print(f"并把更新后的 {BASELINE_PATH} 一起提交。")
+    elif current_rev == recorded_rev:
+        if widening_blocked_by_source:
+            print(
+                "注意：diff 看起来只是「把函数纳入核心函数体指纹的监视范围」，但三组 SQL 的"
+                "内容摘要与基线记录不一致，说明 SQL 文件本身也改动了。"
+            )
+            print(
+                "  新纳入监视的函数在基线里没有旧指纹，这时候记下的会是**改动之后**的函数体，"
+                "等于把这次改动直接漂白，所以这条豁免不适用。"
+            )
+            print()
         print(
             f"config/versions.env 的 SQL_COMPAT_REVISION 仍是 {current_rev}"
             "（与基线记录一致）——契约变了就必须 bump 这个数字（规则见文件顶部注释），"

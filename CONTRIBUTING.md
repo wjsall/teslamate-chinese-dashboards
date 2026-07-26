@@ -184,6 +184,30 @@ bash scripts/check-dashboard-lint.sh && bash scripts/check-sql-trio.sh && bash s
   && bash scripts/check-sql-gate-consistency.sh && bash scripts/check-dashboards-clean.sh
 ```
 
+#### 仪表盘 SQL 可执行性（改面板查询或标题时会用到）
+
+CI 里还有一道单独的门（`dashboard-sql` job）：起一个一次性 PostgreSQL、装上真实的 TeslaMate
+schema 和本项目的 SQL，再把每个面板的查询交给数据库解析一遍。它需要 docker，跑一次几分钟：
+
+```bash
+bash scripts/check-dashboard-sql-runs.sh
+```
+
+它按 `scripts/dashboard-sql-baseline.txt` 做棘轮：**基线里的每一条查询都必须再次通过校验**。
+基线条目的 key 是 `文件路径::面板序号::面板标题`，所以下面这些都会让门报红，即使查询本身没坏：
+
+- 改了面板标题 → key 里的标题变了
+- 在前面新增/删除/调整了面板顺序 → key 里的序号变了
+
+报红信息会指出它认为对应的是哪个面板、以及那条查询解析是否正常，据此区分两种情况：
+
+- 提示「那条查询解析正常」→ 纯重构，本地跑 `bash scripts/check-dashboard-sql-runs.sh --update-baseline`，
+  把更新后的 `scripts/dashboard-sql-baseline.txt` 一起提交
+- 提示「那条查询解析失败了」并附带 PostgreSQL 报错 → 先修查询，别急着更新基线
+
+不在基线里的查询是变量渲染器还原不出来的（多值变量、插在表名/列名位置的变量等），不代表面板有
+问题；它们通过校验之后会提示你收进基线。
+
 ## 📋 发布流程
 
 维护者发布新版本时：
@@ -210,13 +234,13 @@ lint
   → 五条部署冒烟             全部按 digest 拉这一份候选镜像来测
     分时电价行为测试          算钱正确性，只需要 lint，与冒烟并行
     仪表盘 SQL 可执行性       面板 SQL 真交给 PostgreSQL 解析，同上
-  → publish                  以上七个 job 全绿，才把同一个 digest 提升成
-                             vX.Y.Z / latest / main
+  → publish                  以上七个 job 全绿、且 ref 是 main 或 v* tag，才把同一个
+                             digest 提升成 vX.Y.Z / latest / main
   → cleanup-candidate-tag    发布没成时删掉 candidate-<run_id> 临时 tag；
                              `if: always()`，前面挂了也照跑
 ```
 
-三条硬保证：
+五条硬保证：
 
 - **任一门失败，正式 tag 不会出现**——`publish` 的 `needs` 列了全部五条部署冒烟，外加
   分时电价行为测试（`tou-behavior`）和仪表盘 SQL 可执行性（`dashboard-sql`）。
@@ -233,6 +257,28 @@ lint
   GHCR 只能整删 version、没法单删一个 tag。判据放宽成"含候选 tag"的话，一次成功发布就会
   把刚发出去的镜像连 `latest` 一起删掉。代价是发布成功时候选 tag 会留在包里（它和正式
   tag 是同一份镜像的两个名字，不是多出来的一份），job 日志里会说明这一点。
+
+- **只有 main 和 `v*` tag 能发布**——这条流水线也接了 `workflow_dispatch`（手动触发），
+  而手动触发时 ref 下拉框可以选任意分支或 tag。`publish` 因此额外要求
+  `github.ref` 是 `refs/heads/main` 或 `refs/tags/v*`；否则未经评审的分支会被推成
+  `<分支名>` / `sha-<sha>` 镜像，选个 tag 还会把 `latest` 和 `X.Y.Z` 重新指过去。
+  在别的 ref 上手动触发**仍然会跑完整的验证**（这正是手动触发的用处），只是不推任何
+  tag，并由 `publish-skipped-notice` job 打印说明，免得 `publish` 只显示一个灰色的
+  Skipped、看的人分不清是守卫拦下的还是配置坏了。
+
+  ⚠️ 这道守卫有一个堵不住的口子：**在旧 tag 上手动触发时，GitHub 跑的是那个 tag 里的
+  workflow 文件**，也就是那个版本当时的流水线（可能构建与测试并行、没有发布门、也没有
+  这道 ref 守卫）。main 上的这份文件改成什么样都影响不了它。要重发某个版本，请从 main
+  走正常发布流程，不要在历史 tag 上手动触发。
+
+- **发布不会两个 run 打架**——发布流程是「先推 main，紧接着推 tag」，两个 run 几乎同时
+  开跑，各自独立构建一次得到不同 digest，却都会推同一个 `sha-<短sha>` tag（同一个
+  commit）。`publish` 上挂了 `concurrency`，group 只按仓库取、**不含 ref**，所以 main
+  push 和 tag push 落在同一个 group 里互相排队；`cancel-in-progress: false`，是排队不是
+  取消——取消会让先跑的那个 run 停在「推了一部分 tag」的半截状态。没有它的话，两个 run
+  的推送会交错，`publish` 末尾「回验正式 tag 指向的 digest」还可能读到对方刚覆盖的值、
+  把好版本判成红的。concurrency 挂在 job 上而不是整个 workflow 上：挂 workflow 会把 PR
+  和 lint 的 run 也串行化，而每个 group 只有一个排队位，PR 一多就会丢反馈。
 
 这道门是 2026-07-25 补的。在那之前 `build` 与冒烟并行，v1.9.0 发布那次四条冒烟挂着、
 镜像照样推了出去——冒烟当时只是发布后的报警器。
