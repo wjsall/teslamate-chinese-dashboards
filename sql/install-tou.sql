@@ -320,6 +320,95 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- ----------------------------------------------------------------------------
+-- 3c. _tou_long_gap_kind(cp_id) — 长采样断档是否让电量无法归属到唯一电价
+--
+-- 返回：
+--   NULL            没有会影响费用归属的长断档
+--   configuration   断档跨进未配置电价的时段
+--   sampling        电价配置完整，但断档跨过不同电价
+--
+-- TeslaMate 的 charges.charge_energy_added 是单次充电累计值，生产库中非空。累计值在同一
+-- 次充电里可能掉回，所以只要前后不相等（正增量或负重置），都说明断档期间发生过充电。
+-- 老数据缺累计值时才退回起点功率。确认发生过充电后，还必须跨价或跨进未配价时段才有
+-- 归属风险；整段同一个有效电价时，电量落在哪一分钟都不影响金额。
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _tou_long_gap_kind(cp_id INT) RETURNS TEXT AS $$
+DECLARE
+  cp_geofence_id INT;
+  is_dc BOOLEAN;
+  gap_record RECORD;
+  probe_date TIMESTAMP;
+  start_rate NUMERIC;
+  probe_rate NUMERIC;
+  has_rate_change BOOLEAN;
+  has_missing_rate BOOLEAN;
+  has_sampling_gap BOOLEAN := FALSE;
+BEGIN
+  SELECT geofence_id INTO cp_geofence_id
+  FROM charging_processes
+  WHERE id = cp_id;
+
+  SELECT NOT bool_or(charger_phases IS NOT NULL) INTO is_dc
+  FROM charges
+  WHERE charging_process_id = cp_id;
+
+  FOR gap_record IN
+    WITH samples AS (
+      SELECT
+        date,
+        charger_power,
+        charge_energy_added,
+        LEAD(date) OVER (ORDER BY date) AS next_date,
+        LEAD(charge_energy_added) OVER (ORDER BY date) AS next_charge_energy_added
+      FROM charges
+      WHERE charging_process_id = cp_id
+    )
+    SELECT *
+    FROM samples
+    WHERE next_date IS NOT NULL
+      AND EXTRACT(EPOCH FROM (next_date - date)) >= 600
+      AND CASE
+        WHEN charge_energy_added IS NOT NULL AND next_charge_energy_added IS NOT NULL
+          THEN next_charge_energy_added - charge_energy_added <> 0
+        ELSE COALESCE(charger_power, 0) > 0
+      END
+  LOOP
+    start_rate := lookup_tou_rate(gap_record.date, cp_geofence_id, is_dc);
+    has_rate_change := FALSE;
+    has_missing_rate := start_rate IS NULL;
+
+    FOR probe_date IN
+      -- 电价只会在整点（含跨日、季节/工作日切换）变化。逐个整点探测，再补区间末端，
+      -- 避免一个不足一小时但恰好跨整点的断档漏检。
+      SELECT boundary
+      FROM generate_series(
+        date_trunc('hour', gap_record.date) + INTERVAL '1 hour',
+        gap_record.next_date - INTERVAL '1 microsecond',
+        INTERVAL '1 hour'
+      ) AS gap_hours(boundary)
+      UNION ALL
+      SELECT gap_record.next_date - INTERVAL '1 microsecond'
+    LOOP
+      probe_rate := lookup_tou_rate(probe_date, cp_geofence_id, is_dc);
+      has_rate_change := has_rate_change OR (probe_rate IS DISTINCT FROM start_rate);
+      has_missing_rate := has_missing_rate OR (probe_rate IS NULL);
+    END LOOP;
+
+    IF has_rate_change AND has_missing_rate THEN
+      RETURN 'configuration';
+    ELSIF has_rate_change THEN
+      has_sampling_gap := TRUE;
+    END IF;
+  END LOOP;
+
+  IF has_sampling_gap THEN
+    RETURN 'sampling';
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- ----------------------------------------------------------------------------
 -- 4. 核心：compute_tou_cost(cp_id) — 单笔 TOU 实际费用
 --    返回 NULL 表示无 tou_rates 配置（用户未启用 TOU），调用方应回退到原 cost
 --
@@ -341,6 +430,7 @@ DECLARE
   weighted_rate NUMERIC;
   actual_kwh NUMERIC;
   has_any_rate BOOLEAN;
+  long_gap_kind TEXT;
 BEGIN
   SELECT geofence_id, GREATEST(charge_energy_added, charge_energy_used)
   INTO cp_geofence_id, actual_kwh
@@ -359,49 +449,21 @@ BEGIN
   SELECT NOT bool_or(charger_phases IS NOT NULL) INTO is_dc
   FROM charges WHERE charging_process_id = cp_id;
 
+  long_gap_kind := _tou_long_gap_kind(cp_id);
+
   -- 各时段占比加权 → 加权 rate
   WITH samples AS (
     SELECT
       date,
       charger_power,
-      charge_energy_added,
-      LEAD(date) OVER (ORDER BY date) AS next_date,
-      LEAD(charge_energy_added) OVER (ORDER BY date) AS next_charge_energy_added
+      LEAD(date) OVER (ORDER BY date) AS next_date
     FROM charges
     WHERE charging_process_id = cp_id
   ),
   sample_kwh AS (
     SELECT
       COALESCE(s.charger_power, 0) * EXTRACT(EPOCH FROM (s.next_date - s.date)) / 3600.0 AS raw_kwh,
-      lookup_tou_rate(s.date, cp_geofence_id, is_dc) AS rate,
-      CASE
-        WHEN EXTRACT(EPOCH FROM (s.next_date - s.date)) < 600 THEN FALSE
-        -- TeslaMate 的 charges.charge_energy_added 是本次充电的累计值。两端都有值时，
-        -- 增量是判断 gap 内是否真的充进电的第一事实源；增量为 0 的等待期无害。
-        WHEN s.charge_energy_added IS NOT NULL AND s.next_charge_energy_added IS NOT NULL
-          THEN s.next_charge_energy_added - s.charge_energy_added > 0
-        -- 老数据/测试夹具可能没有累计值，此时才退回间隔起点功率。起点有功率说明
-        -- gap 内可能有电流过；再看 gap 是否跨价/缺价。若整段同价，电量落在哪一分钟
-        -- 都不影响费用，不能因为功率这一层的保守猜测误伤全天同价的定时充电。
-        ELSE COALESCE(s.charger_power, 0) > 0
-          AND EXISTS (
-            SELECT 1
-            FROM (
-              -- 电价只会在整点（含跨日、季节/工作日切换）发生变化；逐个整点探测，
-              -- 再补区间末端，避免一个不足 1 小时但恰好跨整点的 gap 漏检。
-              SELECT boundary AS probe_date
-              FROM generate_series(
-                date_trunc('hour', s.date) + INTERVAL '1 hour',
-                s.next_date - INTERVAL '1 microsecond',
-                INTERVAL '1 hour'
-              ) AS gap_hours(boundary)
-              UNION ALL
-              SELECT s.next_date - INTERVAL '1 microsecond'
-            ) probes
-            WHERE lookup_tou_rate(probes.probe_date, cp_geofence_id, is_dc)
-                  IS DISTINCT FROM lookup_tou_rate(s.date, cp_geofence_id, is_dc)
-          )
-      END AS has_uncertain_long_gap
+      lookup_tou_rate(s.date, cp_geofence_id, is_dc) AS rate
     FROM samples s
     WHERE s.next_date IS NOT NULL
   )
@@ -414,12 +476,11 @@ BEGIN
   -- 回退 TeslaMate 原 cost，而不是给一个偏低的数。
   -- 注意区分两件事：rate = 0（用户明确配了 0 元，比如免费充电桩）是有效电价，照常计算；
   -- rate IS NULL（压根没配到这个时段）才是缺口。
-  -- 相邻采样达到 10 分钟时，优先看累计电量增量：确认有增量就整笔回退。累计值缺失才
-  -- 退回间隔起点功率；这层保守猜测还要同时跨价/缺价才有归属风险。0 功率等待期以及
-  -- 全天同一有效电价都不产生费用不确定性，不能误伤定时充电。
+  -- 相邻采样达到 10 分钟时，由 _tou_long_gap_kind 同时判断「期间发生过充电」和
+  -- 「断档跨价/缺价」。0 功率等待期以及全天同一有效电价都不产生费用不确定性。
   SELECT
     CASE
-      WHEN COALESCE(bool_or(has_uncertain_long_gap), FALSE) THEN NULL
+      WHEN long_gap_kind IS NOT NULL THEN NULL
       WHEN SUM(raw_kwh) = 0 THEN NULL
       WHEN SUM(CASE WHEN raw_kwh > 0 AND rate IS NULL THEN raw_kwh ELSE 0 END) > 0 THEN NULL
       ELSE SUM(raw_kwh * rate) / SUM(raw_kwh)
@@ -745,13 +806,17 @@ DECLARE
         FROM charging_processes cp
         LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
     $v$;
+    v_user_note CONSTANT TEXT :=
+        '你的 charging_processes_v 对账视图仍是旧口径，可能继续让分时估算覆盖 TeslaMate 已记录的费用。'
+        || '请先删除依赖 charging_processes_v 的自建对象，再重新运行分时电价安装；'
+        || '安装完成后再按需重建这些对象。';
     v_replace_error TEXT;
 BEGIN
     -- 常见升级只改表达式、列布局不变。先走这条路径，用户建在本视图上的对象会原样保留，
     -- 同时拿到最新的费用优先级。
     BEGIN
         EXECUTE 'CREATE OR REPLACE VIEW charging_processes_v AS ' || v_query;
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN invalid_table_definition THEN
         v_replace_error := SQLERRM;
     END;
 
@@ -762,9 +827,11 @@ BEGIN
         -- wrong_object_type = 同名对象存在但不是普通视图（例如用户把它换成了物化视图），
         -- 这时 DROP VIEW 报 "is not a view"，不捕获同样会中断整份文件。
         EXCEPTION WHEN dependent_objects_still_exist OR wrong_object_type THEN
-            RAISE NOTICE '跳过重建视图 charging_processes_v：原地替换失败（%），且无法在保留下游对象的前提下重建。', v_replace_error;
-            RAISE NOTICE '  其余分时电价对象会照常安装，不受影响。';
-            RAISE NOTICE '  想让这个视图也更新到最新定义：先删掉依赖它的对象或同名非视图对象，再重跑本文件。';
+            UPDATE tou_settings
+            SET legacy_default_note = v_user_note,
+                updated_at = NOW()
+            WHERE id;
+            RAISE NOTICE '%', v_user_note;
             RETURN;
         END;
 
@@ -1137,37 +1204,59 @@ COMMENT ON FUNCTION audit_tou_config(INT) IS
 -- 8. 一键回填：用户改了 tou_rates 后跑 SELECT backfill_all_tou()
 --    历史所有完成的充电会用新 rate 重算
 -- ----------------------------------------------------------------------------
--- 返回的五个计数各自是一件事，不要混着看：
+-- 返回的七个计数各自是一件事，不要混着看：
 --   processed 扫过的充电笔数
 --   updated   算出了分时电价费用并写进旁路表
 --   skipped   这笔没有任何分时电价规则适用（你没配分时时段，或者只配了别的充电点/别的
 --             充放类型）——属于正常情况，费用按 TeslaMate 记录的金额或默认电价显示
---   gapped    有规则、但这笔充电有时段没被覆盖到，算不出可信金额
---   cleared   上面 gapped 这批里，清掉了多少条**以前算出来的旧值**。这个数不为 0 说明
+--   gapped    有规则、但这笔充电有时段没被覆盖到；用户补全配置后可重新计算
+--   sampling_gapped
+--             电价配置完整，但采样断档跨过不同电价，无法可靠判断各时段电量；这不是配置问题
+--   cleared   上面两类断档中，清掉了多少条**以前算出来的旧值**。这个数不为 0 说明
 --             你库里原本存着一批算错的费用，现在它们被清掉了，界面上的数字会变
 --   failed    计算时报错的笔数（正常应为 0，出现时看数据库日志里的 WARNING）
--- 老实现把 skipped / gapped / failed 全并成一个 skipped，于是「你没配」和「你配漏了」
--- 在提示里长得一模一样，后者恰恰是需要用户回去补配置的那种。
+-- 配置缺口和采样断档必须分开：前者需要用户补规则，后者不需要用户改配置。
 --
 -- 返回的列变多了，CREATE OR REPLACE 改不了返回类型（会报 cannot change return type），
 -- 升级的用户必须先把旧的那个删掉。
 DROP FUNCTION IF EXISTS backfill_all_tou();
 
 CREATE OR REPLACE FUNCTION backfill_all_tou()
-RETURNS TABLE(processed INT, updated INT, skipped INT, gapped INT, cleared INT, failed INT) AS $$
+RETURNS TABLE(
+  processed INT,
+  updated INT,
+  skipped INT,
+  gapped INT,
+  sampling_gapped INT,
+  cleared INT,
+  failed INT
+) AS $$
 DECLARE
   total INT := 0;
   done INT := 0;
   skip INT := 0;
   gap INT := 0;
+  sample_gap INT := 0;
   clr INT := 0;
   err INT := 0;
   removed INT;
   cp_record RECORD;
   computed NUMERIC;
+  gap_reason TEXT;
+  has_unpriced_energy BOOLEAN;
 BEGIN
   FOR cp_record IN
-    SELECT id FROM charging_processes WHERE end_date IS NOT NULL ORDER BY id
+    SELECT
+      cp.id,
+      cp.geofence_id,
+      (
+        SELECT NOT bool_or(c.charger_phases IS NOT NULL)
+        FROM charges c
+        WHERE c.charging_process_id = cp.id
+      ) AS is_dc
+    FROM charging_processes cp
+    WHERE cp.end_date IS NOT NULL
+    ORDER BY cp.id
   LOOP
     total := total + 1;
     BEGIN
@@ -1185,8 +1274,41 @@ BEGIN
         DELETE FROM charging_processes_tou_cost WHERE charging_process_id = cp_record.id;
         GET DIAGNOSTICS removed = ROW_COUNT;
         clr := clr + removed;
-        IF _tou_has_matching_rate(cp_record.id) THEN
+        gap_reason := _tou_long_gap_kind(cp_record.id);
+        IF gap_reason = 'configuration' THEN
           gap := gap + 1;
+        ELSIF gap_reason = 'sampling' THEN
+          sample_gap := sample_gap + 1;
+        ELSIF _tou_has_matching_rate(cp_record.id) THEN
+          -- 没有跨价长断档时，确认是否有短采样间隔从未配置电价的时段起步。
+          -- 若所有正功率间隔都有价格，却仍算不出金额，原因就是采样不足而非用户配置。
+          WITH samples AS (
+            SELECT
+              date,
+              charger_power,
+              LEAD(date) OVER (ORDER BY date) AS next_date
+            FROM charges
+            WHERE charging_process_id = cp_record.id
+          )
+          SELECT EXISTS (
+            SELECT 1
+            FROM samples
+            WHERE next_date IS NOT NULL
+              AND COALESCE(charger_power, 0)
+                  * EXTRACT(EPOCH FROM (next_date - date)) / 3600.0 > 0
+              AND lookup_tou_rate(
+                    date,
+                    cp_record.geofence_id,
+                    cp_record.is_dc
+                  ) IS NULL
+          )
+          INTO has_unpriced_energy;
+
+          IF has_unpriced_energy THEN
+            gap := gap + 1;
+          ELSE
+            sample_gap := sample_gap + 1;
+          END IF;
         ELSE
           skip := skip + 1;
         END IF;
@@ -1200,6 +1322,7 @@ BEGIN
   updated := done;
   skipped := skip;
   gapped := gap;
+  sampling_gapped := sample_gap;
   cleared := clr;
   failed := err;
   RETURN NEXT;

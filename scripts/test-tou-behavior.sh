@@ -36,11 +36,20 @@ trap cleanup EXIT
 #    以前从没人看，装不上、写不进去全是静默的，测试照跑照绿。现在夹具一失败就直接中止。
 # ---------------------------------------------------------------------------
 psql_q() {
-    local out
-    if out=$(docker exec -i "$CONTAINER" psql -U teslamate -d teslamate \
-                -tAX -P null='<NULL>' -v ON_ERROR_STOP=1 -c "$1" 2>&1); then
+    local capture_dir out
+    capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/tou-psql.XXXXXX") || {
+        printf '<SQL出错>无法创建查询输出临时目录'
+        return
+    }
+    if docker exec -i "$CONTAINER" psql -U teslamate -d teslamate \
+            -tAX -P null='<NULL>' -v ON_ERROR_STOP=1 -c "$1" \
+            >"$capture_dir/stdout" 2>"$capture_dir/stderr"; then
+        out=$(<"$capture_dir/stdout")
+        rm -r -- "$capture_dir"
         printf '%s' "$out" | tr -d '[:space:]'
     else
+        out=$(printf '%s%s' "$(<"$capture_dir/stdout")" "$(<"$capture_dir/stderr")")
+        rm -r -- "$capture_dir"
         printf '<SQL出错>%s' "$(printf '%s' "$out" | tr -d '[:space:]')"
     fi
 }
@@ -115,7 +124,7 @@ CREATE TABLE charges (
   date TIMESTAMP,
   charger_power NUMERIC,
   charger_phases INT,
-  charge_energy_added NUMERIC,
+  charge_energy_added NUMERIC NOT NULL,
   battery_level INT
 );
 -- 「✏️ 单笔充电单价」面板的下拉框会 LEFT JOIN 它取城市名，直接跑面板 SQL 时需要
@@ -152,8 +161,14 @@ BEGIN
   INSERT INTO charging_processes (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
   VALUES (${cp}, utc_start, utc_start + (${minutes} || ' minutes')::INTERVAL, kwh, kwh, 1, ${gf_sql});
   -- n 个间隔需要 n+1 个采样点（最后一个只用来给前一个提供 next_date）
-  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases)
-  SELECT ${cp}, utc_start + (i * INTERVAL '5 minutes'), ${power}, ${ph_sql}
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    ${cp},
+    utc_start + (i * INTERVAL '5 minutes'),
+    ${power},
+    ${ph_sql},
+    ${power} * i * 5 / 60.0
   FROM generate_series(0, n) AS i;
 END
 \$t\$;
@@ -186,8 +201,14 @@ BEGIN
   INSERT INTO charging_processes (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
   VALUES (${cp}, utc_start, NULL, NULL, NULL, 1, ${gf_sql});
   -- ② 充电过程中不断写采样
-  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases)
-  SELECT ${cp}, utc_start + (i * INTERVAL '5 minutes'), ${power}, ${ph_sql}
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  SELECT
+    ${cp},
+    utc_start + (i * INTERVAL '5 minutes'),
+    ${power},
+    ${ph_sql},
+    ${power} * i * 5 / 60.0
   FROM generate_series(0, n) AS i;
   -- ③ 拔枪，这一笔才算完成
   UPDATE charging_processes
@@ -240,6 +261,22 @@ PY
 echo ""
 echo "===== 断言 ====="
 
+# psql 的 NOTICE 写 stderr。成功查询的比较值只能来自 stdout，否则任何函数新增一条提示
+# 都会把原本精确的返回值断言打碎。
+psql_run <<'SQL'
+CREATE FUNCTION _tou_test_notice() RETURNS INT AS $$
+BEGIN
+  RAISE NOTICE '这条提示不属于查询返回值';
+  RETURN 42;
+END;
+$$ LANGUAGE plpgsql;
+SQL
+assert_eq "成功查询只比较 stdout，不把 NOTICE 拼进返回值" \
+    "42" "$(psql_q 'SELECT _tou_test_notice()')"
+psql_run <<'SQL'
+DROP FUNCTION _tou_test_notice();
+SQL
+
 # --- 1. 完全没配电价 → NULL（回退 TeslaMate 原 cost）---
 make_charge 1 '2026-03-10 10:00' 60 7
 assert_eq "没配任何电价 → NULL（回退原 cost）" "<NULL>" "$(psql_q 'SELECT compute_tou_cost(1)')"
@@ -266,9 +303,9 @@ if [ "$GOT3" = "2.1000" ]; then
     echo "       ↑ 这正是修复前的低估值，说明断言抓的就是那个 bug"
 fi
 
-# 定时充电会在真正开始前留下数小时的 0 功率等待期。这种长间隔没有电量归属不确定性，
-# 不能仅凭时长把整笔费用打成 NULL。这里保留实测回归的四个采样点；23:05→00:00 也是
-# 一个累计值缺失、起点有功率的长间隔，但全天同价时电量落在哪一分钟都不影响费用。
+# 定时充电会在真正开始前留下数小时的 0 功率等待期。23:05→00:00 丢了 55 分钟采样，
+# 累计电量从 0.5833 增到 7，能确认这段确实充了电；但全天同价时电量落在哪一分钟都
+# 不影响金额，不能仅凭断档把整笔费用打成 NULL。
 psql_run <<'SQL'
 DELETE FROM tou_rates;
 INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
@@ -283,19 +320,21 @@ BEGIN
   VALUES
     (90, utc_start, utc_start + INTERVAL '6 hours', 7, 7, 1, NULL);
 
-  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases) VALUES
-    (90, utc_start,                         0, 3),
-    (90, utc_start + INTERVAL '5 hours',    7, 3),
-    (90, utc_start + INTERVAL '305 minutes', 7, 3),
-    (90, utc_start + INTERVAL '6 hours',    0, 3);
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (90, utc_start,                           0, 3, 0),
+    (90, utc_start + INTERVAL '5 hours',      7, 3, 0),
+    (90, utc_start + INTERVAL '305 minutes',  7, 3, 0.583333),
+    (90, utc_start + INTERVAL '6 hours',      0, 3, 7);
 END
 $t$;
 SQL
-assert_eq "定时充电：0 功率等待 5 小时不影响分时计费" \
+assert_eq "累计值有效且全天同价：长断档仍按 7kWh × 0.5 计费" \
     "3.5000" "$(psql_q 'SELECT compute_tou_cost(90)')"
 
-# 真正充电时丢采样仍要 fail-closed。charge_energy_added 没填时必须退回间隔起点功率：
-# 07:05→09:00 起点为 7kW，不能丢掉它再拿前 5 分钟代表整笔 14kWh。
+# 真正充电时丢采样，且断档跨进没有电价的时段，必须 fail-closed。真实累计值从
+# 0.5833 增到 14，证明断档里有电量，不能只拿前 5 分钟代表整笔 14kWh。
 psql_run <<'SQL'
 DELETE FROM tou_rates;
 INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
@@ -310,23 +349,25 @@ BEGIN
   VALUES
     (91, utc_start, utc_start + INTERVAL '2 hours', 14, 14, 1, NULL);
 
-  INSERT INTO charges (charging_process_id, date, charger_power, charger_phases) VALUES
-    (91, utc_start,                         7, 3),
-    (91, utc_start + INTERVAL '5 minutes',  7, 3),
-    (91, utc_start + INTERVAL '2 hours',    0, 3);
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (91, utc_start,                         7, 3, 0),
+    (91, utc_start + INTERVAL '5 minutes',  7, 3, 0.583333),
+    (91, utc_start + INTERVAL '2 hours',    0, 3, 14);
 END
 $t$;
 SQL
-assert_eq "充电中丢采样：累计电量缺失时由起点 7kW 判定 → NULL" \
+assert_eq "长断档有电量且跨进未配价时段 → NULL" \
     "<NULL>" "$(psql_q 'SELECT compute_tou_cost(91)')"
 
-# 累计电量判据优先于功率判据：长间隔起点虽然是 0kW，但累计值从 0 增到 1，
-# 证明期间确实充进了电。前面另留一个正常的有功短间隔，避免函数因 SUM(raw_kwh)=0
-# 而碰巧返回 NULL，让这条断言只在累计增量判据真正生效时才通过。
+# 峰谷都配全时，长断档跨过切换点仍然无法知道多少电量属于哪一档，必须 fail-closed。
 psql_run <<'SQL'
 DELETE FROM tou_rates;
 INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
-VALUES (NULL, 0, 24, 0.5, '统一');
+VALUES
+  (NULL, 0, 11, 0.3, '谷'),
+  (NULL, 11, 24, 0.6, '峰');
 
 DO $t$
 DECLARE
@@ -335,20 +376,80 @@ BEGIN
   INSERT INTO charging_processes
     (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
   VALUES
-    (92, utc_start, utc_start + INTERVAL '70 minutes', 1, 1, 1, NULL);
+    (92, utc_start, utc_start + INTERVAL '70 minutes', 8.166667, 8.166667, 1, NULL);
 
   INSERT INTO charges
     (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
   VALUES
     (92, utc_start,                          7, 3, 0),
-    (92, utc_start + INTERVAL '5 minutes',   0, 3, 0),
-    (92, utc_start + INTERVAL '65 minutes',  0, 3, 1),
-    (92, utc_start + INTERVAL '70 minutes',  0, 3, 1);
+    (92, utc_start + INTERVAL '5 minutes',   7, 3, 0.583333),
+    (92, utc_start + INTERVAL '65 minutes',  7, 3, 7.583333),
+    (92, utc_start + INTERVAL '70 minutes',  0, 3, 8.166667);
 END
 $t$;
 SQL
-assert_eq "长间隔起点 0kW、但累计电量有增量 → NULL" \
+assert_eq "长断档有电量且跨峰谷切换 → NULL" \
     "<NULL>" "$(psql_q 'SELECT compute_tou_cost(92)')"
+
+# 普通充电中间丢了 45 分钟采样，但断档前后都是同一个有效电价，金额仍可精确计算。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES (NULL, 0, 24, 0.5, '统一');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-04 01:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (93, utc_start, utc_start + INTERVAL '2 hours', 14, 14, 1, NULL);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (93, utc_start,                           7, 3, 0),
+    (93, utc_start + INTERVAL '30 minutes',   7, 3, 3.5),
+    (93, utc_start + INTERVAL '45 minutes',   7, 3, 5.25),
+    (93, utc_start + INTERVAL '60 minutes',   7, 3, 7),
+    (93, utc_start + INTERVAL '105 minutes',  7, 3, 12.25),
+    (93, utc_start + INTERVAL '2 hours',      0, 3, 14);
+END
+$t$;
+SQL
+assert_eq "普通充电中途丢 45 分钟采样、全天同价 → 14kWh × 0.5" \
+    "7.0000" "$(psql_q 'SELECT compute_tou_cost(93)')"
+
+# TeslaMate 的累计电量可能在同一笔充电中掉回。负增量同样证明断档里发生过充电，
+# 且这里跨过 22:00 后未配置的时段，不能把整段按 21:00 的峰价计算。
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES
+  (NULL, 0, 8, 0.3, '谷'),
+  (NULL, 8, 22, 0.6, '峰');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-05-05 21:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (94, utc_start, utc_start + INTERVAL '215 minutes', 24.5, 24.5, 1, NULL);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (94, utc_start,                           7, 3, 20),
+    (94, utc_start + INTERVAL '210 minutes',  7, 3, 2),
+    (94, utc_start + INTERVAL '215 minutes',  0, 3, 2.6);
+END
+$t$;
+SQL
+assert_eq "累计电量掉回且长断档跨未配价时段 → NULL" \
+    "<NULL>" "$(psql_q 'SELECT compute_tou_cost(94)')"
 
 # --- 4. 显式 0 元电价（免费充电桩）≠ 没配 ---
 psql_run <<'SQL'
@@ -515,6 +616,11 @@ psql_run <<'SQL'
 UPDATE charging_processes SET cost = 33 WHERE id = 12;
 SQL
 assert_eq "同时有分时电价和 TeslaMate 金额 → 用 TeslaMate 的金额" "33" "$(psql_q 'SELECT effective_cost(12, (SELECT cost FROM charging_processes WHERE id=12))')"
+psql_run <<'SQL'
+UPDATE charging_processes SET cost = 0 WHERE id = 12;
+SQL
+assert_eq "TeslaMate 记录 0 元且已有分时费用 → 仍用真实的 0 元" \
+    "0" "$(psql_q 'SELECT effective_cost(12, (SELECT cost FROM charging_processes WHERE id=12))')"
 psql_run <<'SQL'
 UPDATE charging_processes SET cost = NULL WHERE id = 12;
 SQL
@@ -735,6 +841,39 @@ DELETE FROM tou_rates;
 SQL
 assert_eq "一条规则都没配 → 全部算「没配」，gapped 为 0" "0" "$(psql_q 'SELECT gapped FROM backfill_all_tou()')"
 
+# 配置完整但采样断档跨峰谷时，不能再记成「配置缺口」。用独立地点把两个计数钉死。
+psql_run <<'SQL'
+INSERT INTO geofences (id, name) VALUES (31, '采样断档计数测试');
+
+DO $t$
+DECLARE
+  utc_start TIMESTAMP := TIMESTAMP '2026-03-13 07:00' - INTERVAL '8 hours';
+BEGIN
+  INSERT INTO charging_processes
+    (id, start_date, end_date, charge_energy_added, charge_energy_used, car_id, geofence_id)
+  VALUES
+    (31, utc_start, utc_start + INTERVAL '2 hours', 14, 14, 1, 31);
+
+  INSERT INTO charges
+    (charging_process_id, date, charger_power, charger_phases, charge_energy_added)
+  VALUES
+    (31, utc_start,                         7, 3, 0),
+    (31, utc_start + INTERVAL '5 minutes',  7, 3, 0.583333),
+    (31, utc_start + INTERVAL '2 hours',    0, 3, 14);
+END
+$t$;
+
+INSERT INTO tou_rates (geofence_id, hour_start, hour_end, rate, label)
+VALUES
+  (31, 0, 8, 0.3, '谷'),
+  (31, 8, 24, 0.6, '峰');
+SQL
+assert_eq "回算计数：配置完整但跨价断档 → 配置缺口 0，采样断档 1" \
+    "0,1" "$(psql_q "SELECT gapped || ',' || sampling_gapped FROM backfill_all_tou()")"
+psql_run <<'SQL'
+DELETE FROM tou_rates;
+SQL
+
 # ===========================================================================
 # 老数据迁移：只认算得出来的行，且一行都不能丢
 # ===========================================================================
@@ -856,10 +995,10 @@ reinstall_tou
 assert_eq "用户主动清空默认电价后再升级 → 保持清空，不被迁移撤销" "<NULL>" "$(psql_q 'SELECT default_rate FROM tou_settings')"
 
 # ===========================================================================
-# 升级重建对账视图：下游用户视图不能阻止费用优先级更新
+# 升级重建对账视图：无法安全重建时保留用户对象，并明确告知旧口径与处理办法
 # ===========================================================================
 echo ""
-echo "===== 升级重建有依赖对象的对账视图 ====="
+echo "===== 有依赖的旧对账视图会保留并提示处理办法 ====="
 
 # 模拟旧版本中「分时电价压过 TeslaMate 记录金额」的视图表达式，再建一个依赖它的用户视图。
 psql_run <<'SQL'
@@ -879,19 +1018,16 @@ LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id;
 
 CREATE VIEW user_charging_costs AS
 SELECT id, cost_effective FROM charging_processes_v;
+
+-- 模拟 TeslaMate 上游后来新增一列：cp.* 展开的列布局随之变化，原地替换会报 42P16；
+-- 用户视图又依赖旧视图，所以安装程序不能安全 DROP 后重建。
+ALTER TABLE charging_processes ADD COLUMN upstream_added_column TEXT;
 SQL
 reinstall_tou
 assert_eq "重跑安装后，依赖 charging_processes_v 的用户视图仍然存在" \
     "user_charging_costs" "$(psql_q "SELECT to_regclass('public.user_charging_costs')::text")"
-
-make_charge 46 '2026-03-11 20:00' 60 7
-psql_run <<'SQL'
-UPDATE charging_processes SET cost = 120 WHERE id = 46;
-INSERT INTO charging_processes_tou_cost (charging_process_id, cost_tou)
-VALUES (46, 7);
-SQL
-assert_eq "重跑安装后，对账视图改为 TeslaMate 金额优先（120，不是分时估算 7）" \
-    "120" "$(psql_q 'SELECT cost_effective FROM charging_processes_v WHERE id = 46')"
+assert_eq "无法安全重建对账视图时，安装结果会明确告诉用户现状和处理办法" \
+    "1" "$(psql_q "SELECT (legacy_default_note LIKE '%charging_processes_v%旧口径%自建对象%重新运行%')::int FROM tou_settings")"
 
 # ===========================================================================
 # 卸载：费用显示完全回到 TeslaMate 自己的数据

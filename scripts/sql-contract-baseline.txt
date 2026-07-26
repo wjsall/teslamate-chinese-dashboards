@@ -6,8 +6,8 @@
 # SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，
 # 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。
 FORMAT_VERSION=2
-RECORDED_REVISION=8
-SOURCE_DIGEST=4da47902ccc8b922e8a4749ebbccf3dd52470c18c17747874de520448ee4ce16
+RECORDED_REVISION=9
+SOURCE_DIGEST=395e6a476f6e5e6b927f17b580b50f20737dc8a4bd3d8755b6b03a6c7a290a8b
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
@@ -17,6 +17,7 @@ FUNCTION	_tou_delete_season	(IN:p_geofence_id:INT,IN:v_from:DATE,IN:v_to:DATE) R
 FUNCTION	_tou_drop_legacy_default_rates	() RETURNS INT
 FUNCTION	_tou_has_matching_rate	(IN:cp_id:INT) RETURNS BOOLEAN
 FUNCTION	_tou_in_season	(IN:sample_date:DATE,IN:v_from:DATE,IN:v_to:DATE) RETURNS BOOLEAN
+FUNCTION	_tou_long_gap_kind	(IN:cp_id:INT) RETURNS TEXT
 FUNCTION	_tou_md_to_date	(IN:m:TEXT,IN:d:TEXT) RETURNS DATE
 FUNCTION	_tou_parse_ranges	(IN:p_str:TEXT) RETURNS TABLE(hr:INT)
 FUNCTION	adopt_legacy_default_costs	(IN:p_old_rate:NUMERIC,IN:p_dry_run:BOOLEAN=D) RETURNS TABLE(message:TEXT)
@@ -24,7 +25,7 @@ FUNCTION	apply_city_template	(IN:city_name:TEXT,IN:target_geofence_id:INT) RETUR
 FUNCTION	apply_tou_pattern	(IN:p_geofence_id:INT,IN:p_pattern:TEXT,IN:p_rate_g:TEXT=D,IN:p_rate_p:TEXT=D,IN:p_rate_f:TEXT=D,IN:p_rate_j:TEXT=D,IN:p_rate_d:TEXT=D,IN:p_from_month:TEXT=D,IN:p_from_day:TEXT=D,IN:p_to_month:TEXT=D,IN:p_to_day:TEXT=D) RETURNS INT
 FUNCTION	apply_tou_simple	(IN:p_geofence_id:INT,IN:p_valley_ranges:TEXT,IN:p_valley_rate:TEXT,IN:p_peak_ranges:TEXT=D,IN:p_peak_rate:TEXT=D,IN:p_mid_rate:TEXT=D,IN:p_sharp_ranges:TEXT=D,IN:p_sharp_rate:TEXT=D,IN:p_deep_ranges:TEXT=D,IN:p_deep_rate:TEXT=D,IN:p_from_month:TEXT=D,IN:p_from_day:TEXT=D,IN:p_to_month:TEXT=D,IN:p_to_day:TEXT=D) RETURNS INT
 FUNCTION	audit_tou_config	(IN:p_geofence_id:INT) RETURNS TABLE(severity:TEXT,season:TEXT,detail:TEXT)
-FUNCTION	backfill_all_tou	() RETURNS TABLE(processed:INT,updated:INT,skipped:INT,gapped:INT,cleared:INT,failed:INT)
+FUNCTION	backfill_all_tou	() RETURNS TABLE(processed:INT,updated:INT,skipped:INT,gapped:INT,sampling_gapped:INT,cleared:INT,failed:INT)
 FUNCTION	compute_tou_cost	(IN:cp_id:INT) RETURNS NUMERIC
 FUNCTION	convert_celsius	(IN:n:NUMERIC,IN:unit:TEXT) RETURNS NUMERIC
 FUNCTION	convert_km	(IN:n:NUMERIC,IN:unit:TEXT) RETURNS NUMERIC
@@ -46,9 +47,10 @@ FUNCTION	wgs84_to_gcj02_lat	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECI
 FUNCTION	wgs84_to_gcj02_lng	(IN:wgs_lat:DOUBLE PRECISION,IN:wgs_lng:DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 FUNCTION_BODY	_tou_default_cost	3dbb514a25de9809
 FUNCTION_BODY	_tou_has_matching_rate	a404c607b90c287a
+FUNCTION_BODY	_tou_long_gap_kind	998da0f1801b61bd
 FUNCTION_BODY	adopt_legacy_default_costs	82870f0218b901f4
-FUNCTION_BODY	backfill_all_tou	36c007243b6cde26
-FUNCTION_BODY	compute_tou_cost	3609e08a0b64a1cc
+FUNCTION_BODY	backfill_all_tou	d27035500e6bc242
+FUNCTION_BODY	compute_tou_cost	1a2e0ff6cca96469
 FUNCTION_BODY	cost_before_tou	cb3e6b00bdd1f8ab
 FUNCTION_BODY	effective_cost	fa33602e104f7069
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
