@@ -21,7 +21,7 @@ fail_test() {
 
 require_text() {
     local label="$1" text="$2"
-    if rg -Fq "$text" "$PROMPT_PATH"; then
+    if grep -Fq -- "$text" "$PROMPT_PATH"; then
         pass_test "$label"
     else
         fail_test "$label"
@@ -30,7 +30,7 @@ require_text() {
 
 require_file_text() {
     local label="$1" file="$2" text="$3"
-    if rg -Fq "$text" "$file"; then
+    if grep -Fq -- "$text" "$file"; then
         pass_test "$label"
     else
         fail_test "$label"
@@ -39,7 +39,7 @@ require_file_text() {
 
 forbid_text() {
     local label="$1" text="$2"
-    if rg -Fq "$text" "$PROMPT_PATH"; then
+    if grep -Fq -- "$text" "$PROMPT_PATH"; then
         fail_test "$label"
     else
         pass_test "$label"
@@ -48,7 +48,7 @@ forbid_text() {
 
 forbid_file_text() {
     local label="$1" file="$2" text="$3"
-    if rg -Fq "$text" "$file"; then
+    if grep -Fq -- "$text" "$file"; then
         fail_test "$label"
     else
         pass_test "$label"
@@ -109,8 +109,8 @@ while IFS='|' read -r case_id required_anchor forbidden_shortcut; do
         ''|'#'*) continue ;;
     esac
     case_count=$((case_count + 1))
-    if rg -Fq "$required_anchor" "$PROMPT_PATH" \
-       && ! rg -Fq "$forbidden_shortcut" "$PROMPT_PATH"; then
+    if grep -Fq -- "$required_anchor" "$PROMPT_PATH" \
+       && ! grep -Fq -- "$forbidden_shortcut" "$PROMPT_PATH"; then
         pass_test "场景契约：$case_id"
     else
         fail_test "场景契约：$case_id"
