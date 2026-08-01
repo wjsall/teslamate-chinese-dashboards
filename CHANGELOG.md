@@ -1,5 +1,17 @@
 # 更新日志
 
+## [v1.9.4] - 2026-08-01
+
+### 🤖 AI 自助排查更安全、更聚焦
+
+- AI 排障会先区分已确认、可能和未知项，每轮只收集最多三项相关只读证据；日期或显示问题优先提供面板 SQL、返回摘要、时区和时间范围，不再要求所有用户上传完整服务日志。
+- 提交问题改为「仪表盘或数据」和「安装、迁移或升级」两类表单，并要求在公开提交前移除密码、Token、VIN、位置和其他个人信息。
+- 一键安装目录可从当前 Grafana 镜像取出同版本的只读诊断脚本，不需要先下载完整源码。
+
+### 🐘 PostgreSQL 兼容性说明
+
+- 明确 PostgreSQL 15 已支持三参数 `date_trunc`；本项目的 PostgreSQL 16 技术边界来自带时区的四参数 `generate_series`。仅出现 `date_trunc` 报错时不会再直接引导数据库大版本升级。
+
 ## [v1.9.3] - 2026-08-01
 
 ### 🐛 修复车辆里程与统计表错月、下钻时间不在本地零点
@@ -617,7 +629,7 @@ issue #20 / #22 都撞同一个坑：`nominatim.openstreetmap.org` 国内访问�
 
 ### 📚 AI 自助排查 prompt 全面扩充
 
-覆盖所有历史 issue 类型（#17 仪表盘 JSON 脏 `current` / #20-21 volkov 插件 volume 覆盖 / #22 Nominatim 超时 / PG < 18 date_trunc 报错）。AI 拿到 prompt 后会先问「整个仪表盘报错还是单个面板报错」决定诊断方向，对三类典型问题（地址列空 / volkov panel 报错 / 升级 SQL 函数错）直接给具体修复路径，不再泛泛“等几小时”。
+覆盖当时的历史 issue 类型（#17 仪表盘 JSON 脏 `current` / #20-21 volkov 插件 volume 覆盖 / #22 Nominatim 超时 / PG < 16 四参数 `generate_series` 不可用）。AI 拿到 prompt 后会先问「整个仪表盘报错还是单个面板报错」决定诊断方向，对三类典型问题（地址列空 / volkov panel 报错 / 升级 SQL 函数错）直接给具体修复路径，不再泛泛“等几小时”。
 
 ### ⬆️ 升级方法（**必须用方法 A，因为含新 PG 函数**）
 
@@ -749,7 +761,7 @@ curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards
 官方 teslamate-org 主分支当前默认 `postgres:18-trixie`，本项目同步要求 PG 18：
 
 - `simple-deploy.sh` 默认 PG 18（无变化）
-- `migrate-from-official.sh` 新增 PG 版本探测 + 备份升级流程提示：PG ≤15 直接退出（仪表盘必报错），PG 16/17 警告但允许跳过；失败时打印完整 8 步 `pg_dumpall → 删卷 → 换 image → 恢复` 命令
+- `migrate-from-official.sh` 新增 PG 版本探测 + 备份升级流程提示：PG ≤15 因四参数 `generate_series` 不可用而退出，PG 16/17 警告但允许跳过；失败时打印完整 8 步 `pg_dumpall → 删卷 → 换 image → 恢复` 命令
 - README / QUICKSTART 系统要求段加 PG 18 + 链接 TROUBLESHOOTING「PostgreSQL 大版本升级」章节
 
 ### 📚 文档
@@ -760,7 +772,7 @@ curl -fsSL https://raw.githubusercontent.com/wjsall/teslamate-chinese-dashboards
 
 ### 兼容性
 
-镜像 LABEL 1.6.9 → 1.7.0。3 个新仪表盘自动加载，无需手动操作或 SQL。**升级用户**如在 PG ≤17，迁移到本项目前请先升级到 PG 18（备份流程见 TROUBLESHOOTING）。
+镜像 LABEL 1.6.9 → 1.7.0。3 个新仪表盘自动加载，无需手动操作或 SQL。PG 16/17 可运行本项目；PG 15 及以下需先按 TROUBLESHOOTING 的备份流程升级。
 
 ---
 
