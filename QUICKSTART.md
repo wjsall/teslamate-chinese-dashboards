@@ -55,7 +55,7 @@ TeslaMate 需要 **一台一直开机的机器**（关机就停止记录数据�
 | **最低 1GB 内存（推荐 2GB）** | TeslaMate 官方最低要求 1GB，2GB 流畅；树莓派 3 / 入门 VPS 也能装 |
 | **10GB 以上磁盘空间** | 用于数据库和镜像 |
 | **网络能访问 Tesla 服务器** | 国内访问 `*.cloud.tesla.cn`，国际访问 `*.teslamotors.com` |
-| **PostgreSQL 技术最低 16，官方推荐 18** | 13 个仪表盘使用 PG 16 起支持的三参数 `date_trunc`。simple-deploy.sh 按官方默认安装 `postgres:18-trixie`；PG 16/17 可运行全部仪表盘，PG 15 及以下需按 [TROUBLESHOOTING「PostgreSQL 大版本升级」](TROUBLESHOOTING.md#postgresql-upgrade) 备份升级 |
+| **PostgreSQL 技术最低 16，官方推荐 18** | PG 15 已支持三参数 `date_trunc`；本项目需要 PG 16 的四参数 `generate_series(timestamptz, timestamptz, interval, timezone)`。只有该函数签名报错时才按 [TROUBLESHOOTING「PostgreSQL 大版本升级」](TROUBLESHOOTING.md#postgresql-upgrade) 规划备份升级；不要只因 `date_trunc` 报错升级。|
 
 ### 第一关：打开「终端」/ 命令行
 

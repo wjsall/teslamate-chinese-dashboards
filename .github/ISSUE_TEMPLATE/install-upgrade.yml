@@ -1,0 +1,55 @@
+name: 安装、迁移或升级问题
+description: 报告服务无法启动、迁移脚本或升级流程失败
+title: "[Install/Upgrade]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        源码目录可先运行 `bash scripts/diagnose.sh`；一键安装目录请按 [AI 自助排查](https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md) 取出同版本诊断脚本。只提交与失败步骤有关的脱敏片段；不要提交完整 `.env`、Token、密钥、密码、VIN 或位置数据。
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已移除密钥、密码、Token、VIN、地址、精确 GPS、邮箱和公网 IP。
+          required: true
+  - type: dropdown
+    id: scenario
+    attributes:
+      label: 场景
+      options:
+        - 全新安装
+        - 从官方 TeslaMate 迁移
+        - 项目版本升级
+        - PostgreSQL 大版本维护
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 失败步骤与现象
+      description: 请写执行的准确命令、第一条错误，以及是否影响服务可用性。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 最小证据
+      description: 附失败步骤前后约 80 行脱敏输出，或 `docker compose ps` 与相关服务日志尾部。不要粘贴全部日志。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 操作系统、部署平台、项目镜像或版本、是否自定义 Compose。
+    validations:
+      required: true
+  - type: textarea
+    id: ai_result
+    attributes:
+      label: AI 或 diagnose.sh 结论（可选）
+      description: 请附脱敏后的 confirmed / probable / unknown 结论。
+    validations:
+      required: false

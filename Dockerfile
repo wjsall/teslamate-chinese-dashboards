@@ -67,6 +67,11 @@ COPY grafana/dashboards/internal/*.json /dashboards_internal/
 # 上面昂贵的 grafana cli plugins install 层缓存失效。
 COPY config/versions.env /opt/teslamate-cn/versions.env
 
+# 一键安装目录没有仓库的 scripts/；把同一份只读诊断入口放进镜像，用户可在
+# Grafana service 正在运行时用 docker cp 取出后执行。放在所有插件安装层之后，
+# 改诊断脚本不会让昂贵的 grafana cli 插件层失去缓存。
+COPY --chmod=0444 scripts/diagnose.sh /opt/teslamate-cn/diagnose.sh
+
 # 暴露端口
 EXPOSE 3000
 

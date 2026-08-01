@@ -917,6 +917,27 @@ jobs:
       - name: 跑交流输入电压/电流行为断言
         run: bash scripts/test-current-charge-electrics.sh
 
+  # ============================================================================
+  # 用户支持契约：AI 排障提示保持安全边界，并锁定 PG15/PG16 的真实函数签名差异。
+  # ============================================================================
+  support-contract:
+    name: "排障提示与 PostgreSQL 兼容性"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 校验 AI 排障提示与镜像内诊断入口
+        run: bash scripts/check-ai-troubleshooting-prompt.sh
+
+      - name: 验证 PostgreSQL 15 与 16 的函数签名
+        run: bash scripts/test-postgres-compatibility.sh
+
   # ==========================================================================
   # 本地周期边界测试：验 date_from/date_to 的下钻范围和显示周期始终使用
   # Grafana 本地时区；跨 DST 时终点仍是下一本地零点。
@@ -1008,6 +1029,7 @@ jobs:
       - smoke-plugin-volume-shadow
       - tou-behavior
       - current-charge-electrics
+      - support-contract
       - period-boundaries
       - dashboard-sql
     if: >-
@@ -1098,6 +1120,7 @@ jobs:
       - smoke-plugin-volume-shadow
       - tou-behavior
       - current-charge-electrics
+      - support-contract
       - period-boundaries
       - dashboard-sql
     if: >-

@@ -268,8 +268,8 @@ detect_db_container() {
     return 0
 }
 
-# 探测 PG 版本 — 我们要求 18+（与官方 teslamate-org 默认对齐）
-# 13 个仪表盘用 3-arg date_trunc，PG ≤15 直接报错；PG 16/17 能跑但建议升 18
+# 探测 PG 版本 — 新装默认 18；项目的技术下限是 PG 16。
+# PG 15 已支持 3-arg date_trunc；下限来自 4-arg generate_series(..., interval, timezone)。
 check_pg_version() {
     if [[ -z "${DB_CONTAINER:-}" ]]; then return 0; fi
     local ver
@@ -284,8 +284,9 @@ check_pg_version() {
     echo
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if (( major <= 15 )); then
-        echo "❌ 检测到 PostgreSQL $major — **必须先升级到 18** 才能继续"
-        echo "   原因：本项目 13 个仪表盘用 3-arg date_trunc 时区聚合（PG 16+ 才支持）"
+        echo "❌ 检测到 PostgreSQL $major — 该版本不支持本项目所需的四参数 generate_series"
+        echo "   受影响函数签名：generate_series(timestamptz, timestamptz, interval, timezone)（PG 16+）"
+        echo "   不要仅凭 date_trunc 报错判断需要升级；请先核对完整错误中的函数签名。"
     else
         echo "⚠️  检测到 PostgreSQL $major — 建议升级到 18（与官方 teslamate-org 对齐）"
         echo "   PG 16/17 能跑本项目所有仪表盘，但官方 docker-compose.yml 已默认 postgres:18-trixie"

@@ -1,0 +1,12 @@
+# case_id|required prompt anchor|forbidden legacy shortcut
+issue-20-21-panel-plugin|多个表单面板同时缺失|docker compose pull grafana &&
+issue-23-29-sql-objects|项目自定义 SQL 对象不存在|=SQL 四件套没装/没重装
+issue-31-unfamiliar-metric|不符合以上模式：标记为 unknown|平均速度一定是
+issue-33-upgrade-failure|执行的准确命令、第一条错误|pull latest
+issue-34-support-request|不符合以上模式：标记为 unknown|Alpine 一定支持
+issue-35-date-boundary|仪表盘名称或 UID、面板名称或 ID、浏览器与仪表盘时区|docker compose logs grafana --tail 200
+pg15-date-trunc-error|仅看到 `date_trunc` 报错时|PG 15 及以下才必须
+pg15-four-arg-series|第四参数可能显示为 `unknown`|function date_trunc(text, timestamp with time zone, text) does not exist
+authentication|不要索要授权链接、Cookie 或 Token|refresh_token
+container-startup|失败服务的 `docker compose logs <service> --tail 100`|docker compose logs > debug.log
+novel-problem|不得硬套历史问题|直接套对应的 problem

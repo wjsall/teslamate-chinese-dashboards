@@ -1,0 +1,69 @@
+name: 仪表盘或数据问题
+description: 报告面板报错、数据为空、显示异常或下钻范围不正确
+title: "[Dashboard]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        源码目录可先运行 `bash scripts/diagnose.sh`；一键安装目录请按 [AI 自助排查](https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md) 取出同版本诊断脚本。只提交脱敏后的最小证据；不要提交 `.env`、Token、密码、VIN、地址或精确 GPS。
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已移除密钥、密码、Token、VIN、地址、精确 GPS、邮箱和公网 IP。
+          required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 问题与期望
+      description: 哪个仪表盘或面板、实际看到什么、期望是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 最小证据
+      description: 请附面板 Inspect → Query 的实际 SQL 与错误/返回摘要。只有查询指向服务异常时才补相关日志尾部；不要粘贴完整日志。
+    validations:
+      required: true
+  - type: textarea
+    id: dashboard_context
+    attributes:
+      label: 仪表盘上下文
+      description: 仪表盘名称或 UID、面板名称或 ID、浏览器时区、仪表盘时区、Grafana 时间范围和已选变量。
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: 安装方式
+      options:
+        - simple-deploy.sh 全新安装
+        - 从官方 TeslaMate 迁移
+        - 旧版升级
+        - 自定义 Compose
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 项目镜像或版本、部署平台，以及是否自定义 Compose。
+    validations:
+      required: true
+  - type: textarea
+    id: ai_result
+    attributes:
+      label: AI 或 diagnose.sh 结论（可选）
+      description: 请区分已确认、可能和未知项。
+    validations:
+      required: false
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 截图（可选）
+      description: 可拖入截图；请先遮住个人信息。
+    validations:
+      required: false

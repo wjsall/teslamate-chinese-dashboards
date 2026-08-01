@@ -10,11 +10,11 @@
 
 **操作 3 步：**
 
-1. 打开 [docs/ai-troubleshooting-prompt.md](docs/ai-troubleshooting-prompt.md) 看完整 prompt + AI 平台清单
+1. 打开 [docs/ai-troubleshooting-prompt.md](docs/ai-troubleshooting-prompt.md) 看完整 prompt
 2. 把里面 ✂️ 之间的整段 prompt 复制到任意主流 AI
-3. 在 prompt 末尾贴上你的错误日志和问题，提交
+3. 在 prompt 末尾贴上脱敏后的最小相关输出和问题，提交
 
-AI 拿到的是完整项目背景（架构、SQL 四件套、常见坑、调试命令），诊断比通用 AI 准得多。**注意核对 AI 给的命令再执行，不要盲跑 chown / DROP / --user root 等改动型命令。**
+AI 会先按症状要求最小只读证据，并给出已确认、可能与未知项。日志和文本请先脱敏；不要提供密钥、密码、Token、VIN 或精确位置。任何重启、写 SQL、改权限、升级镜像或删除操作，都应先说明影响、备份和回滚方式，再等待你确认。
 
 **AI 没解决** → 再来 [GitHub issues](https://github.com/wjsall/teslamate-chinese-dashboards/issues) 报告，附上 AI 的诊断结论让维护者跳过重复排查。
 
@@ -178,7 +178,7 @@ newgrp docker
 
 **症状**：地图整页或某些面板报错 `db query error: ERROR: function lat_for_map(unknown, numeric, numeric) does not exist`（或 `lng_for_map` / `effective_cost` / `compute_tou_cost` 等）。
 
-**根因**：这些是本项目的**自定义 SQL 函数**（坐标转换、分时电价计费），不在 Grafana 镜像里，要单独装进数据库。报这个错 = **没装、或更新镜像后没重装 SQL 四件套**。⚠️ **跟 PostgreSQL 版本无关，别去升级 PG**（升 PG 是另一个错：`function date_trunc(text, timestamp with time zone, text) does not exist`，两者不要混）。
+**根因**：这些是本项目的**自定义 SQL 函数**（坐标转换、分时电价计费），不在 Grafana 镜像里，要单独装进数据库。报这个错 = **没装、或更新镜像后没重装 SQL 四件套**。⚠️ **跟 PostgreSQL 版本无关，别去升级 PG**。
 
 **修复**——重装 SQL 四件套（坐标函数 / 单位换算 / 分时电价 / 性能索引）：
 
@@ -1123,6 +1123,8 @@ volumes:
 
 ### PostgreSQL 大版本升级（如 17 → 18）
 
+只在完整报错明确指向四参数 `generate_series(timestamp with time zone, timestamp with time zone, interval, text/unknown) does not exist`，且版本低于 16 时，才需要为兼容性安排升级。PG 15 已支持 `date_trunc(text, timestamptz, text)`；仅看到 `date_trunc` 报错时，请先保留完整错误和 SQL，确认函数签名、参数类型及实际版本，不要直接做大版本升级。
+
 ⚠️ **不能直接改 `image: postgres:18-trixie` 重启**——PostgreSQL 大版本之间数据文件不兼容，直接换镜像会让 database 容器进入 `database files are incompatible with server` 反复重启循环。**必须按官方流程：备份 → 删卷 → 换镜像 → 恢复**。
 
 参考：[TeslaMate 官方 upgrading_postgres](https://docs.teslamate.org/docs/maintenance/upgrading_postgres)
@@ -1582,13 +1584,9 @@ docker compose up -d         # 重新开始
 
 ## 💬 还是解决不了？
 
-1. **查看完整日志**：`docker compose logs > debug.log` 然后贴到 Issue 中
-2. **提交 Issue**：https://github.com/wjsall/teslamate-chinese-dashboards/issues
-3. **提供信息**：
-   - 操作系统版本
-   - Docker 版本（`docker --version`）
-   - 错误日志截图或文字
-   - 你做了什么操作之后出现的问题
+1. 源码目录先运行 `bash scripts/diagnose.sh`；一键安装目录没有该文件时，按 [AI 安全排障提示](docs/ai-troubleshooting-prompt.md) 从同版本 Grafana 镜像取出。也可按症状收集不超过三项最小只读证据。
+2. 提交 Issue：https://github.com/wjsall/teslamate-chinese-dashboards/issues
+3. 提供脱敏后的症状、实际操作、相关服务的日志片段和 AI 结论（如有）；不要上传完整 `.env`、密钥、Token、VIN、地址或精确 GPS。
 
 <a id="sql-trust-model"></a>
 

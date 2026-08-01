@@ -5,7 +5,7 @@ contact_links:
     about: nominatim.openstreetmap.org 国内访问超时是行程列表地址空的根因，加 NOMINATIM_PROXY 一行 env 解决
   - name: 🤖 先问 AI 自助排查
     url: https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/docs/ai-troubleshooting-prompt.md
-    about: 复制项目 prompt 给主流 AI，看日志直接诊断
+    about: 复制安全 prompt，按症状收集脱敏后的最小证据并分阶段诊断
   - name: 📖 故障排查手册
     url: https://github.com/wjsall/teslamate-chinese-dashboards/blob/main/TROUBLESHOOTING.md
     about: 按症状找原因的手动排查清单

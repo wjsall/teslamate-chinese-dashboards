@@ -328,8 +328,8 @@ services:
 - Docker 20.10+
 - Docker Compose 2.0+
 - **PostgreSQL 技术最低 16，官方推荐 18**（官方默认 `postgres:18-trixie`）
-  - 13 个仪表盘用三参数 `date_trunc` 时区聚合，PG 16 起支持，**PG ≤15 必报错**
-  - PG 16/17 可运行全部仪表盘；新装或安排大版本维护时建议用 PG 18。升级前先看 [TROUBLESHOOTING.md「PostgreSQL 大版本升级」](TROUBLESHOOTING.md#postgresql-upgrade)
+  - PG 15 已支持三参数 `date_trunc(text, timestamptz, text)`；本项目要求 PG 16 的原因是四参数 `generate_series(timestamptz, timestamptz, interval, timezone)`。
+  - 只有报错函数签名明确指向该四参数 `generate_series` 时，才按 [TROUBLESHOOTING.md「PostgreSQL 大版本升级」](TROUBLESHOOTING.md#postgresql-upgrade) 规划升级；不要仅因 `date_trunc` 报错升级。
 - 内存: 2GB+
 - 磁盘: 10GB+
 
@@ -395,6 +395,7 @@ MIT License - 与 TeslaMate 项目相同
 
 ## 💬 问题反馈
 
+- 先运行 [诊断脚本](scripts/diagnose.sh) 或复制 [AI 安全排障提示](docs/ai-troubleshooting-prompt.md)，只附脱敏后的最小证据。
 - GitHub Issues: https://github.com/wjsall/teslamate-chinese-dashboards/issues
 
 ---
