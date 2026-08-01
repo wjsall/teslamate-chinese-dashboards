@@ -1761,7 +1761,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "电流"
+                "value": "交流输入电流"
               },
               {
                 "id": "unit",
@@ -1838,6 +1838,7 @@
         "y": 14
       },
       "id": 49,
+      "description": "单位：A。仅显示交流充电器输入电流；TeslaMate 未记录真实直流电流，直流快充期间请查看功率和充入电量。",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1865,7 +1866,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT avg(case when charger_voltage > 2 then charger_actual_current else ((2.85 + (usable_battery_level * 0.013)) * 96) * charger_power / 100 end) AS \"当前\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date)",
+          "rawSql": "WITH latest_charge AS (\n  SELECT\n    charger_power,\n    charger_phases,\n    charger_actual_current\n  FROM charges\n  WHERE charging_process_id = $charging_processes\n    AND $__timeFilter(date)\n  ORDER BY date DESC\n  LIMIT 1\n)\nSELECT\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_actual_current > 0\n      THEN charger_actual_current\n    ELSE NULL\n  END AS \"当前\"\nFROM latest_charge",
           "refId": "Current",
           "select": [
             [
@@ -1888,13 +1889,14 @@
         }
       ],
       "type": "stat",
-      "title": "电流"
+      "title": "交流输入电流"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
       },
+      "description": "单位：V。仅显示交流充电器输入电压；TeslaMate 未记录真实直流电压，直流快充期间请查看功率和充入电量。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1933,7 +1935,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电器电压"
+                "value": "交流输入电压"
               }
             ]
           },
@@ -1991,7 +1993,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^(电压|充电器电压)$/",
+          "fields": "/^(电压|交流输入电压)$/",
           "values": false
         },
         "text": {},
@@ -2008,7 +2010,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT avg(case when charger_voltage > 2 then charger_voltage else charger_power / GREATEST(0.1, (((2.85 + (usable_battery_level * 0.013)) * 96.0) * charger_power / 100.0)) * 1000.0 end) as \"电压\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date)",
+          "rawSql": "WITH latest_charge AS (\n  SELECT\n    charger_power,\n    charger_phases,\n    charger_voltage\n  FROM charges\n  WHERE charging_process_id = $charging_processes\n    AND $__timeFilter(date)\n  ORDER BY date DESC\n  LIMIT 1\n)\nSELECT\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_voltage > 2\n      THEN charger_voltage\n    ELSE NULL\n  END AS \"电压\"\nFROM latest_charge",
           "refId": "Voltage",
           "select": [
             [
@@ -2031,7 +2033,7 @@
         }
       ],
       "type": "stat",
-      "title": "电压"
+      "title": "交流输入电压"
     },
     {
       "datasource": {

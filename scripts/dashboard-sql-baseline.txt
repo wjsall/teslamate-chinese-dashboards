@@ -66,8 +66,8 @@ grafana/dashboards/zh-cn/ContinuousTrips.json::0::长途行程
 grafana/dashboards/zh-cn/CurrentChargeView.json::0::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::11::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::12::当前充电状态
-grafana/dashboards/zh-cn/CurrentChargeView.json::14::电流
-grafana/dashboards/zh-cn/CurrentChargeView.json::15::电压
+grafana/dashboards/zh-cn/CurrentChargeView.json::14::交流输入电流
+grafana/dashboards/zh-cn/CurrentChargeView.json::15::交流输入电压
 grafana/dashboards/zh-cn/CurrentChargeView.json::16::功率
 grafana/dashboards/zh-cn/CurrentChargeView.json::17::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::1::当前充电状态

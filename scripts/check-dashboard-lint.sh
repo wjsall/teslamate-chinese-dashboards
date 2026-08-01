@@ -15,9 +15,9 @@
 #                                检查单引号/E 字符串/dollar-quote 的字面量内容。
 #   c 模板变量查询用 $__timezone — 模板变量查询中会解析成字面量 browser。
 #   d timezone('$__timezone', X) 且 X≠NOW() — TeslaMate 朴素 UTC 列不能直接转；
-#                                仅按白名单表达式放行 timezone('UTC', …) 或同一 SQL 中
-#                                三参数 date_trunc(..., timezone('UTC', …), '$__timezone')
-#                                产生的别名。
+#                                仅放行 timezone('UTC', …)、同一 SQL 中三参数
+#                                date_trunc(..., timezone('UTC', …), '$__timezone') 产生的别名，
+#                                或该别名先转本地墙钟、加日历 interval、再转回时间点。
 #   e 禁用自动换算单位         — lengthkm/lengthmi/short/kwatth；历史 drill-down 例外
 #                                按 defaults 或具体 override matcher + value 精确放行。
 #   f FROM settings WHERE id = $car_id — settings 是单行全局表；同时识别 schema 和
@@ -108,12 +108,6 @@ WHITELIST = [
         'grafana/dashboards/zh-cn/sentry-drain.json', 9, 'd',
         {'kind': 'timezone_utc', 'target_refs': ('A',)},
         "X 必须精确匹配 timezone('UTC', …)",
-    ),
-    entry(
-        'grafana/dashboards/zh-cn/statistics.json', 2, 'd',
-        {'kind': 'date_trunc_alias', 'target_refs': ('A', 'B', 'C', 'D')},
-        "X 必须是同一 target 内三参数 date_trunc(..., timezone('UTC', …), "
-        "'$__timezone') 的别名",
     ),
 ]
 
@@ -587,6 +581,31 @@ def date_trunc_aliases(tokens):
 def is_date_trunc_alias_expression(arg_tokens, all_tokens):
     expr = strip_outer_parens(arg_tokens)
     return len(expr) == 1 and identifier_value(expr[0]) in date_trunc_aliases(all_tokens)
+
+
+def is_local_period_expression(arg_tokens, all_tokens):
+    expr = strip_outer_parens(arg_tokens)
+    if is_date_trunc_alias_expression(expr, all_tokens):
+        return True
+
+    calls = find_function_calls(expr, 'timezone')
+    if not calls:
+        return False
+    args, start, close = calls[0]
+    parts = split_top_level_tokens(args)
+    if start != 0 or len(parts) != 2 or not string_arg_equals(parts[0], '$__timezone'):
+        return False
+    if not is_date_trunc_alias_expression(parts[1], all_tokens):
+        return False
+    if close == len(expr) - 1:
+        return True
+
+    suffix = expr[close + 1:]
+    return (
+        len(suffix) >= 2
+        and suffix[0].value == '+'
+        and any(identifier_value(token) == 'interval' for token in suffix)
+    )
 
 
 def settings_car_id_matches(tokens):
@@ -1658,14 +1677,13 @@ def allow_a(file_rel, subject, context, tokens, used):
 
 
 def allow_d(file_rel, subject, context, arg2, tokens, used):
+    if is_local_period_expression(arg2, tokens):
+        return True
     for index, item in whitelist_candidates(file_rel, subject, 'd'):
         condition = item['condition']
         if not context_target_allowed(context, condition):
             continue
         if condition['kind'] == 'timezone_utc' and is_timezone_utc_expression(arg2):
-            used.add(index)
-            return True
-        if condition['kind'] == 'date_trunc_alias' and is_date_trunc_alias_expression(arg2, tokens):
             used.add(index)
             return True
     return False

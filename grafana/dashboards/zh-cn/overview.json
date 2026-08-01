@@ -309,12 +309,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "charger_voltage"
+              "options": "交流输入电压[V]"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电器电压"
+                "value": "交流输入电压"
               }
             ]
           },
@@ -339,6 +339,7 @@
         "y": 1
       },
       "id": 10,
+      "description": "单位：V。仅显示最近充电过程的交流充电器输入电压；TeslaMate 未记录真实直流电压，直流快充期间请查看功率和充入电量。",
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
@@ -364,7 +365,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH charging_process AS (\n  SELECT id, end_date\n  FROM charging_processes\n  WHERE car_id = $car_id\n  ORDER BY start_date DESC\n  LIMIT 1\n)\nSELECT\n  $__time(date),\n  CASE WHEN charging_process.end_date IS NULL THEN charger_voltage\n       ELSE 0\n  END AS \"充电电压[V]\"\nFROM charges, charging_process\nWHERE charging_process.id = charging_process_id\nORDER BY date DESC\nLIMIT 1;",
+          "rawSql": "WITH charging_process AS (\n  SELECT id, end_date\n  FROM charging_processes\n  WHERE car_id = $car_id\n  ORDER BY start_date DESC\n  LIMIT 1\n)\nSELECT\n  $__time(c.date),\n  CASE\n    WHEN charging_process.end_date IS NULL\n      AND c.charger_power > 0\n      AND c.charger_phases >= 1\n      AND c.charger_voltage > 2\n      THEN c.charger_voltage\n    ELSE NULL\n  END AS \"交流输入电压[V]\"\nFROM charges c\nJOIN charging_process ON charging_process.id = c.charging_process_id\nORDER BY c.date DESC\nLIMIT 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -385,7 +386,7 @@
           }
         }
       ],
-      "title": "充电电压",
+      "title": "交流输入电压",
       "type": "gauge"
     },
     {
@@ -1599,12 +1600,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "充电电压[V]"
+              "options": "交流输入电压[V]"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "充电电压"
+                "value": "交流输入电压"
               },
               {
                 "id": "min",
@@ -1664,7 +1665,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "电流"
+                "value": "交流输入电流"
               },
               {
                 "id": "unit",
@@ -1753,6 +1754,7 @@
         "y": 8
       },
       "id": 15,
+      "description": "交流输入电压和交流输入电流仅在交流充电时显示；TeslaMate 未记录真实直流电压和电流，直流快充期间请查看功率和充入电量。",
       "links": [
         {
           "targetBlank": true,
@@ -1787,7 +1789,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__time(date),\n  charger_power,\n  (case when battery_heater_on then 1 when battery_heater then 1 else 0 end) as battery_heater,\n  charger_actual_current,\n  c.charge_energy_added\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date) and\n  p.car_id = $car_id\nORDER BY\n  date ASC",
+          "rawSql": "SELECT\n  $__time(date),\n  charger_power,\n  (case when battery_heater_on then 1 when battery_heater then 1 else 0 end) as battery_heater,\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_actual_current > 0\n      THEN charger_actual_current\n    ELSE NULL\n  END AS charger_actual_current,\n  c.charge_energy_added\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date) and\n  p.car_id = $car_id\nORDER BY\n  date ASC",
           "refId": "B",
           "sql": {
             "columns": [
@@ -1815,7 +1817,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__time(date),\n  charger_voltage as \"充电电压[V]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date) and\n  p.car_id = $car_id\nORDER BY\n  date ASC",
+          "rawSql": "SELECT\n  $__time(date),\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_voltage > 2\n      THEN charger_voltage\n    ELSE NULL\n  END AS \"交流输入电压[V]\"\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date) and\n  p.car_id = $car_id\nORDER BY\n  date ASC",
           "refId": "C",
           "sql": {
             "columns": [

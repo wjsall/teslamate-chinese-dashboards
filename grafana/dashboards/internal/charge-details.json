@@ -113,7 +113,7 @@
               },
               {
                 "id": "displayName",
-                "value": "充电电压"
+                "value": "交流输入电压"
               },
               {
                 "id": "unit",
@@ -233,7 +233,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "电流"
+                "value": "交流输入电流"
               },
               {
                 "id": "unit",
@@ -358,6 +358,7 @@
         "y": 0
       },
       "id": 2,
+      "description": "交流输入电压和交流输入电流仅在交流充电时显示；TeslaMate 未记录真实直流电压和电流，直流快充期间请查看功率和充入电量。目标电流、相数及其他序列保持原始语义。",
       "options": {
         "legend": {
           "calcs": [
@@ -384,7 +385,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__time(date),\n  battery_level,\n  charger_power,\n  (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as battery_heater,\n  convert_km(${preferred_range}_battery_range_km, '$length_unit') as range_$length_unit,\n  charger_voltage,\n  cast(nullif(${determine_phases:sqlstring}, '') as numeric) as charger_phases,\n  charger_actual_current,\n  charger_pilot_current,\n  convert_celsius(outside_temp, '$temp_unit') outside_temp_$temp_unit\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\nORDER BY\n  date ASC",
+          "rawSql": "SELECT\n  $__time(date),\n  battery_level,\n  charger_power,\n  (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as battery_heater,\n  convert_km(${preferred_range}_battery_range_km, '$length_unit') as range_$length_unit,\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_voltage > 2\n      THEN charger_voltage\n    ELSE NULL\n  END AS charger_voltage,\n  cast(nullif(${determine_phases:sqlstring}, '') as numeric) as charger_phases,\n  CASE\n    WHEN charger_power > 0\n      AND charger_phases >= 1\n      AND charger_actual_current > 0\n      THEN charger_actual_current\n    ELSE NULL\n  END AS charger_actual_current,\n  charger_pilot_current,\n  convert_celsius(outside_temp, '$temp_unit') outside_temp_$temp_unit\nFROM\n  charges c\njoin\n  charging_processes p ON p.id = c.charging_process_id \nWHERE\n  $__timeFilter(date)\n AND p.car_id = $car_id\nORDER BY\n  date ASC",
           "refId": "A",
           "sql": {
             "columns": [

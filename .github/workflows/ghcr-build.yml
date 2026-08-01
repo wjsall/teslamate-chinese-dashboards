@@ -899,6 +899,44 @@ jobs:
         run: bash scripts/test-tou-behavior.sh
 
   # ==========================================================================
+  # 交流输入电压/电流行为测试：执行当前状态、overview 和 charge-details 的真实目标 SQL。
+  # 这道门锁定交流原始 V/A、直流或无效字段 No data；失败时阻止发布。
+  # ==========================================================================
+  current-charge-electrics:
+    name: "交流输入电压/电流行为测试"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 跑交流输入电压/电流行为断言
+        run: bash scripts/test-current-charge-electrics.sh
+
+  # ==========================================================================
+  # 本地周期边界测试：验 date_from/date_to 的下钻范围和显示周期始终使用
+  # Grafana 本地时区；跨 DST 时终点仍是下一本地零点。
+  # ==========================================================================
+  period-boundaries:
+    name: "本地周期边界测试"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 跑本地周期边界断言
+        run: bash scripts/test-period-boundaries.sh
+
+  # ==========================================================================
   # 仪表盘 SQL 可执行性：把面板查询真正交给 PostgreSQL 解析。
   # 2026-07 实测：把费用列改成函数调用时有两处落在 CTE 外层作用域，两个主表整个空白，
   # 而 lint、五条部署冒烟、行为测试全绿——没有任何一道门会执行面板查询。
@@ -969,6 +1007,8 @@ jobs:
       - smoke-manual-compose-degraded
       - smoke-plugin-volume-shadow
       - tou-behavior
+      - current-charge-electrics
+      - period-boundaries
       - dashboard-sql
     if: >-
       github.event_name != 'pull_request' && github.event_name != 'schedule'
@@ -1057,6 +1097,8 @@ jobs:
       - smoke-manual-compose-degraded
       - smoke-plugin-volume-shadow
       - tou-behavior
+      - current-charge-electrics
+      - period-boundaries
       - dashboard-sql
     if: >-
       github.event_name != 'pull_request' && github.event_name != 'schedule'
