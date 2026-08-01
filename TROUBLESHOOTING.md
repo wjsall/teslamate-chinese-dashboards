@@ -270,6 +270,8 @@ docker compose up -d grafana
 
 <a id="form-panel-migration-repair"></a>
 
+<a id="plugin-not-found"></a>
+
 ### ❌ 从官方 TeslaMate 迁移后「⚡ 分时电价配置」整页报 panel not found（v1.7.0 / v1.7.1 迁移用户）
 
 **症状**：跑完 `migrate-from-official.sh` 后，打开「⚡ 分时电价配置」时整个仪表盘显示 `panel not found`，仪表盘列表里能搜到、Grafana 日志全是 INFO 无 ERROR。**v1.7.2+ 的 migrate 脚本已经自动修，这一节给已经踩坑的用户自助修复。**

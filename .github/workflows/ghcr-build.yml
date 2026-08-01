@@ -935,6 +935,9 @@ jobs:
       - name: 校验 AI 排障提示与镜像内诊断入口
         run: bash scripts/check-ai-troubleshooting-prompt.sh
 
+      - name: 验证诊断脚本的误报、漏报与自定义配置
+        run: bash scripts/test-diagnose-behavior.sh
+
       - name: 验证 PostgreSQL 15 与 16 的函数签名
         run: bash scripts/test-postgres-compatibility.sh
 
