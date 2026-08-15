@@ -452,7 +452,7 @@ SQLEOF
 # 大库上要几十秒，所以动手之前先说一句，别让用户以为卡住了。
 run_tou_backfill() {
     local db_container="$1"
-    local default_note view_note
+    local default_note
     echo "  → 重算历史充电的分时电价费用（充电记录多的话要几十秒，请稍候）"
     if ! docker exec -i "$db_container" psql -U teslamate -d teslamate -At -v ON_ERROR_STOP=1 \
             -c "SELECT format('  ✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
@@ -463,16 +463,10 @@ run_tou_backfill() {
                     FROM backfill_all_tou();" 2>>"$SQL_ERR_LOG"; then
         echo "  ⚠ 重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
     fi
-    # 两类提示是两个独立待办，分别读取；默认电价迁移不能覆盖尚未处理的视图重建提示。
     default_note=$(docker exec -i "$db_container" psql -U teslamate -d teslamate -At \
         -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || default_note=""
     if [ -n "$default_note" ]; then
         echo "  $default_note"
-    fi
-    view_note=$(docker exec -i "$db_container" psql -U teslamate -d teslamate -At \
-        -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" 2>/dev/null) || view_note=""
-    if [ -n "$view_note" ]; then
-        echo "  $view_note"
     fi
     return 0
 }

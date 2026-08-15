@@ -21,18 +21,13 @@ on:
   #   流程，不要在历史 tag 上手动触发。
   workflow_dispatch:
   schedule:
-    # 每周一凌晨 2 点：只读巡检上游 teslamate/grafana:latest 的 digest 是否变化
-    # （见下方 base-image-canary job）。基础镜像现在锁定 digest（见 Dockerfile），
-    # 这个 cron **不再触发任何镜像构建/推送**——锁定后同一 commit 重建 base image
-    # 恒定，重新构建没有意义。发现上游有新 digest 时会自动开 issue，不自动升级、
-    # 不自动发版，交给人工确认兼容后按常规发版流程走。
+    # 每周一凌晨 2 点：schedule 跑只读门，不构建/不推送镜像。
+    # 会执行 lint（含上游 ALTER 兼容门）、TOU 行为测试、仪表盘 SQL 可执行性，
+    # 并巡检 teslamate/grafana:latest digest；发现变化时只开 issue，不自动升级或发版。
     - cron: '0 2 * * 1'
 
 jobs:
   lint:
-    # schedule 触发只跑只读的 base-image-canary（见下），不构建/不发布，lint 门在
-    # 这条路径上没有下游消费者，跳过以节省 CI 分钟数。
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,6 +48,12 @@ jobs:
 
       - name: SQL 对象契约 / SQL_COMPAT_REVISION 强制门（issue #33 同类教训）
         run: bash scripts/check-sql-revision.sh
+
+      - name: 上游表逐列 ALTER 兼容性
+        run: bash scripts/check-upstream-alter-compat.sh
+
+      - name: 定时只读门 / 镜像禁行契约
+        run: bash scripts/check-ci-schedule-gates.sh
 
       - name: 四个脚本内联的 SQL 对象判据必须一致
         run: bash scripts/check-sql-gate-consistency.sh
@@ -886,7 +887,6 @@ jobs:
   tou-behavior:
     name: "分时电价行为测试（算钱正确性）"
     needs: lint
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -968,7 +968,6 @@ jobs:
   dashboard-sql:
     name: "仪表盘 SQL 可执行性"
     needs: lint
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

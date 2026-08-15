@@ -1251,7 +1251,7 @@ docker exec teslamate-database-1 psql -U teslamate -d teslamate \
 python3 scripts/wrap-cost-with-tou-view.py --revert
 ```
 
-`uninstall_tou()` 用 `pg_proc` 自动找全部 tou_* / _tou_* 函数 + 触发器 + 视图 + 旁路表，不会跟 install-tou.sql 函数列表漂移。
+`uninstall_tou()` 用 `pg_proc` 自动找全部 tou_* / _tou_* 函数，并删除触发器和旁路表，不会跟 install-tou.sql 函数列表漂移。
 
 > ⚠ 调用会 **CASCADE 删除所有依赖 `tou_rates` / `charging_processes_tou_cost` 的对象（包括你自己建的视图）**。卸载前先跑 `\d+ tou_rates` 看 referenced by 列表确认没要保的。
 

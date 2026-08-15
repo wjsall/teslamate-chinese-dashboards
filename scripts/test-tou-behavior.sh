@@ -1338,7 +1338,7 @@ reinstall_tou() {
 }
 
 # 建一个已完成首次安装、但刻意删掉后半段函数的数据库。重跑安装后检查这两个函数，
-# 可以证明脚本没有在 charging_processes_v 处提前中止。
+# 可以证明脚本没有被前半段的对象兼容分支提前中止。
 prepare_install_fixture() {
     local db="$1" db_owner="${2:-teslamate}"
     docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 \
@@ -1378,47 +1378,64 @@ SQL
         || { echo "❌ 无法准备安装完整性夹具"; exit 1; }
 }
 
-# 把对账对象换成非普通视图。CREATE OR REPLACE 与 DROP VIEW 都必须安全跳过同名对象，
-# 且后半段函数仍要装完整。
-prepare_non_view_fixture() {
+# 上游迁移兼容：新装的 SQL 不能再创建对账视图，触发器也不能用 UPDATE OF 钉住列。
+# 最后一条在独立库里原样执行 TeslaMate v4.1.1 的 cost 精度迁移，作为端到端证明。
+prepare_install_fixture tou_upstream_alter
+assert_eq "新装 TOU SQL 不再创建 charging_processes_v" \
+    "<NULL>" "$(psql_q_db tou_upstream_alter "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "tou_recalc 不再用 UPDATE OF 列清单建立硬依赖" \
+    "0" "$(psql_q_db tou_upstream_alter "SELECT cardinality(tgattr) FROM pg_trigger WHERE tgname = 'tou_recalc'")"
+assert_eq "端到端：装 TOU SQL 后上游 cost 精度迁移成功" \
+    "ALTERTABLE" "$(psql_q_db tou_upstream_alter 'ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)')"
+assert_eq "触发器不再阻挡上游修改 end_date 类型" \
+    "ALTERTABLE" "$(psql_q_db tou_upstream_alter 'ALTER TABLE charging_processes ALTER COLUMN end_date TYPE timestamp without time zone')"
+assert_eq "移除对账视图后，上游可修改 charging_processes.id 类型" \
+    "ALTERTABLE" "$(psql_q_db tou_upstream_alter 'ALTER TABLE charging_processes ALTER COLUMN id TYPE integer')"
+
+# 把仍会创建的 tou_rates_geofence_idx 换成其他同名对象。CREATE INDEX IF NOT EXISTS
+# 必须安全跳过同名对象，且后半段函数仍要装完整。
+prepare_index_name_fixture() {
     local db="$1" object_kind="$2" object_sql
 
     prepare_install_fixture "$db"
     docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
-        -c "DROP VIEW charging_processes_v;" >/dev/null \
-        || { echo "❌ 无法删除安装兼容性夹具视图"; exit 1; }
+        -c "DROP INDEX tou_rates_geofence_idx;" >/dev/null \
+        || { echo "❌ 无法删除安装兼容性夹具索引"; exit 1; }
 
     case "$object_kind" in
         materialized)
-            object_sql="CREATE MATERIALIZED VIEW charging_processes_v AS SELECT 1::INT AS id"
+            object_sql="CREATE MATERIALIZED VIEW tou_rates_geofence_idx AS SELECT 1::INT AS id"
             ;;
         table)
-            object_sql="CREATE TABLE charging_processes_v (id INT)"
+            object_sql="CREATE TABLE tou_rates_geofence_idx (id INT)"
             ;;
         sequence)
-            object_sql="CREATE SEQUENCE charging_processes_v"
+            object_sql="CREATE SEQUENCE tou_rates_geofence_idx"
             ;;
         index)
-            object_sql="CREATE INDEX charging_processes_v ON charging_processes(id)"
+            object_sql="CREATE INDEX tou_rates_geofence_idx ON charging_processes(id)"
+            ;;
+        view)
+            object_sql="CREATE VIEW tou_rates_geofence_idx AS SELECT 1::INT AS id"
             ;;
         *)
-            echo "❌ 未知的对账对象夹具类型：${object_kind}"
+            echo "❌ 未知的索引同名对象夹具类型：${object_kind}"
             exit 1
             ;;
     esac
     docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
         -c "$object_sql" >/dev/null \
-        || { echo "❌ 无法创建 ${object_kind} 对账对象夹具"; exit 1; }
+        || { echo "❌ 无法创建 ${object_kind} 索引同名对象夹具"; exit 1; }
 }
 
-prepare_non_view_fixture tou_install_matview materialized
+prepare_index_name_fixture tou_install_matview materialized
 if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_matview -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1; then
     MATVIEW_INSTALL_RC=0
 else
     MATVIEW_INSTALL_RC=$?
 fi
-assert_eq "charging_processes_v 是物化视图 → 重跑安装退出码 0" \
+assert_eq "tou_rates_geofence_idx 是物化视图 → 重跑安装退出码 0" \
     "0" "$MATVIEW_INSTALL_RC"
 assert_eq "物化视图同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
     "1" "$(psql_q_db tou_install_matview "SELECT (
@@ -1426,14 +1443,14 @@ assert_eq "物化视图同名冲突后 → effective_cost / backfill_all_tou 仍
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
 
-prepare_non_view_fixture tou_install_table table
+prepare_index_name_fixture tou_install_table table
 if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_table -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1; then
     TABLE_INSTALL_RC=0
 else
     TABLE_INSTALL_RC=$?
 fi
-assert_eq "charging_processes_v 是普通表 → 重跑安装退出码 0" \
+assert_eq "tou_rates_geofence_idx 是普通表 → 重跑安装退出码 0" \
     "0" "$TABLE_INSTALL_RC"
 assert_eq "普通表同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
     "1" "$(psql_q_db tou_install_table "SELECT (
@@ -1441,14 +1458,14 @@ assert_eq "普通表同名冲突后 → effective_cost / backfill_all_tou 仍装
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
 
-prepare_non_view_fixture tou_install_sequence sequence
+prepare_index_name_fixture tou_install_sequence sequence
 if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_sequence -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1; then
     SEQUENCE_INSTALL_RC=0
 else
     SEQUENCE_INSTALL_RC=$?
 fi
-assert_eq "charging_processes_v 是序列 → 重跑安装退出码 0" \
+assert_eq "tou_rates_geofence_idx 是序列 → 重跑安装退出码 0" \
     "0" "$SEQUENCE_INSTALL_RC"
 assert_eq "序列同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
     "1" "$(psql_q_db tou_install_sequence "SELECT (
@@ -1456,14 +1473,14 @@ assert_eq "序列同名冲突后 → effective_cost / backfill_all_tou 仍装完
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
 
-prepare_non_view_fixture tou_install_index index
+prepare_index_name_fixture tou_install_index index
 if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_index -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1; then
     INDEX_INSTALL_RC=0
 else
     INDEX_INSTALL_RC=$?
 fi
-assert_eq "charging_processes_v 是索引 → 重跑安装退出码 0" \
+assert_eq "tou_rates_geofence_idx 已是其他索引 → 重跑安装退出码 0" \
     "0" "$INDEX_INSTALL_RC"
 assert_eq "索引同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
     "1" "$(psql_q_db tou_install_index "SELECT (
@@ -1471,47 +1488,53 @@ assert_eq "索引同名冲突后 → effective_cost / backfill_all_tou 仍装完
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
 
-# 上游新增了与派生列同名的列时，cp.* 会让 SELECT 出现重复列名（42701）。
-# 安装要保留旧视图、留下提示并继续，不得因为第二次 CREATE 仍失败而中断。
-prepare_install_fixture tou_install_duplicate_column
-docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_duplicate_column \
-    -v ON_ERROR_STOP=1 -c "ALTER TABLE charging_processes ADD COLUMN cost_effective NUMERIC" \
-    >/dev/null || { echo "❌ 无法准备重复列安装夹具"; exit 1; }
-if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_duplicate_column \
+# 普通视图与索引同处 relation 名字空间，也必须跳过而不截断后半段安装。
+prepare_index_name_fixture tou_install_view view
+if docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_view \
         -v ON_ERROR_STOP=1 < sql/install-tou.sql >/dev/null 2>&1; then
-    DUPLICATE_COLUMN_INSTALL_RC=0
+    VIEW_NAME_INSTALL_RC=0
 else
-    DUPLICATE_COLUMN_INSTALL_RC=$?
+    VIEW_NAME_INSTALL_RC=$?
 fi
-assert_eq "charging_processes 新增 cost_effective 同名列 → 重跑安装退出码 0" \
-    "0" "$DUPLICATE_COLUMN_INSTALL_RC"
-assert_eq "重复列冲突后 → effective_cost / backfill_all_tou 仍装完整" \
-    "1" "$(psql_q_db tou_install_duplicate_column "SELECT (
+assert_eq "tou_rates_geofence_idx 是普通视图 → 重跑安装退出码 0" \
+    "0" "$VIEW_NAME_INSTALL_RC"
+assert_eq "普通视图同名冲突后 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_view "SELECT (
         to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
 
-# 用普通安装角色建完整套对象，再把视图转给另一个角色。重跑时 CREATE OR REPLACE 会先报
-# must be owner of view（42501）；安装应保留该视图并继续创建后半段函数。
+# 用普通安装角色建完整套对象，再把索引转给另一个角色。重跑时 IF NOT EXISTS 应跳过
+# 他人拥有的同名对象，并继续创建后半段函数。
 docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
-    || { echo "❌ 无法创建视图所有权夹具角色"; exit 1; }
+    || { echo "❌ 无法创建索引所有权夹具角色"; exit 1; }
 CREATE ROLE tou_fixture_installer LOGIN;
-CREATE ROLE tou_fixture_view_owner;
+CREATE ROLE tou_fixture_index_owner;
 SQL
-prepare_install_fixture tou_install_owned_view tou_fixture_installer
-docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_owned_view \
-    -v ON_ERROR_STOP=1 -c "ALTER VIEW charging_processes_v OWNER TO tou_fixture_view_owner" \
-    >/dev/null || { echo "❌ 无法转移对账视图所有权"; exit 1; }
-if docker exec -i "$CONTAINER" psql -U tou_fixture_installer -d tou_install_owned_view \
-        -v ON_ERROR_STOP=1 < sql/install-tou.sql >/dev/null 2>&1; then
-    OWNED_VIEW_INSTALL_RC=0
-else
-    OWNED_VIEW_INSTALL_RC=$?
+prepare_install_fixture tou_install_owned_index tou_fixture_installer
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_install_owned_index \
+    -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
+    || { echo "❌ 无法准备外部角色索引夹具"; exit 1; }
+DROP INDEX tou_rates_geofence_idx;
+CREATE TABLE tou_fixture_owned_index_table (id INT);
+ALTER TABLE tou_fixture_owned_index_table OWNER TO tou_fixture_index_owner;
+CREATE INDEX tou_rates_geofence_idx ON tou_fixture_owned_index_table(id);
+SQL
+if [ "$(psql_q_db tou_install_owned_index "SELECT pg_get_userbyid(c.relowner) FROM pg_class c WHERE c.relname = 'tou_rates_geofence_idx'")" \
+        != "tou_fixture_index_owner" ]; then
+    echo "❌ 外部角色索引夹具所有权不正确"
+    exit 1
 fi
-assert_eq "charging_processes_v 归属别的角色 → 重跑安装退出码 0" \
-    "0" "$OWNED_VIEW_INSTALL_RC"
-assert_eq "外部角色拥有视图时 → effective_cost / backfill_all_tou 仍装完整" \
-    "1" "$(psql_q_db tou_install_owned_view "SELECT (
+if docker exec -i "$CONTAINER" psql -U tou_fixture_installer -d tou_install_owned_index \
+        -v ON_ERROR_STOP=1 < sql/install-tou.sql >/dev/null 2>&1; then
+    OWNED_INDEX_INSTALL_RC=0
+else
+    OWNED_INDEX_INSTALL_RC=$?
+fi
+assert_eq "tou_rates_geofence_idx 归属别的角色 → 重跑安装退出码 0" \
+    "0" "$OWNED_INDEX_INSTALL_RC"
+assert_eq "外部角色拥有索引时 → effective_cost / backfill_all_tou 仍装完整" \
+    "1" "$(psql_q_db tou_install_owned_index "SELECT (
         to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
         AND to_regprocedure('backfill_all_tou()') IS NOT NULL
       )::int")"
@@ -1559,72 +1582,6 @@ assert_eq "…迁成功之后那句「请重新设置」的话要撤掉" "<NULL>
 psql_call "SELECT set_default_charging_rate(NULL)"
 reinstall_tou
 assert_eq "用户主动清空默认电价后再升级 → 保持清空，不被迁移撤销" "<NULL>" "$(psql_q 'SELECT default_rate FROM tou_settings')"
-
-# ===========================================================================
-# 升级重建对账视图：正常路径更新费用口径；无法安全重建时保留用户对象并提示
-# ===========================================================================
-echo ""
-echo "===== 有依赖的旧对账视图会保留并提示处理办法 ====="
-
-# 先覆盖没有依赖、列布局也兼容的主路径：原地替换后 TeslaMate 的 120 必须压过 TOU 估算 7。
-psql_run <<'SQL'
-INSERT INTO charging_processes_tou_cost (charging_process_id, cost_tou)
-VALUES (21, 7)
-ON CONFLICT (charging_process_id) DO UPDATE SET cost_tou = EXCLUDED.cost_tou;
-
-CREATE OR REPLACE VIEW charging_processes_v AS
-SELECT
-  cp.*,
-  COALESCE(t.cost_tou, cp.cost) AS cost_effective,
-  t.cost_tou,
-  t.energy_by_period,
-  CASE
-    WHEN cp.cost IS NOT NULL THEN 'flat'
-    WHEN t.cost_tou IS NOT NULL THEN 'TOU'
-    ELSE 'unknown'
-  END AS cost_mode
-FROM charging_processes cp
-LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id;
-SQL
-reinstall_tou
-assert_eq "重跑安装后 charging_processes_v.cost_effective 保留 TeslaMate 金额 120，不用 TOU 估算 7" \
-    "120" "$(psql_q 'SELECT cost_effective FROM charging_processes_v WHERE id = 21')"
-
-# 再模拟列布局变化且有下游依赖的路径。把默认电价迁移标记特意置空，证明安装文件后面的
-# 首次迁移不会把视图重建提示无声清掉。
-psql_run <<'SQL'
-CREATE OR REPLACE VIEW charging_processes_v AS
-SELECT
-  cp.*,
-  COALESCE(t.cost_tou, cp.cost) AS cost_effective,
-  t.cost_tou,
-  t.energy_by_period,
-  CASE
-    WHEN cp.cost IS NOT NULL THEN 'flat'
-    WHEN t.cost_tou IS NOT NULL THEN 'TOU'
-    ELSE 'unknown'
-  END AS cost_mode
-FROM charging_processes cp
-LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id;
-
-CREATE VIEW user_charging_costs AS
-SELECT id, cost_effective FROM charging_processes_v;
-
--- 模拟 TeslaMate 上游后来新增一列：cp.* 展开的列布局随之变化，原地替换会报 42P16；
--- 用户视图又依赖旧视图，所以安装程序不能安全 DROP 后重建。
-ALTER TABLE charging_processes ADD COLUMN upstream_added_column TEXT;
-
-UPDATE tou_settings
-   SET legacy_default_migrated_at = NULL,
-       legacy_default_note = NULL,
-       view_rebuild_note = NULL
- WHERE id;
-SQL
-reinstall_tou
-assert_eq "重跑安装后，依赖 charging_processes_v 的用户视图仍然存在" \
-    "user_charging_costs" "$(psql_q "SELECT to_regclass('public.user_charging_costs')::text")"
-assert_eq "首次默认电价迁移跑到安装末尾后，视图旧口径提示仍然保留" \
-    "1" "$(psql_q "SELECT (view_rebuild_note LIKE '%charging_processes_v%旧口径%自建对象%重新运行%')::int FROM tou_settings")"
 
 # ===========================================================================
 # 卸载：费用显示完全回到 TeslaMate 自己的数据
