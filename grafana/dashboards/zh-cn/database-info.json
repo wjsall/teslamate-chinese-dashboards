@@ -437,7 +437,12 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "super-light-blue"
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 1
               }
             ]
           }
@@ -446,12 +451,36 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "car_id"
+              "options": "未关闭充电"
             },
             "properties": [
               {
-                "id": "displayName",
-                "value": "车辆ID"
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "查看不完整的充电记录",
+                    "url": "/d/TSmNYvRRk/charges?var-car_id=$car_id&viewPanel=17"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "未关闭行驶"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": true,
+                    "title": "查看不完整的行程",
+                    "url": "/d/Y8upc6ZRk/drives?var-car_id=$car_id&viewPanel=9"
+                  }
+                ]
               }
             ]
           }

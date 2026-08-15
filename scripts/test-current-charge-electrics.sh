@@ -1,5 +1,5 @@
 #!/bin/bash
-# 当前充电状态及充电详情的交流输入电压/电流行为测试。
+# 充电相关仪表盘的电压、电流、功率、电池状态与下钻契约行为测试。
 #
 # 测试直接从目标 dashboard JSON 读取 rawSql，只替换 Grafana 变量/宏，
 # 再把真实查询交给一次性 PostgreSQL 执行。测试覆盖 stat、gauge 和逐行曲线，
@@ -208,24 +208,117 @@ if property_value(charge_details_2, 'charger_actual_current', 'displayName') != 
     raise SystemExit('charge-details panel 2 电流展示名不是交流输入电流')
 if property_value(charge_details_2, 'charger_voltage', 'displayName') != '交流输入电压':
     raise SystemExit('charge-details panel 2 电压展示名不是交流输入电压')
+
+battery_targets = (
+    (25, 'SOC'),
+    (27, 'A'),
+)
+for panel_id, ref_id in battery_targets:
+    _, target = find_target('grafana/dashboards/zh-cn/battery-health.json', panel_id, ref_id)
+    sql = target['rawSql']
+    if 'UNION ALL' not in sql:
+        raise SystemExit(f'battery-health panel {panel_id} 没有使用 UNION ALL')
+    if not re.search(r'AS\s+last_usable_battery_level\s+ORDER BY\s+date\s+DESC\s+LIMIT\s+1',
+                     sql, re.I):
+        raise SystemExit(f'battery-health panel {panel_id} 没有按全体候选的最新时间取值')
+    if 'ideal_battery_range_km IS NOT NULL' not in sql:
+        raise SystemExit(f'battery-health panel {panel_id} 没有排除无有效续航的 position')
+    if 'c.usable_battery_level' not in sql:
+        raise SystemExit(f'battery-health panel {panel_id} 的 charges 分支没有使用限定列')
+if re.search(r'SELECT\s+battery_level\s*\*',
+             find_target('grafana/dashboards/zh-cn/battery-health.json', 27, 'A')[1]['rawSql'],
+             re.I):
+    raise SystemExit('battery-health panel 27 仍使用 battery_level 计算当前储能')
+
+charge_details_13 = find_target(
+    'grafana/dashboards/internal/charge-details.json', 13, 'Current')[1]['rawSql']
+if not re.search(
+        r'coalesce\s*\(\s*cast\s*\(\s*nullif\s*\(\s*\$\{determine_phases:sqlstring\}',
+        charge_details_13,
+        re.I):
+    raise SystemExit('charge-details panel 13 缺少相数不可用时的 charger_power 回退')
+
+charge_details_data = json.loads(Path(
+    'grafana/dashboards/internal/charge-details.json').read_text(encoding='utf-8'))
+phase_variables = [item for item in charge_details_data.get('templating', {}).get('list', [])
+                   if item.get('name') == 'determine_phases']
+if len(phase_variables) != 1:
+    raise SystemExit('charge-details determine_phases 变量不唯一')
+for field in ('definition', 'query'):
+    value = str(phase_variables[0].get(field, ''))
+    if 'when round(p) > 0 and abs(round(p) - p) <= 0.3 then round(p)' not in value:
+        raise SystemExit(f'charge-details determine_phases {field} 缺少正相数守卫')
+
+for panel_id, ref_id in ((28, 'Power'), (34, 'Current')):
+    sql = find_target(
+        'grafana/dashboards/zh-cn/CurrentChargeView.json', panel_id, ref_id)[1]['rawSql']
+    if ('case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end'
+            in sql):
+        raise SystemExit(f'CurrentChargeView panel {panel_id} 仍把三相充电映射为 0')
+    if 'else charger_phases end' not in sql:
+        raise SystemExit(f'CurrentChargeView panel {panel_id} 没有保留实际相数')
+
+home_data = json.loads(Path(
+    'grafana/dashboards/internal/home.json').read_text(encoding='utf-8'))
+home_panels = {panel.get('id'): panel for panel in home_data.get('panels', [])}
+if 3 in home_panels:
+    raise SystemExit('home 仍显示无法加载的版本发布面板')
+if home_panels.get(1, {}).get('gridPos', {}).get('w') != 18:
+    raise SystemExit('home 文字面板没有填满剩余 18 列')
+
+database_info_42 = find_panel('grafana/dashboards/zh-cn/database-info.json', 42)
+threshold_steps = database_info_42.get('fieldConfig', {}).get(
+    'defaults', {}).get('thresholds', {}).get('steps')
+if threshold_steps != [
+        {'color': 'green', 'value': 0},
+        {'color': 'orange', 'value': 1},
+]:
+    raise SystemExit('database-info panel 42 阈值不是 green@0 / orange@1')
+expected_links = {
+    '未关闭充电': {
+        'title': '查看不完整的充电记录',
+        'url': '/d/TSmNYvRRk/charges?var-car_id=$car_id&viewPanel=17',
+    },
+    '未关闭行驶': {
+        'title': '查看不完整的行程',
+        'url': '/d/Y8upc6ZRk/drives?var-car_id=$car_id&viewPanel=9',
+    },
+}
+actual_links = {}
+for override in database_info_42.get('fieldConfig', {}).get('overrides', []):
+    matcher = override.get('matcher', {})
+    if matcher.get('id') != 'byName' or matcher.get('options') not in expected_links:
+        continue
+    link_properties = [prop.get('value') for prop in override.get('properties', [])
+                       if prop.get('id') == 'links']
+    if len(link_properties) == 1 and len(link_properties[0]) == 1:
+        actual_links[matcher['options']] = link_properties[0][0]
+for field_name, expected in expected_links.items():
+    actual = actual_links.get(field_name)
+    if actual is None:
+        raise SystemExit(f'database-info panel 42 的 {field_name} 没有下钻链接')
+    if actual.get('title') != expected['title'] or actual.get('url') != expected['url']:
+        raise SystemExit(f'database-info panel 42 的 {field_name} 下钻链接不正确')
+    if actual.get('targetBlank') is not True:
+        raise SystemExit(f'database-info panel 42 的 {field_name} 下钻链接没有新页打开')
 print('contract-ok')
 PY
     ); then
-        pass_test "6 条目标 SQL 无估算公式，交流门控、直流 No data、名称和量程契约正确"
+        pass_test "目标 SQL 与仪表盘结构契约正确"
     else
-        fail_test "6 条目标 SQL 无估算公式，交流门控、直流 No data、名称和量程契约正确"
+        fail_test "目标 SQL 与仪表盘结构契约正确"
         echo "       ${result}"
     fi
 }
 
 # 读取目标 JSON 中一条真实 rawSql，并只替换测试需要的 Grafana 变量/宏。
 target_sql() {
-    python3 - "$1" "$2" "$3" <<'PY'
+    python3 - "$1" "$2" "$3" "${4:-2}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-path, panel_id_text, ref_id = sys.argv[1:]
+path, panel_id_text, ref_id, detected_phases = sys.argv[1:]
 panel_id = int(panel_id_text)
 data = json.loads(Path(path).read_text(encoding='utf-8'))
 found = []
@@ -253,12 +346,31 @@ sql = sql.replace('$__time(date)', 'date')
 sql = sql.replace('$__time(c.date)', 'c.date')
 sql = sql.replace('${preferred_range}', 'rated')
 sql = sql.replace('${length_unit}', 'km').replace('$length_unit', 'km')
-sql = sql.replace('${determine_phases:sqlstring}', "'2'")
+sql = sql.replace('${determine_phases:sqlstring}', f"'{detected_phases}'")
 sql = sql.replace('${temp_unit}', 'C').replace('$temp_unit', 'C')
+sql = sql.replace('$aux', '{"CurrentCapacity":"75"}')
 sql = sql.replace('$car_id', '1')
 sql = sql.replace('$charging_processes', '1')
 sql = sql.replace('$charging_process_id', '1')
 sql = sql.replace('$__interval', "'1 hour'")
+print(sql)
+PY
+}
+
+dashboard_variable_sql() {
+    python3 - "$1" "$2" "$3" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, variable_name, field = sys.argv[1:]
+data = json.loads(Path(path).read_text(encoding='utf-8'))
+matches = [item for item in data.get('templating', {}).get('list', [])
+           if item.get('name') == variable_name]
+if len(matches) != 1 or not str(matches[0].get(field, '')).strip():
+    raise SystemExit(f'{path} 变量 {variable_name} 的 {field} 不唯一或为空')
+sql = matches[0][field]
+sql = sql.replace('${charging_process_id}', '1')
 print(sql)
 PY
 }
@@ -350,6 +462,13 @@ CREATE TABLE charges (
   outside_temp NUMERIC,
   charge_energy_added NUMERIC
 );
+CREATE TABLE positions (
+  id BIGSERIAL PRIMARY KEY,
+  car_id INTEGER NOT NULL,
+  date TIMESTAMP NOT NULL,
+  usable_battery_level NUMERIC,
+  ideal_battery_range_km NUMERIC
+);
 CREATE FUNCTION convert_km(value NUMERIC, unit TEXT)
 RETURNS NUMERIC LANGUAGE SQL IMMUTABLE AS $$ SELECT value $$;
 CREATE FUNCTION convert_celsius(value NUMERIC, unit TEXT)
@@ -362,6 +481,13 @@ OVERVIEW_GAUGE_SQL=$(target_sql grafana/dashboards/zh-cn/overview.json 10 A) || 
 OVERVIEW_CURRENT_CURVE_SQL=$(target_sql grafana/dashboards/zh-cn/overview.json 15 B) || exit 1
 OVERVIEW_VOLTAGE_CURVE_SQL=$(target_sql grafana/dashboards/zh-cn/overview.json 15 C) || exit 1
 CHARGE_DETAILS_SQL=$(target_sql grafana/dashboards/internal/charge-details.json 2 A) || exit 1
+BATTERY_SOC_SQL=$(target_sql grafana/dashboards/zh-cn/battery-health.json 25 SOC) || exit 1
+BATTERY_KWH_SQL=$(target_sql grafana/dashboards/zh-cn/battery-health.json 27 A) || exit 1
+CHARGE_AVG_SQL_TEMPLATE=$(target_sql grafana/dashboards/internal/charge-details.json 13 Current __DETECTED_PHASES__) || exit 1
+PHASE_DEFINITION_SQL=$(dashboard_variable_sql grafana/dashboards/internal/charge-details.json determine_phases definition) || exit 1
+PHASE_QUERY_SQL=$(dashboard_variable_sql grafana/dashboards/internal/charge-details.json determine_phases query) || exit 1
+CURRENT_POWER_CURVE_SQL=$(target_sql grafana/dashboards/zh-cn/CurrentChargeView.json 28 Power) || exit 1
+CURRENT_POWER_STAT_SQL=$(target_sql grafana/dashboards/zh-cn/CurrentChargeView.json 34 Current) || exit 1
 
 echo "行为断言：A 交流原始 V/A 保留（222V / 32A / 7kW，phases=1）"
 psql_fixture <<'SQL'
@@ -621,6 +747,86 @@ assert_null "J5 internal 无功率电流为 NULL" "$(row_field "$detail_rows" 5 
 assert_eq "J internal pilot current 序列保持原值" "30" "$(row_field "$detail_rows" 1 9)"
 assert_eq "J internal phase inference 序列仍执行" "2" "$(row_field "$detail_rows" 1 7)"
 
+echo "行为断言：K battery-health 使用最新有效的充电电量"
+psql_fixture <<'SQL'
+TRUNCATE positions, charges, charging_processes;
+INSERT INTO charging_processes (id, car_id, start_date, end_date)
+VALUES (1, 1, '2026-08-01 07:00:00', '2026-08-01 08:30:00');
+INSERT INTO positions (car_id, date, usable_battery_level, ideal_battery_range_km)
+VALUES
+  (1, '2026-08-01 07:55:00', 55, 210),
+  (1, '2026-08-01 08:10:00', 40, NULL);
+INSERT INTO charges
+  (charging_process_id, date, charger_power, charger_voltage, charger_actual_current,
+   charger_phases, usable_battery_level, battery_level)
+VALUES
+  (1, '2026-08-01 08:05:00', 11, 230, 16, 3, 90, 80);
+SQL
+battery_soc_rows=$(psql_rows "$BATTERY_SOC_SQL")
+battery_kwh_rows=$(psql_rows "$BATTERY_KWH_SQL")
+assert_row_count "K panel 25 只返回一个最新候选" "$battery_soc_rows" "1"
+assert_close "K panel 25 当前电池容量取 charge usable 90%" "90" \
+    "$(row_field "$battery_soc_rows" 1 1)" "0.001"
+assert_row_count "K panel 27 只返回一个最新候选" "$battery_kwh_rows" "1"
+assert_close "K panel 27 当前储能取 90% × 75kWh" "67.5" \
+    "$(row_field "$battery_kwh_rows" 1 1)" "0.001"
+
+echo "行为断言：L charge-details 短交流充电的平均功率有原始功率回退"
+psql_fixture <<'SQL'
+TRUNCATE positions, charges, charging_processes;
+INSERT INTO charging_processes (id, car_id, start_date, end_date)
+VALUES (1, 1, '2026-08-01 07:00:00', '2026-08-01 08:30:00');
+INSERT INTO charges
+  (charging_process_id, date, charger_power, charger_voltage, charger_actual_current,
+   charger_phases, usable_battery_level, battery_level)
+SELECT
+  1,
+  TIMESTAMP '2026-08-01 08:00:00' + i * INTERVAL '1 minute',
+  0.05,
+  250,
+  4,
+  1,
+  50,
+  50
+FROM generate_series(0, 15) AS i;
+SQL
+phase_from_definition=$(psql_query "$PHASE_DEFINITION_SQL")
+phase_from_query=$(psql_query "$PHASE_QUERY_SQL")
+assert_null "L determine_phases definition 不返回 0 相" "$phase_from_definition"
+assert_null "L determine_phases query 不返回 0 相" "$phase_from_query"
+phase_for_panel="$phase_from_query"
+[ "$phase_for_panel" = "<NULL>" ] && phase_for_panel=""
+charge_avg_sql=${CHARGE_AVG_SQL_TEMPLATE//__DETECTED_PHASES__/$phase_for_panel}
+assert_close "L panel 13 返回原始平均功率 0.05 kW" "0.05" \
+    "$(psql_query "$charge_avg_sql")" "0.0001"
+psql_fixture <<'SQL'
+DELETE FROM charges WHERE id = (SELECT max(id) FROM charges);
+SQL
+short_phase=$(psql_query "$PHASE_QUERY_SQL")
+assert_null "L n≤15 的短交流充电没有可用推断相数" "$short_phase"
+short_phase_for_panel="$short_phase"
+[ "$short_phase_for_panel" = "<NULL>" ] && short_phase_for_panel=""
+short_charge_avg_sql=${CHARGE_AVG_SQL_TEMPLATE//__DETECTED_PHASES__/$short_phase_for_panel}
+assert_close "L n≤15 的短交流充电仍显示 0.05 kW" "0.05" \
+    "$(psql_query "$short_charge_avg_sql")" "0.0001"
+
+echo "行为断言：M CurrentChargeView 三相充电功率不为 0"
+psql_fixture <<'SQL'
+TRUNCATE positions, charges, charging_processes;
+INSERT INTO charging_processes (id, car_id, start_date, end_date)
+VALUES (1, 1, '2026-08-01 07:00:00', NULL);
+INSERT INTO charges
+  (charging_process_id, date, charger_power, charger_voltage, charger_actual_current,
+   charger_phases, usable_battery_level, battery_level, battery_heater_on, battery_heater)
+VALUES
+  (1, '2026-08-01 08:00:00', 11, 230, 16, 3, 50, 50, false, false);
+SQL
+three_phase_curve_rows=$(psql_rows "$CURRENT_POWER_CURVE_SQL")
+three_phase_curve_power=$(row_field "$three_phase_curve_rows" 1 3)
+three_phase_stat_power=$(psql_query "$CURRENT_POWER_STAT_SQL")
+assert_close "M panel 28 三相功率为 11.04 kW" "11.04" "$three_phase_curve_power" "0.001"
+assert_close "M panel 34 三相功率为 11.04 kW" "11.04" "$three_phase_stat_power" "0.001"
+
 assert_file_contract
 
 echo
@@ -628,4 +834,4 @@ echo "专项测试结果：通过 ${PASS} 项，失败 ${FAIL} 项"
 if [ "$FAIL" -ne 0 ]; then
     exit 1
 fi
-echo "✅ 当前充电状态/充电详情交流输入电压电流行为测试通过"
+echo "✅ 充电相关仪表盘行为测试通过"

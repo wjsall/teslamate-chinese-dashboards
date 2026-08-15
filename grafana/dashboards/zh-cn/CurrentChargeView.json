@@ -881,7 +881,7 @@
           "orderByTime": "ASC",
           "policy": "default",
           "rawQuery": true,
-          "rawSql": "SELECT $__time(date), battery_level as \"电量[%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率 [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"电池加热器\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
+          "rawSql": "SELECT $__time(date), battery_level as \"电量[%]\", (case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else charger_phases end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率 [kW]\", (case when battery_heater_on then 10 when battery_heater then 10 else 0 end) as \"电池加热器\" FROM charges c JOIN charging_processes p ON p.id = c.charging_process_id WHERE $__timeFilter(date) and p.car_id = $car_id ORDER BY 1",
           "refId": "Power",
           "resultFormat": "time_series",
           "select": [
@@ -2131,7 +2131,7 @@
           "hide": false,
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT avg(case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else 0 end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date)",
+          "rawSql": "SELECT avg(case when charger_phases >= 1 then (case when charger_phases = 2 then 3 when charger_phases = 1 then 1 else charger_phases end) * charger_actual_current * charger_voltage / 1000.0 else charger_power end) AS \"功率\" FROM charges WHERE charging_process_id = $charging_processes AND $__timeFilter(date)",
           "refId": "Current",
           "select": [
             [

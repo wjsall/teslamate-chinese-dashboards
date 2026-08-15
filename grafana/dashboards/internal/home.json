@@ -56,7 +56,7 @@
       },
       "gridPos": {
         "h": 20,
-        "w": 16,
+        "w": 18,
         "x": 6,
         "y": 0
       },
@@ -73,26 +73,6 @@
       "pluginVersion": "12.1.1",
       "title": "",
       "type": "text"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 20,
-        "w": 2,
-        "x": 22,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "feedUrl": "https://corsproxy.io/?url=https://github.com/teslamate-org/teslamate/tags.atom",
-        "showImage": false
-      },
-      "pluginVersion": "12.1.1",
-      "title": "版本发布",
-      "type": "news"
     }
   ],
   "preload": false,

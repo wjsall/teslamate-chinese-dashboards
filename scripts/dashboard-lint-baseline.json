@@ -1513,13 +1513,6 @@
       "count": 1
     },
     {
-      "file": "grafana/dashboards/zh-cn/database-info.json",
-      "panelId": 42,
-      "matcher": "car_id",
-      "propertiesHash": "sha256:e09c286787d5af987a5bd4d70512ae1b75f43194710f2e2998a5d93230798178",
-      "count": 1
-    },
-    {
       "file": "grafana/dashboards/zh-cn/drive-stats.json",
       "panelId": 16,
       "matcher": "car_id",
