@@ -703,7 +703,7 @@ python3 scripts/wrap-cost-with-tou-view.py --revert
 
 ### 详细文档
 
-- [`sql/install-tou.sql`](sql/install-tou.sql) — 表/函数/触发器/视图全部 schema
+- [`sql/install-tou.sql`](sql/install-tou.sql) — 表/函数/触发器全部 schema
 - [`sql/install-unit-functions.sql`](sql/install-unit-functions.sql) — 单位换算函数（里程 / 温度 / 海拔 / 胎压）
 - [`sql/install-indexes.sql`](sql/install-indexes.sql) — 性能索引（v1.6.1+）
 - [`scripts/setup-tou.sh`](scripts/setup-tou.sh) — CLI 命令清单

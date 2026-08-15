@@ -9,7 +9,7 @@
 #   2. 自动检测运行中的 PostgreSQL 容器名
 #   3. 安装/更新坐标转换函数（lat_for_map / lng_for_map / wgs84_to_gcj02_*）
 #   4. 安装/更新单位换算函数（convert_km / convert_celsius / convert_m / convert_tire_pressure）
-#   5. 安装/更新分时电价系统（tou_rates 表 + 函数 + 触发器 + 视图）
+#   5. 安装/更新分时电价系统（tou_rates 表 + 函数 + 触发器）
 #   6. 安装/更新性能优化索引（v1.6.1+，positions 表 car_id+date btree）
 #   7. 检查 Grafana 必装插件（volkovlabs-form-panel）
 #   8. 重启 Grafana 容器，触发仪表盘重载
@@ -340,7 +340,7 @@ else
     # 把 stderr 落盘，便于排错；NOTICE 信息走 stdout 丢弃
     if docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
             < sql/install-tou.sql > /dev/null 2> /tmp/tou-install.log; then
-        echo -e "${GREEN}  ✓ 分时电价表/函数/触发器/视图已就绪${NC}"
+        echo -e "${GREEN}  ✓ 分时电价表/函数/触发器已就绪${NC}"
         echo "    用 'bash scripts/tou-wizard.sh' 配置峰谷电价（可选，没装也不影响主仪表盘）"
         # v1.7.5: compute_tou_cost 公式从 charge_energy_added 改为
         # GREATEST(added, used)。旁路表已有 cost_tou 是旧公式算的，重跑回算修正。
@@ -369,18 +369,11 @@ else
             sed 's/^/      /' /tmp/tou-backfill.log | head -10
             WARN_STEPS+=("TOU 历史费用回算")
         fi
-        # 两类提示是两个独立待办，分别读取；默认电价迁移不能覆盖尚未处理的视图重建提示。
         TOU_DEFAULT_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
             -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" \
             2>/dev/null) || TOU_DEFAULT_NOTE=""
         if [ -n "$TOU_DEFAULT_NOTE" ]; then
             echo -e "${YELLOW}    ${TOU_DEFAULT_NOTE}${NC}"
-        fi
-        TOU_VIEW_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
-            -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" \
-            2>/dev/null) || TOU_VIEW_NOTE=""
-        if [ -n "$TOU_VIEW_NOTE" ]; then
-            echo -e "${YELLOW}    ${TOU_VIEW_NOTE}${NC}"
         fi
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"

@@ -107,7 +107,7 @@ mock_db_exec() {
         *"relname='tou_rates'"*) echo 1 ;;
         *'count(*) FROM public.tou_rates'*) echo 2 ;;
         *'count(*) FROM tou_rates'*) echo 2 ;;
-        *'teslamate_cn_extension_meta'*) echo 11 ;;
+        *'teslamate_cn_extension_meta'*) echo 12 ;;
         *'SELECT 1'*) return 0 ;;
         *) return 0 ;;
     esac
@@ -120,7 +120,7 @@ mock_docker_exec() {
         cid_db) mock_db_exec "$@" ;;
         cid_gf)
             case "$*" in
-                *'/opt/teslamate-cn/versions.env'*) echo 'SQL_COMPAT_REVISION=11' ;;
+                *'/opt/teslamate-cn/versions.env'*) echo 'SQL_COMPAT_REVISION=12' ;;
                 *'grafana cli'*)
                     echo 'installed plugins:'
                     echo

@@ -15,9 +15,9 @@
 --   1) 跑本文件灌函数+表
 --   2) INSERT INTO tou_rates 配置你城市的峰平谷时段
 --   3) SELECT compute_tou_cost(cp_id) 算单笔
---   4) v1 会加触发器 + 视图实现「全自动 + 全局生效」
+--   4) 触发器在充电完成后自动刷新旁路费用
 --
--- 当前状态：PoC（仅函数 + 表，无触发器无视图，需要手动调用 compute_tou_cost）
+-- 当前状态：函数 + 旁路表 + 自动刷新触发器
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -157,14 +157,8 @@ CREATE TABLE IF NOT EXISTS tou_settings (
   -- 用户真的重设了默认电价，set_default_charging_rate 会把它清掉，提示不再出现。
   -- psql 的 RAISE NOTICE 走 stderr、被安装脚本丢进日志文件，用户看不见，所以这种
   -- 「需要用户动手」的话不能只靠 NOTICE，必须留在库里让脚本主动查出来讲。
-  legacy_default_note TEXT,
-  -- 对账视图无法安全重建时的用户提示。它不能与默认电价迁移共用上面的槽位：
-  -- 首次升级会在本文件后半段执行默认电价迁移，共用会把尚未处理的视图提示清空。
-  view_rebuild_note TEXT
+  legacy_default_note TEXT
 );
-
-ALTER TABLE tou_settings
-  ADD COLUMN IF NOT EXISTS view_rebuild_note TEXT;
 
 INSERT INTO tou_settings (id, default_rate) VALUES (TRUE, NULL)
 ON CONFLICT (id) DO NOTHING;
@@ -825,6 +819,12 @@ RETURNS TRIGGER AS $$
 DECLARE
   computed NUMERIC;
 BEGIN
+  -- 守卫必须放在函数体里，不能写成 CREATE TRIGGER ... WHEN (NEW.end_date ...)：
+  -- PostgreSQL 也会把 WHEN 引用的列记成触发器硬依赖，阻挡上游 ALTER COLUMN TYPE。
+  IF NEW.end_date IS NULL THEN
+    RETURN NEW;
+  END IF;
+
   BEGIN
     computed := compute_tou_cost(NEW.id);
     -- compute 返回 NULL = 这笔算不出可信的分时电价费用（没配时段，或配了但有时段没覆盖到）。
@@ -852,105 +852,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 装到 charging_processes 表 AFTER UPDATE/INSERT
--- 仅在 end_date 从 NULL 变为有值（充电完成）时触发
+-- 装到 charging_processes 表 AFTER UPDATE/INSERT。
+-- 不使用 UPDATE OF 列清单或 WHEN 列引用：PostgreSQL 会把两者引用的列记成触发器硬依赖，
+-- 导致 TeslaMate 上游无法 ALTER COLUMN TYPE。完成态守卫放在 trigger_compute_tou() 开头。
 DROP TRIGGER IF EXISTS tou_recalc ON charging_processes;
 CREATE TRIGGER tou_recalc
-AFTER INSERT OR UPDATE OF end_date, cost ON charging_processes
+AFTER INSERT OR UPDATE ON charging_processes
 FOR EACH ROW
-WHEN (NEW.end_date IS NOT NULL)
 EXECUTE FUNCTION trigger_compute_tou();
-
--- ----------------------------------------------------------------------------
--- 7. 视图 charging_processes_v：透明覆盖，所有 cost 类仪表盘改用此
---    cost_effective = COALESCE(cost_tou, cost) — 没装 TOU 用户透明回退到原 cost
--- ----------------------------------------------------------------------------
--- 注：本视图不能直接替换 dashboards 的 FROM charging_processes，
--- PG 视图不传递底层表 PK 函数依赖到下游 GROUP BY，会破坏所有 GROUP BY cp.id 的聚合 SQL。
--- 视图作为只读展示/对账查询用 OK；批量替换底表请用 trigger 或逐面板 JOIN旁路表。
--- 这个视图的重建必须放在一个带异常处理的 DO 块里，三个理由缺一不可：
---
--- 1) 不能只用 CREATE OR REPLACE VIEW：视图选了 cp.*，建视图时 * 会被展开成当时的列并
---    固化。等 TeslaMate 将来给 charging_processes 加列（历史上 cost、charge_energy_used
---    都是后加的），新列排在 cost_effective 之前，而 CREATE OR REPLACE VIEW 只允许在
---    列表末尾追加列，直接报 cannot change name of view column，重装中断。
--- 2) 也不能无脑 DROP 再建：用户可能在这个视图上建了自己的视图/物化视图，那时 DROP 会报
---    dependent objects still exist，整份 SQL 同样中断——只是把失败条件从"上游加列"换成
---    "用户建过东西"，一样不可自愈。加 CASCADE 更糟，会连用户自己的对象一起删掉。
--- 3) DROP 和 CREATE 分成两条语句时，psql 默认 autocommit，中间存在视图不存在的窗口，
---    此刻刷新仪表盘会报 relation does not exist；更糟的是 DROP 成功而 CREATE 因故失败
---    （连接断、进程被杀）会让视图永久消失。DO 块是单条语句、单个事务，没有这个窗口。
---
--- 所以先 CREATE OR REPLACE：列名/列序没变时，它能在不动下游依赖对象的前提下更新表达式。
--- 只有列布局不兼容等原因让替换失败时，才退回 DROP + CREATE；DROP 又撞到依赖或同名对象
--- 不是普通视图时，才保留原对象并提示用户。无论哪条路径，本文件后面的对象都照常安装。
---
--- ⚠ cost_effective 只看「TeslaMate 记录的金额 → 分时电价」两档，不认识手工覆盖表，也不做
--- 默认电价现算。同一笔充电可能与仪表盘显示不同；用户实际看到的费用应调用
--- effective_cost(cp.id, cp.cost)。这里只把现有两档的顺序与主口径对齐。
-DO $view$
-DECLARE
-    v_query CONSTANT TEXT := $v$
-        SELECT
-          cp.*,
-          COALESCE(cp.cost, t.cost_tou) AS cost_effective,
-          t.cost_tou,
-          t.energy_by_period,
-          CASE
-            WHEN cp.cost IS NOT NULL THEN 'flat'
-            WHEN t.cost_tou IS NOT NULL THEN 'TOU'
-            ELSE 'unknown'
-          END AS cost_mode
-        FROM charging_processes cp
-        LEFT JOIN charging_processes_tou_cost t ON t.charging_process_id = cp.id
-    $v$;
-    v_user_note CONSTANT TEXT :=
-        '你的 charging_processes_v 对账视图仍是旧口径，可能继续让分时估算覆盖 TeslaMate 已记录的费用。'
-        || '请检查该名称是否被其他表、视图、序列或索引占用，当前数据库用户是否拥有该对象，'
-        || '以及是否有自建对象依赖它；如果 charging_processes 已有 cost_effective、cost_tou、'
-        || 'energy_by_period 或 cost_mode 同名列，请先确认兼容方案。处理后请重新运行分时电价安装。';
-    v_replace_error TEXT;
-BEGIN
-    -- 常见升级只改表达式、列布局不变。先走这条路径，用户建在本视图上的对象会原样保留，
-    -- 同时拿到最新的费用优先级。
-    BEGIN
-        EXECUTE 'CREATE OR REPLACE VIEW charging_processes_v AS ' || v_query;
-    EXCEPTION
-      WHEN invalid_table_definition OR wrong_object_type OR insufficient_privilege
-        OR duplicate_column THEN
-        v_replace_error := SQLERRM;
-    END;
-
-    IF v_replace_error IS NOT NULL THEN
-        BEGIN
-            DROP VIEW IF EXISTS charging_processes_v;
-            EXECUTE 'CREATE VIEW charging_processes_v AS ' || v_query;
-        -- dependent_objects_still_exist：列布局不兼容且有对象依赖旧视图；
-        -- wrong_object_type：同名对象不是普通视图；insufficient_privilege：视图归属别的角色；
-        -- duplicate_column：charging_processes 新增了与派生列同名的列。最后一种会在 DROP
-        -- 成功后的 CREATE 再次抛出，因此 DROP + CREATE 必须同处这个子事务：异常时自动恢复
-        -- 旧视图，再留下提示并继续安装后半段对象。
-        EXCEPTION
-          WHEN dependent_objects_still_exist OR wrong_object_type OR insufficient_privilege
-            OR duplicate_column THEN
-            UPDATE tou_settings
-            SET view_rebuild_note = v_user_note,
-                updated_at = NOW()
-            WHERE id;
-            RAISE NOTICE '%', v_user_note;
-            RETURN;
-        END;
-    END IF;
-
-    EXECUTE $c$COMMENT ON VIEW charging_processes_v IS '临时对账查询用：cost_effective 只含 TeslaMate 原值与分时电价，不含手工单价/默认电价，可能与仪表盘显示不一致；取用户实际看到的费用请用 effective_cost(cp.id, cp.cost)'$c$;
-
-    -- 用户处理完依赖/同名对象并重装成功后，旧提示已经完成使命，不能继续吓人。
-    UPDATE tou_settings
-    SET view_rebuild_note = NULL,
-        updated_at = NOW()
-    WHERE id AND view_rebuild_note IS NOT NULL;
-END
-$view$;
 
 -- ----------------------------------------------------------------------------
 -- 7e. effective_cost(cp_id, fallback) — 仪表盘统一从这里取「这笔充电多少钱」
@@ -1450,7 +1359,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ----------------------------------------------------------------------------
--- 8b. 一键卸载：uninstall_tou() — 把所有 tou_* / charging_processes_v 一次拆掉
+-- 8b. 一键卸载：uninstall_tou() — 把所有 tou_* 对象一次拆掉
 --     用 pg_proc 自动找函数，避免手工列表跟实现漂移
 --     ⚠ CASCADE 会删掉所有依赖 tou_rates / charging_processes_tou_cost 的对象
 --       （包括用户自己建的视图）— 卸载前先 \d+ tou_rates 看 referenced by 列表
@@ -1483,10 +1392,7 @@ BEGIN
     AND cp.cost IS NULL;
   GET DIAGNOSTICS restored = ROW_COUNT;
 
-  -- 3. 视图
-  DROP VIEW IF EXISTS charging_processes_v CASCADE;
-
-  -- 4. 旁路表 + 配置表（CASCADE 会一并删依赖的所有视图/约束/外键）
+  -- 3. 旁路表 + 配置表（CASCADE 会一并删依赖的所有视图/约束/外键）
   DROP TABLE IF EXISTS charging_processes_tou_cost CASCADE;
   -- 覆盖表也要删：卸载之后费用显示应当完全回到 TeslaMate 自己的数据。
   -- 这正是当初直接写原表做不到的事——那些值留在 charging_processes 里，卸载也带不走。
@@ -1495,7 +1401,7 @@ BEGIN
   DROP TABLE IF EXISTS tou_settings CASCADE;
   DROP TABLE IF EXISTS tou_rates CASCADE;
 
-  -- 5. 全部 tou_* / _tou_* / *_tou_* 函数（除 uninstall_tou 自己）
+  -- 4. 全部 tou_* / _tou_* / *_tou_* 函数（除 uninstall_tou 自己）
   --    名字里没有 tou 的（effective_cost / cost_before_tou / adopt_legacy_default_costs 等）
   --    必须写进下面这份显式名单，否则卸载完还会剩函数，而它们引用的表已经没了。
   FOR r IN
@@ -1517,7 +1423,7 @@ BEGIN
     cnt := cnt + 1;
   END LOOP;
 
-  RETURN format('已卸载 %s 个函数 + tou_rates / charging_processes_tou_cost 表 + 视图 + 触发器；%s 笔曾被搬走的费用已写回 TeslaMate 记录。', cnt, restored);
+  RETURN format('已卸载 %s 个函数 + 分时电价相关表和触发器；%s 笔曾被搬走的费用已写回 TeslaMate 记录。', cnt, restored);
 END;
 $$ LANGUAGE plpgsql;
 

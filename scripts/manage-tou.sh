@@ -58,7 +58,7 @@ cmd_backfill() {
 
 cmd_truncate() {
     echo -e "${YELLOW}⚠ 即将清空 tou_rates + charging_processes_tou_cost 两张表${NC}"
-    echo "  函数/触发器/视图都保留，下次想用还能用"
+    echo "  函数和触发器都保留，下次想用还能用"
     read -p "  确认？输入 yes 继续: " confirm
     [ "$confirm" = "yes" ] || { echo "  取消"; exit 0; }
     psql_exec -c "TRUNCATE tou_rates RESTART IDENTITY CASCADE; TRUNCATE charging_processes_tou_cost;"
@@ -68,7 +68,7 @@ cmd_truncate() {
 cmd_uninstall() {
     echo -e "${YELLOW}⚠ 完全卸载分时电价系统${NC}"
     echo "  - 删除全部 tou_* / _tou_* 函数"
-    echo "  - 删除 tou_recalc 触发器 + charging_processes_v 视图"
+    echo "  - 删除 tou_recalc 触发器"
     echo "  - 删除 tou_rates + charging_processes_tou_cost 表（CASCADE）"
     echo "  - 你自己建在 tou_rates 上的视图也会被 CASCADE 删掉"
     read -p "  确认？输入 yes 继续: " confirm

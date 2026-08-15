@@ -174,10 +174,9 @@ for entry in "${ENTRY_POINTS[@]}"; do
     esac
 done
 
-# 视图重建提示与默认电价迁移提示是两件独立的用户待办，必须分槽查询。只查旧的共用槽会
-# 让安装文件后半段的默认电价迁移无声覆盖视图提示，用户直到看到账目不一致才知道。
+# 默认电价迁移发现多个旧电价时会留下用户待办，所有安装入口都必须把它显示出来。
 echo
-echo "校验安装路径分别读取两类 TOU 提示..."
+echo "校验安装路径读取 TOU 用户提示..."
 NOTE_PATHS=(simple-deploy.sh migrate-from-official.sh scripts/upgrade.sh)
 for entry in "${NOTE_PATHS[@]}"; do
     if detail=$(python3 - "$entry" <<'PY'
@@ -193,7 +192,7 @@ for line in open(path, encoding='utf-8'):
 body = ''.join(lines)
 
 missing = []
-for column in ('legacy_default_note', 'view_rebuild_note'):
+for column in ('legacy_default_note',):
     if not re.search(
         rf'SELECT\s+{column}\s+FROM\s+tou_settings'
         rf'\s+WHERE\s+{column}\s+IS\s+NOT\s+NULL',
@@ -203,7 +202,7 @@ for column in ('legacy_default_note', 'view_rebuild_note'):
         missing.append(column)
 
 if missing:
-    print('没有分别查询：' + '、'.join(missing))
+    print('没有查询：' + '、'.join(missing))
     raise SystemExit(1)
 PY
     ); then
