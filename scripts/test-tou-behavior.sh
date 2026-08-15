@@ -1276,6 +1276,7 @@ make_charge 40 '2026-03-11 10:00' 60 7
 make_charge 41 '2026-03-11 12:00' 60 7
 make_charge 42 '2026-03-11 14:00' 60 7
 make_charge 43 '2026-03-11 16:00' 60 0             # 0 度充电
+make_charge 46 '2026-03-11 17:00' 60 7             # 上游重算后 used 从 7 抬到 8
 psql_run <<'SQL'
 -- 40：模拟当年按 1.0 元/度写进 TeslaMate 记录的值（7kWh × 1.0 = 7.00）
 UPDATE charging_processes SET cost = 7.00 WHERE id = 40;
@@ -1287,10 +1288,12 @@ INSERT INTO charging_process_cost_overrides (charging_process_id, cost, source, 
 VALUES (42, 1.23, 'manual', 0.2);
 -- 43：0 度 0 元。0 = 0 对任何电价都成立，不加保护就会被任意电价「认领」并清空
 UPDATE charging_processes SET cost = 0 WHERE id = 43;
+-- 46：旧版按 added=7kWh × 1.0 写入 7 元；上游迁移随后只把 used 抬高到 8kWh。
+UPDATE charging_processes SET cost = 7.00, charge_energy_used = 8.00 WHERE id = 46;
 SQL
 
-assert_eq "试算：认出 1 笔可搬、1 笔因已有指定价搬不动" \
-    "试算：有1笔充电的费用与「1.0元/度」完全吻合，会被搬进覆盖表并把原始费用恢复为空；另有1笔虽然对得上、但你已经给它们指定过价格，不会被动。去掉第二个参数即可实际执行。" \
+assert_eq "试算：认出 2 笔可搬（含上游重算电量的旧行）、1 笔因已有指定价搬不动" \
+    "试算：有2笔充电的费用与「1.0元/度」完全吻合，会被搬进覆盖表并把原始费用恢复为空；另有1笔虽然对得上、但你已经给它们指定过价格，不会被动。去掉第二个参数即可实际执行。" \
     "$(psql_q "SELECT message FROM adopt_legacy_default_costs(1.0, TRUE)")"
 assert_eq "试算不改任何东西（原表仍是 7.00）" "7.00" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 40')"
 
@@ -1304,7 +1307,7 @@ assert_eq "同一个事务里连着调两次 → 不报错" "没报错" "$REPEAT
 
 # 下面这条断言自己就是「实际执行」那一次，不要在它前面再跑一遍：
 # 搬完之后再调一次，报的当然是 0 笔，断言就成了走过场
-assert_eq "实际执行报的是真搬走的笔数，并说明默认电价被顺带补上了" "✅已把1笔按「1.0元/度」生成的费用搬进覆盖表，TeslaMate原始记录恢复为空。这些充电以后按默认电价显示费用；卸载分时电价功能时，原始金额会原样写回TeslaMate记录。｜顺带把默认电价设成了1.0元/度（原先是空的），这批充电才显示得出费用；随时可以到「默认电价」面板改。" \
+assert_eq "实际执行报的是真搬走的笔数，并说明默认电价被顺带补上了" "✅已把2笔按「1.0元/度」生成的费用搬进覆盖表，TeslaMate原始记录恢复为空。这些充电以后按默认电价显示费用；卸载分时电价功能时，原始金额会原样写回TeslaMate记录。｜顺带把默认电价设成了1.0元/度（原先是空的），这批充电才显示得出费用；随时可以到「默认电价」面板改。" \
     "$(psql_q "SELECT message FROM adopt_legacy_default_costs(1.0)")"
 assert_eq "搬走的那笔：TeslaMate 记录恢复为空" "<NULL>" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 40')"
 assert_eq "搬走的那笔：费用仍然显示 7（改由默认电价现算）" "7.00" "$(psql_q 'SELECT effective_cost(40, NULL)')"
@@ -1312,6 +1315,8 @@ assert_eq "搬走的那笔：原值另存了一份，卸载时要用" "7.0000" "
 assert_eq "对不上电价的那笔完全没动" "6.66" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 41')"
 assert_eq "已有手工指定价的那笔：TeslaMate 原值必须还在（老实现会把它清空）" "7.00" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 42')"
 assert_eq "已有手工指定价的那笔：显示的还是手工价" "1.2300" "$(psql_q 'SELECT effective_cost(42, NULL)')"
+assert_eq "上游抬高 used 后：旧行仍被认领，TeslaMate 记录恢复为空" "<NULL>" "$(psql_q 'SELECT cost FROM charging_processes WHERE id = 46')"
+assert_eq "上游抬高 used 后：迁移前金额已备份，可在卸载时还原" "7.0000" "$(psql_q 'SELECT original_cost FROM charging_process_cost_overrides WHERE charging_process_id = 46')"
 
 # 0 度充电：0 = 0 对任何电价都成立，填个离谱的价也不能把它认领走
 assert_eq "0 度充电不会被任意电价「认领」（试算 0 笔）" \

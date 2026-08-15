@@ -1644,7 +1644,10 @@ BEGIN
       AND cp.end_date IS NOT NULL
       AND cp.cost IS NOT NULL
       AND GREATEST(cp.charge_energy_added, cp.charge_energy_used) > 0
-      AND cp.cost = ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * p_old_rate)::NUMERIC, 2);
+      AND (
+        cp.cost = ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * p_old_rate)::NUMERIC, 2)
+        OR cp.cost = ROUND((cp.charge_energy_added * p_old_rate)::NUMERIC, 2)
+      );
 
     RETURN QUERY SELECT format(
       '试算：有 %s 笔充电的费用与「%s 元/度」完全吻合，会被搬进覆盖表并把原始费用恢复为空；另有 %s 笔虽然对得上、但你已经给它们指定过价格，不会被动。去掉第二个参数即可实际执行。',
@@ -1666,7 +1669,10 @@ BEGIN
       AND cp.end_date IS NOT NULL
       AND cp.cost IS NOT NULL
       AND GREATEST(cp.charge_energy_added, cp.charge_energy_used) > 0
-      AND cp.cost = ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * p_old_rate)::NUMERIC, 2)
+      AND (
+        cp.cost = ROUND((GREATEST(cp.charge_energy_added, cp.charge_energy_used) * p_old_rate)::NUMERIC, 2)
+        OR cp.cost = ROUND((cp.charge_energy_added * p_old_rate)::NUMERIC, 2)
+      )
   ),
   ins AS (
     INSERT INTO charging_process_cost_overrides

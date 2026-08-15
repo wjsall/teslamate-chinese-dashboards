@@ -92,6 +92,28 @@ required_comment = 'schedule 跑只读门，不构建/不推送镜像'
 if required_comment not in text:
     failures.append(f'workflow 缺少说明：{required_comment}')
 
+upgrade_block = jobs.get('smoke-upgrade-from-old', '')
+fixture_match = re.search(
+    r'INSERT INTO cars\s*\((?P<columns>[^)]*)\)\s*'
+    r'SELECT\s+(?P<values>.*?)\s+FROM\s+s;',
+    upgrade_block,
+    re.S,
+)
+if fixture_match is None:
+    failures.append('旧版升级缺少合成车辆夹具')
+else:
+    columns = [column.strip() for column in fixture_match.group('columns').split(',')]
+    values = [value.strip() for value in fixture_match.group('values').split(',')]
+    if len(columns) != len(values):
+        failures.append('旧版升级合成车辆夹具的列和值数量不一致')
+    elif 'vin' not in columns:
+        failures.append('旧版升级合成车辆夹具缺少 VIN')
+    else:
+        vin_value = values[columns.index('vin')]
+        vin_match = re.fullmatch(r"'([A-Z0-9]{17})'", vin_value)
+        if vin_match is None or not vin_match.group(1).startswith('TESTVIN'):
+            failures.append('旧版升级合成车辆夹具必须使用明显的 17 位测试 VIN')
+
 if failures:
     print('❌ CI schedule 契约失败：')
     for failure in failures:
