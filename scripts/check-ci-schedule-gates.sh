@@ -82,6 +82,13 @@ for name in image_jobs:
 
 lint_block = jobs.get('lint', '')
 for command in (
+    # dashboard lint 的三个故障注入自测。它们不是「顺带跑跑」：默认模式只能证明当前这棵树上
+    # 没有命中，证明不了规则还判不判——实测过把规则 b 的判定本体删掉、计数器留着，默认模式
+    # 照样全绿。这一整层能力曾经写好了却没接线（全仓 grep self-test 在 CI 里零命中），
+    # 所以钉在这里：谁把它们从 workflow 里拿掉，这道门就红。
+    'bash scripts/check-dashboard-lint.sh --self-test-k',
+    'bash scripts/check-dashboard-lint.sh --self-test-w',
+    'bash scripts/check-dashboard-lint.sh --self-test-b',
     'bash scripts/check-upstream-alter-compat.sh',
     # 上游升级端到端：起 postgres → 老版 TeslaMate 迁移 → 装上一个发行版的 SQL →
     # 装当前版本 → 新版 TeslaMate 迁移。逐列 ALTER 那道门是模拟，这道是真跑；
@@ -100,6 +107,13 @@ for command in (
 ):
     if command not in lint_block:
         failures.append(f'lint 没有执行 {command}')
+
+# 自测跑了、默认模式却掉出去，等于门全没了。上面的清单是子串匹配，
+# 'bash scripts/check-dashboard-lint.sh' 会被 '--self-test-k' 那行顺带满足，起不到作用，
+# 所以默认模式单独按整行钉：只有独占一个 step 的 `run: bash scripts/check-dashboard-lint.sh`
+# 才算数。
+if 'run: bash scripts/check-dashboard-lint.sh\n' not in lint_block + '\n':
+    failures.append('lint 没有以默认模式执行 bash scripts/check-dashboard-lint.sh')
 
 required_comment = 'schedule 跑只读门，不构建/不推送镜像'
 if required_comment not in text:
