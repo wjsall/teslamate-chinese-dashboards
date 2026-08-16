@@ -186,7 +186,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率"
+              "options": "power"
             },
             "properties": [
               {
@@ -206,7 +206,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电池加热器"
+              "options": "battery_heater"
             },
             "properties": [
               {
@@ -258,7 +258,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电池电量"
+              "options": "battery_level"
             },
             "properties": [
               {
@@ -318,7 +318,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率"
+              "options": "power"
             },
             "properties": [
               {
@@ -393,7 +393,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电池加热器"
+              "options": "battery_heater"
             },
             "properties": [
               {
@@ -972,7 +972,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "风扇状态"
+              "options": "fan_status"
             },
             "properties": [
               {
@@ -1093,7 +1093,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "风扇状态"
+              "options": "fan_status"
             },
             "properties": [
               {

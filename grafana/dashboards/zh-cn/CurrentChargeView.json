@@ -717,7 +717,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率[kW]"
+              "options": "功率 [kW]"
             },
             "properties": [
               {

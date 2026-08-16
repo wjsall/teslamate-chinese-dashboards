@@ -222,7 +222,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率"
+              "options": "power"
             },
             "properties": [
               {

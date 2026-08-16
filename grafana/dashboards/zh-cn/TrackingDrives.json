@@ -187,7 +187,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "功率"
+              "options": "power"
             },
             "properties": [
               {
@@ -281,7 +281,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "海拔(m)"
+              "options": "elevation_m"
             },
             "properties": [
               {
@@ -334,7 +334,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电量(%)"
+              "options": "soc"
             },
             "properties": [
               {
@@ -399,7 +399,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "海拔(m)"
+              "options": "elevation_m"
             },
             "properties": [
               {
