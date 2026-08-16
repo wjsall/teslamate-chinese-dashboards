@@ -2,6 +2,7 @@
 # 列出「能被 PostgreSQL 解析」的面板查询。不在表里的多半是变量渲染器还原不了，
 # 不代表面板有问题；在表里的每一条都必须再次通过校验，否则门报红——
 # 解析失败要报，key 整个消失（面板改名/移位/删除）同样要报。
+grafana/dashboards/internal/charge-details.json::0::充电详情
 grafana/dashboards/internal/charge-details.json::10::电池电量
 grafana/dashboards/internal/charge-details.json::11::平均功率
 grafana/dashboards/internal/charge-details.json::12::平均室外温度
@@ -16,14 +17,20 @@ grafana/dashboards/internal/charge-details.json::3::充电详情
 grafana/dashboards/internal/charge-details.json::4::充电能量
 grafana/dashboards/internal/charge-details.json::5::充电能量
 grafana/dashboards/internal/charge-details.json::6::充电能量
+grafana/dashboards/internal/charge-details.json::7::充电详情
 grafana/dashboards/internal/charge-details.json::8::电池电量
 grafana/dashboards/internal/charge-details.json::9::电池电量
+grafana/dashboards/internal/drive-details.json::0::行驶数据
 grafana/dashboards/internal/drive-details.json::10::海拔摘要
 grafana/dashboards/internal/drive-details.json::11::海拔摘要
 grafana/dashboards/internal/drive-details.json::12::能耗 (净)
 grafana/dashboards/internal/drive-details.json::13::能量回收
 grafana/dashboards/internal/drive-details.json::14::平均能耗
 grafana/dashboards/internal/drive-details.json::15::平均速度
+grafana/dashboards/internal/drive-details.json::1::行程详情
+grafana/dashboards/internal/drive-details.json::2::海拔
+grafana/dashboards/internal/drive-details.json::3::温度
+grafana/dashboards/internal/drive-details.json::4::轮胎压力
 grafana/dashboards/internal/drive-details.json::5::里程表 (起 - 止)
 grafana/dashboards/internal/drive-details.json::6::行驶时长
 grafana/dashboards/internal/drive-details.json::7::选中时长
@@ -64,6 +71,7 @@ grafana/dashboards/zh-cn/ChargingCurveStats.json::4::快充曲线统计
 grafana/dashboards/zh-cn/ChargingCurveStats.json::5::最大功率
 grafana/dashboards/zh-cn/ContinuousTrips.json::0::长途行程
 grafana/dashboards/zh-cn/CurrentChargeView.json::0::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::10::里程表
 grafana/dashboards/zh-cn/CurrentChargeView.json::11::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::12::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::14::交流输入电流
@@ -74,23 +82,39 @@ grafana/dashboards/zh-cn/CurrentChargeView.json::1::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::2::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::3::充电量
 grafana/dashboards/zh-cn/CurrentChargeView.json::4::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::5::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::6::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::7::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::8::充电时间
+grafana/dashboards/zh-cn/CurrentChargeView.json::9::当前充电状态
+grafana/dashboards/zh-cn/CurrentDriveView.json::0::功率
+grafana/dashboards/zh-cn/CurrentDriveView.json::10::表显里程
+grafana/dashboards/zh-cn/CurrentDriveView.json::11::里程表
+grafana/dashboards/zh-cn/CurrentDriveView.json::12::当前驾驶状态
+grafana/dashboards/zh-cn/CurrentDriveView.json::1::功率
 grafana/dashboards/zh-cn/CurrentDriveView.json::2::当前能耗
 grafana/dashboards/zh-cn/CurrentDriveView.json::3::车辆标准能耗
 grafana/dashboards/zh-cn/CurrentDriveView.json::4::当前驾驶状态
 grafana/dashboards/zh-cn/CurrentDriveView.json::5::当前驾驶状态
 grafana/dashboards/zh-cn/CurrentDriveView.json::6::车外温度
 grafana/dashboards/zh-cn/CurrentDriveView.json::7::车内温度
+grafana/dashboards/zh-cn/CurrentDriveView.json::8::空调温度
 grafana/dashboards/zh-cn/CurrentDriveView.json::9::距离
+grafana/dashboards/zh-cn/CurrentState.json::0::当前状态
 grafana/dashboards/zh-cn/CurrentState.json::10::车外温度
 grafana/dashboards/zh-cn/CurrentState.json::11::位置
 grafana/dashboards/zh-cn/CurrentState.json::12::状态
 grafana/dashboards/zh-cn/CurrentState.json::13::里程表
 grafana/dashboards/zh-cn/CurrentState.json::14::固件
+grafana/dashboards/zh-cn/CurrentState.json::15::时间线
+grafana/dashboards/zh-cn/CurrentState.json::1::最近状态改变(在线/离线/休眠)
+grafana/dashboards/zh-cn/CurrentState.json::2::续航/表显里程
+grafana/dashboards/zh-cn/CurrentState.json::3::预估续航
 grafana/dashboards/zh-cn/CurrentState.json::4::电池电量
 grafana/dashboards/zh-cn/CurrentState.json::5::胎压 ($pressure_unit)
+grafana/dashboards/zh-cn/CurrentState.json::6::最近车辆状态
+grafana/dashboards/zh-cn/CurrentState.json::7::最近车辆状态
+grafana/dashboards/zh-cn/CurrentState.json::8::空调温度
 grafana/dashboards/zh-cn/CurrentState.json::9::车内温度
 grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::0::充电运营商包含: $carrier
 grafana/dashboards/zh-cn/DCChargingCurvesByCarrier.json::1::充电运营商包含: $carrier
@@ -118,6 +142,8 @@ grafana/dashboards/zh-cn/SpeedTemperature.json::1::短途与长途行程按温�
 grafana/dashboards/zh-cn/SpeedTemperature.json::2::短途与长途行程按温度的能耗
 grafana/dashboards/zh-cn/SpeedTemperature.json::3::按日期的能耗与温度
 grafana/dashboards/zh-cn/SpeedTemperature.json::4::按日期的能耗与温度
+grafana/dashboards/zh-cn/TrackingDrives.json::0::驾驶
+grafana/dashboards/zh-cn/TrackingDrives.json::1::驾驶记录追踪
 grafana/dashboards/zh-cn/TrackingDrives.json::2::驾驶记录追踪
 grafana/dashboards/zh-cn/TrackingDrives.json::3::驾驶记录追踪
 grafana/dashboards/zh-cn/TrackingDrives.json::4::驾驶记录追踪
@@ -190,6 +216,7 @@ grafana/dashboards/zh-cn/charging-stats.json::4::每百 $length_unit 费用
 grafana/dashboards/zh-cn/charging-stats.json::5::平均每度电价格
 grafana/dashboards/zh-cn/charging-stats.json::6::平均每度电价格 DC
 grafana/dashboards/zh-cn/charging-stats.json::7::平均每度电价格 AC
+grafana/dashboards/zh-cn/charging-stats.json::8::充电热力图
 grafana/dashboards/zh-cn/charging-stats.json::9::电量变化
 grafana/dashboards/zh-cn/cost-savings.json::0::省钱分析
 grafana/dashboards/zh-cn/cost-savings.json::10::省钱分析
@@ -262,12 +289,21 @@ grafana/dashboards/zh-cn/locations.json::5::收藏点
 grafana/dashboards/zh-cn/mileage.json::0::里程
 grafana/dashboards/zh-cn/overview.json::0::电量
 grafana/dashboards/zh-cn/overview.json::10::固件版本
+grafana/dashboards/zh-cn/overview.json::11::里程表
+grafana/dashboards/zh-cn/overview.json::12::充电详情
+grafana/dashboards/zh-cn/overview.json::13::充电详情
+grafana/dashboards/zh-cn/overview.json::14::空调温度
 grafana/dashboards/zh-cn/overview.json::15::车外温度
+grafana/dashboards/zh-cn/overview.json::16::状态
 grafana/dashboards/zh-cn/overview.json::1::电量
+grafana/dashboards/zh-cn/overview.json::2::交流输入电压
+grafana/dashboards/zh-cn/overview.json::3::充电功率
 grafana/dashboards/zh-cn/overview.json::4::充电功率
+grafana/dashboards/zh-cn/overview.json::5::电量折线图
 grafana/dashboards/zh-cn/overview.json::6::平均能耗(净值)
 grafana/dashboards/zh-cn/overview.json::7::平均能耗（总计）
 grafana/dashboards/zh-cn/overview.json::8::总行驶里程
+grafana/dashboards/zh-cn/overview.json::9::剩余续航
 grafana/dashboards/zh-cn/projected-range.json::0::预估续航里程 - 里程表
 grafana/dashboards/zh-cn/projected-range.json::1::预估续航里程 - 里程表
 grafana/dashboards/zh-cn/projected-range.json::2::续航曲线图 - 电池余量
@@ -303,7 +339,10 @@ grafana/dashboards/zh-cn/sentry-drain.json::4::🥧 总能耗去向
 grafana/dashboards/zh-cn/sentry-drain.json::5::📊 月度能耗：行车 vs 停车耗电 (kWh)
 grafana/dashboards/zh-cn/sentry-drain.json::6::🅿️ 月度停车耗电拆分：醒着掉电 vs 休眠掉电 (kWh)
 grafana/dashboards/zh-cn/sentry-drain.json::7::🔍 醒着停车明细（可复议默认阈值：停 >15 分钟没休眠）
+grafana/dashboards/zh-cn/states.json::0::上次状态变更时间
+grafana/dashboards/zh-cn/states.json::1::当前状态
 grafana/dashboards/zh-cn/states.json::2::停车比 (%)
+grafana/dashboards/zh-cn/states.json::3::状态
 grafana/dashboards/zh-cn/station-ranking.json::0::📊 总充电次数
 grafana/dashboards/zh-cn/station-ranking.json::1::💰 总充电费用
 grafana/dashboards/zh-cn/station-ranking.json::2::🟢 最便宜 3 个桩
@@ -335,6 +374,7 @@ grafana/dashboards/zh-cn/tou-config.json::7::✏️ 修改单价
 grafana/dashboards/zh-cn/tou-config.json::8::✏️ 修改单价
 grafana/dashboards/zh-cn/tou-config.json::9::🗑️ 删除整段
 grafana/dashboards/zh-cn/trip.json::0::行程统计（时间段）
+grafana/dashboards/zh-cn/trip.json::10::行程统计（时间段）
 grafana/dashboards/zh-cn/trip.json::11::行程
 grafana/dashboards/zh-cn/trip.json::12::充电
 grafana/dashboards/zh-cn/trip.json::13::电池水平及续航里程

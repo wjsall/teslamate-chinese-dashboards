@@ -108,6 +108,14 @@ def render(sql, filler="'1'"):
     s = re.sub(r'\$__timeGroupAlias\(([^,]+),[^)]*\)', r'date_trunc(\'day\', \1) AS time', s)
     s = re.sub(r'\$__timeGroup\(([^,]+),[^)]*\)', r"date_trunc('day', \1)", s)
     s = re.sub(r'\$__unixEpochFilter\(([^)]*)\)', r'TRUE', s)
+    # $__time(col) / $__timeEpoch(col)：Grafana 把它们展开成时间序列要的那一列。
+    # 不认这两个宏时，它们会掉进最后的通用兜底、变成 '1'(col) —— 报 syntax error at or
+    # near "("，而这个报错撞的不是占位符本身，is_render_artifact() 认不出来，于是这些面板
+    # 既进不了基线、也不算失败，静静地一条规则都跑不到。实测：全仓 40 条用了 $__time()，
+    # 40 条全在基线之外，占未覆盖总数的绝大部分。
+    # 注意先后无所谓：$__timeFilter( / $__timeGroup( 里 "time" 后面不是左括号，匹配不上。
+    s = re.sub(r'\$__timeEpoch\(([^)]*)\)', r'extract(epoch from \1)::bigint AS time', s)
+    s = re.sub(r'\$__time\(([^)]*)\)', r'\1 AS time', s)
     s = s.replace('$__timeFrom()', "(now() - interval '30 days')").replace('$__timeTo()', 'now()')
     s = s.replace('$__timezone', 'Asia/Shanghai')
     s = re.sub(r"\$__interval\w*", "'1 day'", s)
