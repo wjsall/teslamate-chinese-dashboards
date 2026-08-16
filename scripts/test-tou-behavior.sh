@@ -18,10 +18,27 @@ cd "$(dirname "$0")/.." || exit
 
 PG_IMAGE="postgres:18-trixie"
 CONTAINER="tou-behavior-test-$$"
+# 升级路径断言的起点。
+#
+# 【语义：最后一个会创建 charging_processes_v 的版本】不是「上一个发行版」。
+# 老版本建过、新版本不再建的对象只有从这里装起才会出现在库里；只测全新安装的套件对这类
+# 对象是全盲的，v1.9.6 就是这么漏掉的。
+#
+# 所以这个值**不该随发版往前移**：下次发版后有人把它改成 v1.9.6 或更新，夹具装的那一版
+# 根本不会创建 charging_processes_v，下面这一整组升级路径断言就变成空转——要么全绿但什么
+# 也没验，要么被 fetch_legacy_tou_sql 的夹具自检拦下报「夹具不成立」。
+# 只有当我们又引入一个新的「旧版创建、新版不再创建」的对象时，才需要重新考虑这个值该取哪个
+# tag（那时多半还要再加一组以那个新对象为夹具自检的断言，而不是简单改数字）。
+LEGACY_TAG="v1.9.5"
 PASS=0
 FAIL=0
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/tou-behavior.XXXXXX") || exit 1
+
+cleanup() {
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    rm -r -- "$TMP_ROOT" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
@@ -1342,13 +1359,23 @@ reinstall_tou() {
         || { echo "❌ 重跑 install-tou.sql 失败（模拟升级）"; exit 1; }
 }
 
-# 建一个已完成首次安装、但刻意删掉后半段函数的数据库。重跑安装后检查这两个函数，
-# 可以证明脚本没有被前半段的对象兼容分支提前中止。
-prepare_install_fixture() {
-    local db="$1" db_owner="${2:-teslamate}"
+# 建一个空库 + 最小 TeslaMate 表结构。装当前版本、装老版本都从这里起步。
+#   $1 库名
+#   $2 建表 / 装 SQL 用的角色（默认 teslamate）
+#   $3 库本身的属主，默认与 $2 相同。只有要构造「装 SQL 的角色不是库/schema 属主」时才传：
+#      库属主是 pg_database_owner 的成员、也就是 public schema 的属主，PostgreSQL 允许它删掉
+#      schema 里属于别人的对象——用它当安装角色就永远构造不出「权限不足删不掉」那种库。
+create_fixture_db() {
+    local db="$1" db_owner="${2:-teslamate}" database_owner="${3:-}"
+    [ -n "$database_owner" ] || database_owner="$db_owner"
     docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 \
-        -c "CREATE DATABASE ${db} OWNER ${db_owner}" >/dev/null \
+        -c "CREATE DATABASE ${db} OWNER ${database_owner}" >/dev/null \
         || { echo "❌ 无法创建安装兼容性夹具数据库 ${db}"; exit 1; }
+    if [ "$database_owner" != "$db_owner" ]; then
+        docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
+            -c "GRANT CREATE ON SCHEMA public TO ${db_owner}" >/dev/null \
+            || { echo "❌ 无法给 ${db_owner} 授予 ${db} 的建表权限"; exit 1; }
+    fi
     docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
         || { echo "❌ 无法创建安装兼容性最小表结构"; exit 1; }
 CREATE TABLE geofences (id SERIAL PRIMARY KEY, name TEXT);
@@ -1374,6 +1401,13 @@ CREATE TABLE charges (
   battery_level INT
 );
 SQL
+}
+
+# 建一个已完成首次安装、但刻意删掉后半段函数的数据库。重跑安装后检查这两个函数，
+# 可以证明脚本没有被前半段的对象兼容分支提前中止。
+prepare_install_fixture() {
+    local db="$1" db_owner="${2:-teslamate}"
+    create_fixture_db "$db" "$db_owner"
     docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 \
         < sql/install-tou.sql >/dev/null 2>&1 \
         || { echo "❌ 安装兼容性夹具首次安装失败"; exit 1; }
@@ -1381,6 +1415,55 @@ SQL
         -c "DROP FUNCTION effective_cost(INT, NUMERIC);
             DROP FUNCTION backfill_all_tou();" >/dev/null \
         || { echo "❌ 无法准备安装完整性夹具"; exit 1; }
+}
+
+# 把上一个发行版的 install-tou.sql 取到临时文件。取不到就整场中止：
+# 悄悄跳过等于把「升级路径」这一整类断言变成走过场，而这正是 v1.9.6 漏掉 P0 的形状。
+LEGACY_TOU_SQL="$TMP_ROOT/install-tou-${LEGACY_TAG}.sql"
+fetch_legacy_tou_sql() {
+    if ! git show "${LEGACY_TAG}:sql/install-tou.sql" >"$LEGACY_TOU_SQL" 2>"$TMP_ROOT/git-show.err"; then
+        echo ""
+        echo "❌ 取不到 ${LEGACY_TAG} 的 sql/install-tou.sql，升级路径断言无法进行："
+        sed 's/^/       /' "$TMP_ROOT/git-show.err"
+        echo "       浅克隆（fetch-depth: 1）不带 tag，CI 里这个 job 的 checkout 需要 fetch-depth: 0。"
+        exit 1
+    fi
+    # 夹具自检：老版本必须真的会建那个视图，否则「升级后视图没了」是空欢喜一场。
+    if ! grep -q 'VIEW charging_processes_v' "$LEGACY_TOU_SQL"; then
+        echo ""
+        echo "❌ ${LEGACY_TAG} 的 install-tou.sql 里找不到 charging_processes_v，夹具不成立"
+        exit 1
+    fi
+}
+
+# 建一个「装着上一个发行版」的库——用户升级前的真实形状。
+prepare_legacy_upgrade_fixture() {
+    local db="$1" db_owner="${2:-teslamate}" database_owner="${3:-}"
+    create_fixture_db "$db" "$db_owner" "$database_owner"
+    docker exec -i "$CONTAINER" psql -U "$db_owner" -d "$db" -v ON_ERROR_STOP=1 \
+        <"$LEGACY_TOU_SQL" >"$TMP_ROOT/legacy-install.log" 2>&1 \
+        || { echo "❌ ${LEGACY_TAG} 的 install-tou.sql 在夹具库 ${db} 装失败"
+             sed 's/^/       /' "$TMP_ROOT/legacy-install.log" | tail -20
+             exit 1; }
+    # 与 prepare_install_fixture 同一个道理，但在升级夹具上更要紧：老版本也装过这两个函数，
+    # 不先删掉的话，「其余部分照常装完」那条断言在安装中途夭折时照样是绿的——它看到的是
+    # 老版本留下的那两个函数，不是这次装进去的。
+    docker exec -i "$CONTAINER" psql -U teslamate -d "$db" -v ON_ERROR_STOP=1 \
+        -c "DROP FUNCTION effective_cost(INT, NUMERIC);
+            DROP FUNCTION backfill_all_tou();" >/dev/null \
+        || { echo "❌ 无法准备升级路径的安装完整性夹具"; exit 1; }
+}
+
+# 在指定库上重跑当前版本的 install-tou.sql，把退出码回填到 $INSTALL_RC。
+INSTALL_RC=0
+install_current_tou() {
+    local db="$1" db_user="${2:-teslamate}"
+    if docker exec -i "$CONTAINER" psql -U "$db_user" -d "$db" -v ON_ERROR_STOP=1 \
+            < sql/install-tou.sql >"$TMP_ROOT/current-install.log" 2>&1; then
+        INSTALL_RC=0
+    else
+        INSTALL_RC=$?
+    fi
 }
 
 # 上游迁移兼容：新装的 SQL 不能再创建对账视图，触发器也不能用 UPDATE OF 钉住列。
@@ -1396,6 +1479,180 @@ assert_eq "触发器不再阻挡上游修改 end_date 类型" \
     "ALTERTABLE" "$(psql_q_db tou_upstream_alter 'ALTER TABLE charging_processes ALTER COLUMN end_date TYPE timestamp without time zone')"
 assert_eq "移除对账视图后，上游可修改 charging_processes.id 类型" \
     "ALTERTABLE" "$(psql_q_db tou_upstream_alter 'ALTER TABLE charging_processes ALTER COLUMN id TYPE integer')"
+
+# ===========================================================================
+# 升级路径：老版本建过、新版本不再建的对象，必须由这次安装主动清掉
+#
+# 上面那一组只证明「全新安装不再创建对账视图」。绝大多数用户不是全新安装——他们库里
+# 那个 charging_processes_v 是上一版建的，新版本「不再创建」一句话救不了他们：视图
+# 原样留着，TeslaMate 升到 4.1.1 时那句
+#   ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)
+# 照样被 PostgreSQL 拒绝，TeslaMate 起不来、容器反复重启、行车充电全部停止记录。
+# 所以下面每一条都从**真的装一遍上一个发行版**开始，这才是用户升级时的库。
+# ===========================================================================
+echo ""
+echo "===== 升级路径：清掉旧版留下的对账视图 ====="
+
+fetch_legacy_tou_sql
+
+# ---- 核心回归锁：升级完视图必须没了，上游那句 ALTER 必须成功 ----
+prepare_legacy_upgrade_fixture tou_legacy_view
+assert_eq "夹具成立：装完 ${LEGACY_TAG} 库里确实有 charging_processes_v" \
+    "charging_processes_v" \
+    "$(psql_q_db tou_legacy_view "SELECT to_regclass('public.charging_processes_v')::text")"
+install_current_tou tou_legacy_view
+assert_eq "从 ${LEGACY_TAG} 升级：重跑当前版本安装退出码 0" "0" "$INSTALL_RC"
+assert_eq "从 ${LEGACY_TAG} 升级：旧版留下的 charging_processes_v 已被删掉" \
+    "<NULL>" \
+    "$(psql_q_db tou_legacy_view "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "从 ${LEGACY_TAG} 升级：上游 cost 精度迁移成功（这条在 v1.9.6 上是红的）" \
+    "ALTERTABLE" \
+    "$(psql_q_db tou_legacy_view 'ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)')"
+assert_eq "从 ${LEGACY_TAG} 升级：视图删干净了就不留待办给用户" \
+    "<NULL>" "$(psql_q_db tou_legacy_view 'SELECT view_rebuild_note FROM tou_settings')"
+
+# ---- 有用户对象依赖它：不许删（会连用户的东西一起没），改成留话 ----
+# v1.9.2 的更新说明明确承诺过「你基于 charging_processes_v 建的查询或视图会保留」。
+# DROP ... CASCADE 会把下面这个 my_charging_report 一起删掉，那是数据丢失。
+prepare_legacy_upgrade_fixture tou_legacy_view_dep
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_legacy_view_dep -v ON_ERROR_STOP=1 \
+    -c "CREATE VIEW my_charging_report AS
+          SELECT id, cost_effective, cost_mode FROM charging_processes_v" >/dev/null \
+    || { echo "❌ 无法创建依赖对账视图的用户视图夹具"; exit 1; }
+install_current_tou tou_legacy_view_dep
+assert_eq "有用户对象依赖时：安装退出码仍是 0（不许因为删不掉就整份中止）" "0" "$INSTALL_RC"
+assert_eq "有用户对象依赖时：用户自己建的视图必须还在" \
+    "my_charging_report" \
+    "$(psql_q_db tou_legacy_view_dep "SELECT to_regclass('public.my_charging_report')::text")"
+assert_eq "有用户对象依赖时：用户的视图还能查（不是个空壳）" \
+    "0" "$(psql_q_db tou_legacy_view_dep 'SELECT count(*) FROM my_charging_report')"
+assert_eq "有用户对象依赖时：旧视图保留不动，等用户自己处理" \
+    "charging_processes_v" \
+    "$(psql_q_db tou_legacy_view_dep "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "有用户对象依赖时：留一句话给用户，说清会挡住 TeslaMate 升级、要先删依赖" \
+    "1" \
+    "$(psql_q_db tou_legacy_view_dep "SELECT (
+        view_rebuild_note LIKE '%charging_processes_v%'
+        AND view_rebuild_note LIKE '%4.1.1%'
+        AND view_rebuild_note LIKE '%依赖%'
+      )::int FROM tou_settings")"
+assert_eq "有用户对象依赖时：分时电价其余部分照常装完（不被这个视图连坐）" \
+    "1" "$(psql_q_db tou_legacy_view_dep "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+# 用户删掉自己的对象再跑一次 → 视图清掉、提示跟着撤销（否则每次升级都被吓一回）
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_legacy_view_dep -v ON_ERROR_STOP=1 \
+    -c "DROP VIEW my_charging_report" >/dev/null \
+    || { echo "❌ 无法删除用户视图夹具"; exit 1; }
+install_current_tou tou_legacy_view_dep
+assert_eq "用户删掉依赖对象后重跑：视图被清掉" \
+    "<NULL>" \
+    "$(psql_q_db tou_legacy_view_dep "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "用户删掉依赖对象后重跑：那句提示也跟着撤掉" \
+    "<NULL>" "$(psql_q_db tou_legacy_view_dep 'SELECT view_rebuild_note FROM tou_settings')"
+assert_eq "用户删掉依赖对象后重跑：上游 cost 精度迁移成功" \
+    "ALTERTABLE" \
+    "$(psql_q_db tou_legacy_view_dep 'ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)')"
+
+# ---- 这个名字被别的类型的对象占着：也不许动，同样只留话 ----
+prepare_legacy_upgrade_fixture tou_legacy_view_kind
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_legacy_view_kind -v ON_ERROR_STOP=1 \
+    -c "DROP VIEW charging_processes_v;
+        CREATE MATERIALIZED VIEW charging_processes_v AS
+          SELECT id, cost FROM charging_processes" >/dev/null \
+    || { echo "❌ 无法创建同名物化视图夹具"; exit 1; }
+install_current_tou tou_legacy_view_kind
+assert_eq "同名对象是物化视图：安装退出码仍是 0" "0" "$INSTALL_RC"
+assert_eq "同名对象是物化视图：不删它（不确定是不是用户自己的东西）" \
+    "charging_processes_v" \
+    "$(psql_q_db tou_legacy_view_kind "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "同名对象是物化视图：留话说明它不是普通视图、需要用户自己确认" \
+    "1" "$(psql_q_db tou_legacy_view_kind "SELECT (
+        view_rebuild_note LIKE '%不是普通视图%'
+        AND view_rebuild_note LIKE '%4.1.1%'
+      )::int FROM tou_settings")"
+assert_eq "同名对象是物化视图：分时电价其余部分照常装完" \
+    "1" "$(psql_q_db tou_legacy_view_kind "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+# ---- 视图归属别的数据库角色：删不动，同样只留话 ----
+docker exec -i "$CONTAINER" psql -U teslamate -d postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL' \
+    || { echo "❌ 无法创建对账视图所有权夹具角色"; exit 1; }
+CREATE ROLE tou_legacy_installer LOGIN;
+CREATE ROLE tou_legacy_view_owner;
+SQL
+prepare_legacy_upgrade_fixture tou_legacy_view_owned tou_legacy_installer teslamate
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_legacy_view_owned -v ON_ERROR_STOP=1 \
+    -c "ALTER VIEW charging_processes_v OWNER TO tou_legacy_view_owner" >/dev/null \
+    || { echo "❌ 无法把对账视图转给别的角色"; exit 1; }
+# 夹具自检：视图确实归别人、装 SQL 的角色确实不是 public schema 的属主。
+# 两条有一条不成立，下面的断言就变成走过场（安装角色是 schema 属主时删得动别人的对象）。
+if [ "$(psql_q_db tou_legacy_view_owned "SELECT pg_get_userbyid(c.relowner) FROM pg_class c WHERE c.relname = 'charging_processes_v'")" \
+        != "tou_legacy_view_owner" ]; then
+    echo "❌ 对账视图所有权夹具不正确"
+    exit 1
+fi
+if [ "$(psql_q_db tou_legacy_view_owned "SELECT pg_has_role('tou_legacy_installer', n.nspowner, 'USAGE')::int FROM pg_namespace n WHERE n.nspname = 'public'")" \
+        != "0" ]; then
+    echo "❌ 对账视图所有权夹具不成立：安装角色仍是 public schema 的属主，删得动别人的对象"
+    exit 1
+fi
+install_current_tou tou_legacy_view_owned tou_legacy_installer
+assert_eq "视图归属别的角色：安装退出码仍是 0" "0" "$INSTALL_RC"
+assert_eq "视图归属别的角色：视图保留不动" \
+    "charging_processes_v" \
+    "$(psql_q_db tou_legacy_view_owned "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "视图归属别的角色：留话请用户用属主身份删" \
+    "1" "$(psql_q_db tou_legacy_view_owned "SELECT (
+        view_rebuild_note LIKE '%属主%'
+        AND view_rebuild_note LIKE '%4.1.1%'
+      )::int FROM tou_settings")"
+assert_eq "视图归属别的角色：分时电价其余部分照常装完" \
+    "1" "$(psql_q_db tou_legacy_view_owned "SELECT (
+        to_regprocedure('effective_cost(integer,numeric)') IS NOT NULL
+        AND to_regprocedure('backfill_all_tou()') IS NOT NULL
+      )::int")"
+
+# ---- 卸载：安装期删不掉的视图，用户主动要求卸载时必须真的拆掉 ----
+# 卸载是用户亲口说「把这套东西全部拆掉」，这时 CASCADE 是他要的语义。
+#
+# 夹具刻意把视图改成**不引用旁路表**的形状：用户自己改过这个视图就是这样。
+# 卸载里那句 DROP TABLE charging_processes_tou_cost CASCADE 于是连坐不到它——
+# 必须有一句显式的 DROP VIEW charging_processes_v CASCADE，视图才真的会消失。
+# 少了那一句，视图留在库里继续挡 TeslaMate 升级，用户以为已经卸载干净了。
+prepare_legacy_upgrade_fixture tou_legacy_view_uninstall
+docker exec -i "$CONTAINER" psql -U teslamate -d tou_legacy_view_uninstall -v ON_ERROR_STOP=1 \
+    -c "DROP VIEW charging_processes_v;
+        CREATE VIEW charging_processes_v AS SELECT id, cost FROM charging_processes;
+        CREATE VIEW my_charging_report AS SELECT id FROM charging_processes_v" >/dev/null \
+    || { echo "❌ 无法创建卸载夹具的用户视图"; exit 1; }
+assert_eq "卸载夹具：视图确实不引用旁路表（否则删表的 CASCADE 会替它兜底，测不到那句显式 DROP）" \
+    "0" "$(psql_q_db tou_legacy_view_uninstall "SELECT count(*) FROM pg_depend d
+             JOIN pg_rewrite r ON r.oid = d.objid
+             JOIN pg_class v ON v.oid = r.ev_class
+             JOIN pg_class t ON t.oid = d.refobjid
+            WHERE v.relname = 'charging_processes_v'
+              AND t.relname = 'charging_processes_tou_cost'")"
+install_current_tou tou_legacy_view_uninstall
+assert_eq "卸载夹具：升级后视图仍在（有用户对象依赖）" \
+    "charging_processes_v" \
+    "$(psql_q_db tou_legacy_view_uninstall "SELECT to_regclass('public.charging_processes_v')::text")"
+UNINSTALL_OUT="$(psql_q_db tou_legacy_view_uninstall "SELECT uninstall_tou()")"
+case "$UNINSTALL_OUT" in
+    *"<SQL出错>"*) UNINSTALL_RESULT="报错";;
+    *"已卸载"*)    UNINSTALL_RESULT="卸载成功";;
+    *)             UNINSTALL_RESULT="输出异常：${UNINSTALL_OUT}";;
+esac
+assert_eq "卸载夹具：uninstall_tou() 调用本身成功" "卸载成功" "$UNINSTALL_RESULT"
+assert_eq "卸载后：旧版对账视图真的没了" \
+    "<NULL>" \
+    "$(psql_q_db tou_legacy_view_uninstall "SELECT to_regclass('public.charging_processes_v')::text")"
+assert_eq "卸载后：上游 cost 精度迁移成功" \
+    "ALTERTABLE" \
+    "$(psql_q_db tou_legacy_view_uninstall 'ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)')"
 
 # 把仍会创建的 tou_rates_geofence_idx 换成其他同名对象。CREATE INDEX IF NOT EXISTS
 # 必须安全跳过同名对象，且后半段函数仍要装完整。

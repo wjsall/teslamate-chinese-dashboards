@@ -49,8 +49,17 @@ jobs:
       - name: SQL 对象契约 / SQL_COMPAT_REVISION 强制门（issue #33 同类教训）
         run: bash scripts/check-sql-revision.sh
 
-      - name: 上游表逐列 ALTER 兼容性
+      - name: 上游表逐列 ALTER 兼容性（全新安装 + 从旧版升级两条路径）
         run: bash scripts/check-upstream-alter-compat.sh
+
+      - name: 上游升级端到端（真 TeslaMate 镜像跑真迁移）
+        run: bash scripts/check-upstream-migration-e2e.sh
+
+      - name: 升级结尾横幅契约（旧对账视图删不掉时不许打绿）
+        run: bash scripts/check-upgrade-warn-banner.sh
+
+      - name: 安装/迁移结尾横幅行为契约（抽出横幅代码块接真库跑）
+        run: bash scripts/check-install-banner-behavior.sh
 
       - name: 定时只读门 / 镜像禁行契约
         run: bash scripts/check-ci-schedule-gates.sh
@@ -894,6 +903,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 升级路径断言要 git show 上一个 tag 的 sql/install-tou.sql（老版本建过、
+          # 新版本不再建的对象只有从那里装起才会出现）。浅克隆不带 tag，取不到就整场中止。
+          fetch-depth: 0
 
       - name: 跑 TOU 行为断言
         run: bash scripts/test-tou-behavior.sh

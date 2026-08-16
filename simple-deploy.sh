@@ -218,6 +218,17 @@ fi
 # mktemp 也失败就退到 /dev/null——丢日志可以接受，装不了不行。
 SQL_ERR_LOG=$(mktemp "${TMPDIR:-/tmp}/teslamate-cn-sql-install.XXXXXX" 2>/dev/null) || SQL_ERR_LOG=/dev/null
 
+# 旧版留下的 charging_processes_v 对账视图这次没能删掉（三种情形见 sql/install-tou.sql
+# 2f 节）。本脚本没有 WARN_STEPS 那种告警数组，只有 SQL_OK / UPGRADE_SQL_OK 一个「装没装
+# 成功」的二值开关——而这一条既不是「装失败」（我们该装的都装完了），也不能算「没事」：
+# 它会阻断**用户的下一步**，TeslaMate 升到 4.1.1 时那句
+#   ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)
+# 会被 PostgreSQL 拒绝，TeslaMate 起不来、容器反复重启、行车和充电全部停止记录。
+# 所以这里给结尾横幅补出第三档「装完了但留了尾巴」：退出码保持 0（我们的活确实干完了，
+# 不该让自动化把一次好的安装当成失败回滚），但横幅必须变、必须把后果写出来。
+# 以前这句提示只在中间段落 echo 一行，结尾照打「✅ 安装完成！」——用户不可能看见。
+LEGACY_VIEW_PENDING=0
+
 # TeslaMate 实际映射到宿主机的端口。升级模式下用户当初可能是用 TM_PORT=14000 装的，
 # 而重跑脚本时 TM_PORT 会回落成默认 4000——写死 4000 就可能探到 4000 上另一个无关服务，
 # 让等待瞬间"成功"，等于没等。以容器实际映射为准，拿不到再回落 TM_PORT。
@@ -453,6 +464,7 @@ SQLEOF
 run_tou_backfill() {
     local db_container="$1"
     local default_note
+    local view_note
     echo "  → 重算历史充电的分时电价费用（充电记录多的话要几十秒，请稍候）"
     if ! docker exec -i "$db_container" psql -U teslamate -d teslamate -At -v ON_ERROR_STOP=1 \
             -c "SELECT format('  ✓ 已扫描 %s 笔充电，按分时电价算出 %s 笔，跳过 %s 笔（没有适用的分时电价规则）', processed, updated, skipped)
@@ -463,12 +475,32 @@ run_tou_backfill() {
                     FROM backfill_all_tou();" 2>>"$SQL_ERR_LOG"; then
         echo "  ⚠ 重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
     fi
+    # 两类提示是两个独立待办，分别读取：默认电价迁移那句话不能覆盖「旧版对账视图还没清掉」
+    # 这句——后者不处理，TeslaMate 升到 4.1.1 会起不来，比前者严重得多。
     default_note=$(docker exec -i "$db_container" psql -U teslamate -d teslamate -At \
         -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || default_note=""
     if [ -n "$default_note" ]; then
         echo "  $default_note"
     fi
+    view_note=$(docker exec -i "$db_container" psql -U teslamate -d teslamate -At \
+        -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" 2>/dev/null) || view_note=""
+    if [ -n "$view_note" ]; then
+        echo "  $view_note"
+        # 只 echo 不记账 = 结尾还是绿色「✅ 安装完成！」，用户以为没事，然后 TeslaMate
+        # 起不来还找不到线索。必须让结尾横幅变色（见文件末尾两处汇总）。
+        LEGACY_VIEW_PENDING=1
+    fi
     return 0
+}
+
+# 「旧版对账视图没删掉」在两条路径（升级 / 全新安装）的结尾横幅里都要单独讲一段。
+print_legacy_view_warning() {
+    [ "$LEGACY_VIEW_PENDING" -eq 1 ] || return 0
+    echo "   ⚠ 有一件事必须你亲自处理：数据库里那个旧版建的对账视图 charging_processes_v"
+    echo "     这次没能删掉（原因见上面那段提示）。不处理会怎样：TeslaMate 升到 4.1.1 时"
+    echo "     会启动失败、容器反复重启，行车和充电将全部停止记录。其余部分不受影响。"
+    echo "     怎么做：照上面那段提示处理掉，然后重跑一次本脚本；那句提示会自己消失，"
+    echo "     消失了才算处理干净。"
 }
 
 echo "=============================================="
@@ -843,11 +875,18 @@ if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
     fi
     echo ""
     echo "============================================="
-    if [ "$UPGRADE_SQL_OK" -eq 1 ]; then
+    if [ "$UPGRADE_SQL_OK" -eq 1 ] && [ "$LEGACY_VIEW_PENDING" -eq 0 ]; then
         echo "✅ 升级完成"
+        UPGRADE_EXIT=0
+    elif [ "$UPGRADE_SQL_OK" -eq 1 ]; then
+        # 第三档：该装的都装完了，但库里留着一个会挡住 TeslaMate 升级的旧对象。
+        # 退出码仍是 0（我们的活干完了），但横幅不能是绿色的「✅ 升级完成」。
+        echo "⚠️ 升级完成，但留了一个尾巴给你"
+        print_legacy_view_warning
         UPGRADE_EXIT=0
     else
         echo "⚠️ 升级部分完成：坐标、单位或分时电价 SQL 未全部安装成功"
+        print_legacy_view_warning
         # stderr 已经落盘（见 SQL_ERR_LOG 定义处），这里必须把路径告诉用户——否则加了
         # ON_ERROR_STOP 之后唯一的排查线索就藏在一个没人知道的文件里。
         [ -s "$SQL_ERR_LOG" ] && echo "   psql 的具体报错在：$SQL_ERR_LOG"
@@ -1143,11 +1182,18 @@ fi
 
 echo ""
 echo "=============================================="
-if [ "$SQL_OK" -eq 1 ]; then
+if [ "$SQL_OK" -eq 1 ] && [ "$LEGACY_VIEW_PENDING" -eq 0 ]; then
     echo "✅ 安装完成！"
+    INSTALL_EXIT=0
+elif [ "$SQL_OK" -eq 1 ]; then
+    # 第三档：该装的都装完了，但库里留着一个会挡住 TeslaMate 升级的旧对象。
+    # 退出码仍是 0（我们的活干完了），但横幅不能是绿色的「✅ 安装完成！」。
+    echo "⚠️ 安装完成，但留了一个尾巴给你"
+    print_legacy_view_warning
     INSTALL_EXIT=0
 else
     echo "⚠️ 安装部分完成：坐标、单位或分时电价 SQL 未全部安装成功"
+    print_legacy_view_warning
     INSTALL_EXIT=2
 fi
 echo "=============================================="

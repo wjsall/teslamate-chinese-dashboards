@@ -6,8 +6,8 @@
 # SOURCE_DIGEST 是这三个文件内容的摘要，只用来判断「SQL 文件本身动没动」，
 # 是 CORE_BODY_FUNCTIONS 名单扩容豁免的前提（见 is_watchlist_widening）。
 FORMAT_VERSION=2
-RECORDED_REVISION=13
-SOURCE_DIGEST=561b2c5eb3ddfc8cf4b5c0908b05dd8464e895a57b6327067901843a29127645
+RECORDED_REVISION=14
+SOURCE_DIGEST=cb4356622265a62f9a80fee898284b4b874b6f1c7d648fa90538e91df026f64d
 FUNCTION	_tou_clean_date	(IN:s:TEXT) RETURNS DATE
 FUNCTION	_tou_clean_int	(IN:s:TEXT) RETURNS INT
 FUNCTION	_tou_clean_label	(IN:s:TEXT) RETURNS TEXT
@@ -58,11 +58,11 @@ FUNCTION_BODY	effective_cost	fa33602e104f7069
 FUNCTION_BODY	lookup_tou_rate	353ad66942c92aca
 FUNCTION_BODY	set_default_charging_rate	b2779c6d3523b533
 FUNCTION_BODY	trigger_compute_tou	5d7293d5ce9a07df
-FUNCTION_BODY	uninstall_tou	357ee0751cf05aac
+FUNCTION_BODY	uninstall_tou	6073afa95790add4
 INDEX	tou_rates_geofence_idx	ON tou_rates(GEOFENCE_ID)
 INDEX	tou_rates_unique_idx	UNIQUE ON tou_rates(COALESCE(GEOFENCE_ID,-1),HOUR_START,HOUR_END,COALESCE(VALID_FROM,'0001-01-01'::DATE),COALESCE(VALID_TO,'9999-12-31'::DATE),APPLY_TO_DC)
 TABLE	charging_process_cost_overrides	(charging_process_id:INT,cost:NUMERIC(10,4),source:TEXT,rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,original_cost:NUMERIC(10,4))
 TABLE	charging_processes_tou_cost	(charging_process_id:INT,cost_tou:NUMERIC(10,4),energy_by_period:JSONB,computed_at:TIMESTAMPTZ,rates_signature:TEXT)
 TABLE	tou_rates	(id:SERIAL,geofence_id:INT,hour_start:INT,hour_end:INT,rate:NUMERIC(10,4),weekday_mask:SMALLINT,valid_from:DATE,valid_to:DATE,apply_to_dc:BOOLEAN,label:TEXT,timezone:TEXT,created_at:TIMESTAMPTZ)
-TABLE	tou_settings	(id:BOOLEAN,default_rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,legacy_default_migrated_at:TIMESTAMPTZ,legacy_default_note:TEXT)
+TABLE	tou_settings	(id:BOOLEAN,default_rate:NUMERIC(10,4),updated_at:TIMESTAMPTZ,legacy_default_migrated_at:TIMESTAMPTZ,legacy_default_note:TEXT,view_rebuild_note:TEXT)
 TRIGGER	tou_recalc	AFTER INSERT OR UPDATE ON CHARGING_PROCESSES FOR EACH ROW EXECUTE FUNCTION TRIGGER_COMPUTE_TOU()
