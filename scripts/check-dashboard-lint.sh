@@ -5,14 +5,22 @@
 #  中文面板就在 internal/ 里 grep 不到——绝不能只扫 zh-cn）。
 #
 # 跑：bash scripts/check-dashboard-lint.sh
+# 自测：--self-test-k / --self-test-w / --self-test-b —— 不碰仓里的 dashboard 文件，
+#       用合成输入做故障注入，断言对应规则真的会响（详见文件末尾覆盖面那三层的说明）。
 # 退出码：0 = 全绿；1 = 有命中（打印 文件 :: 面板id/变量名 :: 规则字母 :: 摘要片段）
 #
 # 规则清单（字母对应下面 WHITELIST 条目的 rule）：
 #   0 JSON 合法性             — json.load 失败即报错
 #   a 裸点平均当均速           — 代码 token 含 AVG(speed)/AVG(p.speed)，包括冗余括号；
 #                                分桶内均值仅在同一 target 确有 GROUP BY speed_bin 时放行。
-#   b SQL 字符串字面量含 --    — Grafana 13.0.1 postgres 数据源会误剥字符串里的 --；
-#                                检查单引号/E 字符串/dollar-quote 的字面量内容。
+#   b SQL 字面量含注释标记     — 字面量内容不得出现 `--` / `/*` / `*/`。Grafana postgres
+#                                数据源在宏展开前剥注释：13.0.1 用不认引号的裸正则，字面量
+#                                里的标记一并被剥（`--` → 42601 报错；块注释 → **静默返回
+#                                错数据**，HTTP 200 无报错，更危险）。13.1.3 换成引号感知
+#                                状态机后常见写法不再误伤，但状态机仍不完整（E'a\'--b'、
+#                                嵌套块注释两版表现一样照炸），故升级后规则照留。
+#                                扫描面：panel rawSql、模板变量 query、注解 rawQuery，
+#                                外加模板变量 definition（不执行，但会与 query 漂移）。
 #   c 模板变量查询用 $__timezone — 模板变量查询中会解析成字面量 browser。
 #   d timezone('$__timezone', X) 且 X≠NOW() — TeslaMate 朴素 UTC 列不能直接转；
 #                                仅放行 timezone('UTC', …)、同一 SQL 中三参数
@@ -55,13 +63,34 @@
 # a/d/f/g/l/p/q/r/v 共用一次 PostgreSQL-lite 词法扫描后的代码 token 流（注释已剔除，字符串保留为
 # 有类型 token）；b 只检查同一扫描产出的字符串字面量内容。白名单不是 panel 级开关：
 # 每条都带可校验条件；本次扫描未命中的条目视为过期白名单并直接失败。
+#
+# SQL 扫描面（三条会执行 + 一条不执行）：
+#   panel 内任意层级的 rawSql          → 整套规则
+#   templating.list[].query（type=query）→ 整套规则
+#   annotations.list[].rawQuery         → 整套规则（Grafana 同样发给 postgres 数据源执行）
+#   templating.list[].definition        → 只跑 b（Grafana 不执行它，但它会与 query 漂移，
+#                                         按 JSON 键序改 SQL 的人容易误改到这一处）
+# 结尾的绿字会逐项打印这四类各扫了多少。这几个数字有机器门兜着，不是只给人看的——三层，
+# 分别答三个不同的问题，全部零常数、零人工维护：
+#   1) 扫描器走到几条？ structural_scan_expectation()（只认 JSON 结构、不复用扫描循环）
+#      再数一遍面板/变量/注解查询/definition，与扫描器实际走到的条数逐项对账，对不上直接红。
+#      → 抓「哪次重构把某条扫描路径删了或绕过去」。
+#   2) 有没有 SQL 压根没进扫描面？ unscanned_sql_strings() 走整棵 JSON，不认键名，任何形状
+#      像 SQL 的字符串都必须落在扫描面的某条路径上。→ 抓「扫描器和结构计数一起变瞎」
+#      （上游把 rawQuery 改名，两边同时数成 0，对账照样相等）。
+#   3) 走到了，判没判？ --self-test-b 用合成仪表盘给四条扫描面各埋一处已知违规，断言逐条
+#      被逮到。→ 抓「计数器留着、判定本体被摘掉」：前两层此时全绿，绿字照打，违规静默放行。
+# 三个自测（--self-test-k / --self-test-w / --self-test-b）都在 CI 的 lint job 里跑，
+# 并由 scripts/check-ci-schedule-gates.sh 锁住，不许悄悄从 workflow 里掉出去。
 
 set -e
 cd "$(dirname "$0")/.."
 
 python3 - "$@" <<'PYEOF'
+import contextlib
 import glob
 import hashlib
+import io
 import json
 import os
 import re
@@ -172,6 +201,39 @@ K_BASELINE_PATH = 'scripts/dashboard-lint-baseline.json'
 K_BASELINE_VERSION = 1
 K_STATES = ('PRESENT', 'ABSENT', 'DYNAMIC', 'UNKNOWN')
 REPORT_RULES = {'n', 'q', 'r'}
+
+# 覆盖面自检（结尾处）用的四个维度：内部键 → 报错里给人看的名字。
+COVERAGE_DIMENSIONS = (
+    ('panels', '面板（panels[]，含 row 子面板）'),
+    ('variables', '模板变量（templating.list[]）'),
+    ('annotationQueries', '注解查询（annotations.list[].rawQuery）'),
+    ('definitions', '变量 definition（templating.list[].definition）'),
+)
+# 覆盖面兜底：SQL 形状字符串必须落在扫描面上。
+#
+# 对账（扫描计数 == 结构计数）盖不住一种情形：扫描器和结构计数**一起**变瞎——例如上游
+# 把注解 SQL 的 JSON 键名从 rawQuery 改成别的，两边同时数成 0，对账仍然相等。
+#
+# 这里曾经用「注解查询 ≥ 1 条 / definition ≥ 每份仪表盘 1 条」两个下限去补，已经撤掉，
+# 理由记在这里，别再加回来：
+#   1) 注解那条余量是 0。仓里就 1 条注解 SQL，下限也是 1 —— 那不是覆盖面下限，是「这条
+#      注解永远不许删」的内容冻结。实测过：把它当普通仪表盘编辑正常删掉，一棵零违规的
+#      干净树立刻变红，而且连 --update-baseline 一并被拒（下限进了拒绝条件），门直接卡死。
+#   2) 下限在它唯一存在的理由上还判不准。键名被上游改掉和「这条注解被正常删了」在下限
+#      眼里长得一模一样，都是 0；而它的报错文案还写着「确认后再动 MIN_* 常数」——在真出
+#      事的那一种里，这个指引恰好把人引向错误的处置。
+#
+# 换成下面这条：把仪表盘 JSON 整棵树走一遍，任何**形状像 SQL** 的字符串都必须落在扫描面
+# 的某条路径上，否则红。它不认键名、不带常数、不依赖仓库里有几条注解：
+#   · 上游把 rawQuery 改名成 sqlQuery —— 那段 SQL 还在，只是挪到了扫描面外，直接被逮到，
+#     报错说的也正是真问题（「这段 SQL 没被扫」），不是「数量掉到 0 了」。
+#   · 唯一那条注解被正常删掉 —— 树上没有这段 SQL 了，绿，不误伤。
+#
+# 判据取 `select` + 一个空白字符：仓里 803 条 SQL 形状字符串全部命中（含 `SELECT $var`
+# 这种没有 FROM 的写法，所以不要求 FROM），而唯一会被裸词误伤的 form-panel
+# `"type": "select"` 因为后面没有空白被排除掉，实测误报 0 条。
+# 万一将来真有说明文字命中（英文 "select ... from ..." 之类），改文案，别放宽判据。
+SQL_SHAPED_STRING_RE = re.compile(r'\bselect\b\s', re.IGNORECASE)
 
 # j 的“整串”通用白名单。这里只放跨 dashboard 稳定成立的类别；具体历史例外仍进入
 # WHITELIST，并继续受“本次未命中即过期”的约束。
@@ -364,6 +426,28 @@ def tokenize_sql(sql):
         i += 1
 
     return tokens, literals
+
+
+# 规则 b 认的 SQL 注释起止标记。三个都查，不只是 `--`：
+#   `--`        Grafana 剥掉它到行尾的内容（含闭合引号）→ Postgres 报 42601
+#               unterminated quoted string。**吵**，用户会看到红字，能被发现。
+#   `/*` `*/`   Grafana 剥掉块注释区间后照常把剩下的 SQL 发出去 → HTTP 200、
+#               没有任何报错、**返回的却是错数据**。**安静**，用户不会发现——
+#               这一类比 `--` 更危险，所以两个方向的标记都单独查（只写 `*/`
+#               而没有 `/*` 的字面量同样会跟前面某处的 `/*` 配对成剥离区间）。
+SQL_COMMENT_MARKERS = ('--', '/*', '*/')
+
+
+def literal_comment_markers(literal):
+    """返回字符串字面量里出现的 SQL 注释标记（空列表 = 干净）。
+
+    Grafana 的 postgres 数据源在宏展开前先剥注释。13.0.1 用的是不认引号的裸正则，
+    字面量里的 `--` 和 `/* */` 都会被误伤；13.1.3 换成了引号感知状态机（上游
+    d7322d91f），常见写法不再误伤，但状态机**仍不完整**——`E'a\\'--b'` 和嵌套块
+    注释在 13.1.3 上跟 13.0.1 表现完全一样（照炸）。我们自己这份 linter 的覆盖面
+    比 13.1.3 的剥离器更全，所以升级后规则照留，三个标记一律不许进字面量。
+    """
+    return [marker for marker in SQL_COMMENT_MARKERS if marker in literal]
 
 
 def identifier_value(token):
@@ -1869,12 +1953,309 @@ def run_w_self_test():
           "UNKNOWN跳过(SKIP_UNKNOWN)/完全无关(NO_MATCH)/非法正则(REGEX_ERROR)，全部通过")
 
 
+def _b_panel(panel_id, title, literal):
+    """构造规则 b 自测用的最小 timeseries 面板：单 target，字面量内容由调用方给。"""
+    return {
+        'id': panel_id,
+        'type': 'timeseries',
+        'title': title,
+        'targets': [{
+            'refId': 'A',
+            'format': 'time_series',
+            'rawSql': (
+                "SELECT date AS time, 1 AS value FROM drives "
+                f"WHERE COALESCE(name, '') <> '{literal}'"
+            ),
+        }],
+    }
+
+
+def _b_dashboard(dirty):
+    """合成一份 b 自测仪表盘：四条扫描面各一条 SQL。
+
+    dirty=True 时每条各埋一个已知违规（面板两条分别埋行注释和块注释）；
+    dirty=False 是反向样本，四条全部合规，用来断言规则 b 不误报。
+    """
+    if dirty:
+        line_literal, block_literal = '面板 -- 破', '面板 /* 破 */'
+        annotation_literal, definition_literal = '注解 -- 破', '定义 -- 破'
+    else:
+        line_literal = block_literal = '面板 合规'
+        annotation_literal, definition_literal = '注解 合规', '定义 合规'
+
+    panels = [_b_panel(1, 'b 自测面板（行注释）', line_literal)]
+    if dirty:
+        panels.append(_b_panel(2, 'b 自测面板（块注释）', block_literal))
+
+    return {
+        'uid': 'b-self-test',
+        'title': 'b 规则自测仪表盘',
+        'annotations': {'list': [{
+            'name': 'b 自测注解',
+            'enable': False,
+            'rawQuery': (
+                "SELECT start_date AS time, '注解' AS text FROM drives "
+                f"WHERE COALESCE(name, '') <> '{annotation_literal}'"
+            ),
+        }]},
+        'templating': {'list': [{
+            'type': 'query',
+            'name': 'b_self_test_var',
+            'label': 'b 自测变量',
+            'definition': (
+                "SELECT name FROM cars "
+                f"WHERE COALESCE(name, '') <> '{definition_literal}'"
+            ),
+            'query': "SELECT name FROM cars WHERE COALESCE(name, '') <> '查询 合规'",
+        }]},
+        'panels': panels,
+    }
+
+
+def _run_lint_on_dashboard(dashboard_dir, name, dashboard):
+    """把一份合成仪表盘写进临时目录，跑一遍真正的 main()，回收输出和退出码。
+
+    走 main() 而不是直接调判定函数，是这个自测的全部要点：判定本体在 main() 的调用点上
+    （check_sql 里那段 record 和 definition 循环），只调 literal_comment_markers() 的自测
+    在「计数器留着、判定本体被摘掉」时照样绿。
+    """
+    for stale in glob.glob(os.path.join(dashboard_dir, '*.json')):
+        os.remove(stale)
+    with open(os.path.join(dashboard_dir, name), 'w', encoding='utf-8') as handle:
+        json.dump(dashboard, handle, ensure_ascii=False)
+
+    saved_argv = sys.argv
+    buffer = io.StringIO()
+    sys.argv = ['check-dashboard-lint']
+    try:
+        with contextlib.redirect_stdout(buffer):
+            main()
+        exit_code = 0
+    except SystemExit as error:
+        exit_code = error.code if isinstance(error.code, int) else 1
+    finally:
+        sys.argv = saved_argv
+    return buffer.getvalue(), exit_code
+
+
+def run_b_self_test():
+    """合成仪表盘喂进真扫描循环：规则 b 四条扫描面各埋一处已知违规，断言逐条被逮到。
+
+    为什么不能只测 literal_comment_markers()：实测过一条洞——把计数器留着、只删掉
+    main() 里的判定本体，扫描照走、覆盖面对账照样相等、绿字照打「1 注解查询 / 190 变量
+    definition」、退出码 0，真实的规则 b 违规被静默放行。覆盖面那两层管「扫描器走到没有」，
+    管不了「走到了判没判」，这一层专管后者。
+    """
+    global DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST
+    saved = (DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST)
+    failures = []
+    with tempfile.TemporaryDirectory(prefix='dashboard-lint-b-self-test.') as workdir:
+        dashboard_dir = os.path.join(workdir, 'dashboards')
+        os.makedirs(dashboard_dir)
+        baseline_path = os.path.join(workdir, 'baseline.json')
+        with open(baseline_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {'version': K_BASELINE_VERSION, 'key': ['file', 'panelId', 'matcher', 'propertiesHash'],
+                 'entries': []},
+                handle,
+            )
+        try:
+            # 临时把扫描面指向合成目录：真仓库的 WHITELIST / k 基线对合成仪表盘全是「过期」，
+            # 会淹掉断言要看的输出，所以一并换成空的。三者在 finally 里原样还回去。
+            DASHBOARD_GLOBS = [os.path.join(dashboard_dir, '*.json')]
+            K_BASELINE_PATH = baseline_path
+            WHITELIST = []
+
+            dirty_output, dirty_code = _run_lint_on_dashboard(
+                dashboard_dir, 'b-self-test-dirty.json', _b_dashboard(dirty=True)
+            )
+            b_lines = [line.strip() for line in dirty_output.splitlines() if ' :: b :: ' in line]
+
+            # 四条扫描面逐条对号入座：每条恰好一处命中，且报出的注释标记正确。
+            expected = (
+                ('panel rawSql 行注释', ("panel 1", '注释标记 --', '面板 -- 破')),
+                ('panel rawSql 块注释', ("panel 2", '注释标记 /*、*/', '面板 /* 破 */')),
+                ('annotations[].rawQuery', ("annotation 'b 自测注解'", '注释标记 --', '注解 -- 破')),
+                ('templating.definition', ("var b_self_test_var", 'templating.list[0].definition',
+                                           '注释标记 --', '定义 -- 破')),
+            )
+            for label, needles in expected:
+                matched = [line for line in b_lines if all(needle in line for needle in needles)]
+                if len(matched) != 1:
+                    failures.append(
+                        f"b 故障注入未被逮到（或重复计数）：{label} 期待恰好 1 条命中，实得 "
+                        f"{len(matched)} 条；本次全部 b 命中={b_lines}"
+                    )
+            if len(b_lines) != len(expected):
+                failures.append(
+                    f"b 故障注入命中条数不符：期待 {len(expected)} 条，实得 {len(b_lines)} 条 -> {b_lines}"
+                )
+            if dirty_code == 0:
+                failures.append("b 故障注入后退出码仍为 0：违规没有阻断")
+
+            # 反向样本：四条扫描面全部合规，必须零 b 命中、退出码 0，且四类覆盖面计数各 1。
+            clean_output, clean_code = _run_lint_on_dashboard(
+                dashboard_dir, 'b-self-test-clean.json', _b_dashboard(dirty=False)
+            )
+            clean_b_lines = [line.strip() for line in clean_output.splitlines() if ' :: b :: ' in line]
+            if clean_b_lines:
+                failures.append(f"b 反向样本被误报：{clean_b_lines}")
+            if clean_code != 0:
+                failures.append(f"b 反向样本未打绿：退出码 {clean_code}，输出=\n{clean_output}")
+            expected_green = (
+                "扫了 1 文件 / 1 面板 / 1 变量 / 1 注解查询 / 1 变量 definition"
+            )
+            if expected_green not in clean_output:
+                failures.append(
+                    f"b 反向样本覆盖面计数不符：期待包含 {expected_green!r}，实得输出=\n{clean_output}"
+                )
+        finally:
+            DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST = saved
+
+    if failures:
+        raise AssertionError('；'.join(failures))
+
+    print("b 故障注入：panel rawSql(--)/panel rawSql(块注释)/annotations[].rawQuery(--)/"
+          "templating.definition(--) 四条扫描面各 1 例全部被逮到，合规反向样本零误报、"
+          "覆盖面计数 1/1/1/1")
+
+
+def structural_scan_expectation(dashboards):
+    """只按 JSON 结构数一遍「本应被扫到」的条目数，供覆盖面对账用。
+
+    这个函数刻意不复用 main() 里的扫描循环，也不调用任何检查逻辑：它的全部价值就在于
+    「独立」。扫描循环要是被重构删掉或被条件绕过去，扫描计数会掉下来，而这里的结构计数
+    照旧，一对账就红。谁把它改成读扫描器的结果（或者把扫描器改成读它），这道门就自我
+    作废了——真要让扫描器有意跳过某些条目，请同步改这里，让两边重新对上。
+
+    计数口径必须跟扫描循环逐条对齐：
+      panels            —— check_panel 走过的每个节点（含 row 子面板，递归无条件）
+      variables         —— templating.list[] 的每一项
+      annotationQueries —— annotations.list[] 中 rawQuery 为非空字符串的项
+      definitions       —— templating.list[] 中 definition 为非空字符串的项
+    """
+    counts = {'panels': 0, 'variables': 0, 'annotationQueries': 0, 'definitions': 0}
+
+    def count_panel_nodes(nodes):
+        total = 0
+        for node in nodes or []:
+            if not isinstance(node, dict):
+                continue
+            total += 1 + count_panel_nodes(node.get('panels'))
+        return total
+
+    for dashboard in dashboards.values():
+        counts['panels'] += count_panel_nodes(dashboard.get('panels'))
+
+        for annotation in ((dashboard.get('annotations') or {}).get('list') or []):
+            if not isinstance(annotation, dict):
+                continue
+            raw_query = annotation.get('rawQuery')
+            if isinstance(raw_query, str) and raw_query.strip():
+                counts['annotationQueries'] += 1
+
+        for variable in ((dashboard.get('templating') or {}).get('list') or []):
+            counts['variables'] += 1
+            if not isinstance(variable, dict):
+                continue
+            definition = variable.get('definition')
+            if isinstance(definition, str) and definition.strip():
+                counts['definitions'] += 1
+
+    return counts
+
+
+def scanned_sql_paths(dashboard):
+    """按 JSON 结构独立枚举「扫描面覆盖到哪些字符串」的 JSON 路径。
+
+    和 structural_scan_expectation() 一样刻意不复用扫描循环，但答的是另一个问题：
+    那个函数答「本应扫到几条」（对账用），这个答「本应扫到的是哪几处」（兜底扫描用）。
+    口径必须跟扫描循环逐条对齐：
+      panel 内任意层级的 rawSql（不下钻 child panels，子面板自己走一遍）
+      annotations.list[].rawQuery
+      templating.list[].query —— 仅 type == 'query'，与扫描循环的条件一致
+      templating.list[].definition
+    """
+    paths = set()
+
+    def walk_panel(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                child_path = f'{path}.{key}' if path else key
+                if key == 'panels':
+                    for index, child in enumerate(value or []):
+                        walk_panel(child, f'{child_path}[{index}]')
+                elif key == 'rawSql' and isinstance(value, str) and value.strip():
+                    paths.add(child_path)
+                else:
+                    walk_panel(value, child_path)
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk_panel(value, f'{path}[{index}]')
+
+    for panel_index, panel in enumerate(dashboard.get('panels') or []):
+        walk_panel(panel, f'panels[{panel_index}]')
+
+    for annotation_index, annotation in enumerate(
+        ((dashboard.get('annotations') or {}).get('list') or [])
+    ):
+        if not isinstance(annotation, dict):
+            continue
+        raw_query = annotation.get('rawQuery')
+        if isinstance(raw_query, str) and raw_query.strip():
+            paths.add(f'annotations.list[{annotation_index}].rawQuery')
+
+    for variable_index, variable in enumerate(
+        ((dashboard.get('templating') or {}).get('list') or [])
+    ):
+        if not isinstance(variable, dict):
+            continue
+        query = variable.get('query')
+        if variable.get('type') == 'query' and isinstance(query, str) and query.strip():
+            paths.add(f'templating.list[{variable_index}].query')
+        definition = variable.get('definition')
+        if isinstance(definition, str) and definition.strip():
+            paths.add(f'templating.list[{variable_index}].definition')
+
+    return paths
+
+
+def json_string_paths(value, path=''):
+    """遍历整棵 JSON，产出 (路径, 字符串) —— 不认任何键名，键名被改也照样走到。"""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from json_string_paths(child, f'{path}.{key}' if path else key)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from json_string_paths(child, f'{path}[{index}]')
+    elif isinstance(value, str):
+        yield path, value
+
+
+def unscanned_sql_strings(dashboards):
+    """找出形状像 SQL、却不落在任何扫描面上的字符串，返回 (文件, 路径, 片段)。
+
+    这是覆盖面的兜底层，补对账盖不住的「扫描器和结构计数一起变瞎」（见 SQL_SHAPED_STRING_RE
+    上方那段说明）。它只做单向断言：SQL 形状 ⇒ 必须在扫描面上。反过来不成立也不管——
+    扫描面上有几条不像 SQL 的字符串（例如注解 definition 里那串加密 datasource 串）是正常的。
+    """
+    findings = []
+    for file_rel, dashboard in dashboards.items():
+        covered = scanned_sql_paths(dashboard)
+        for json_path, text in json_string_paths(dashboard):
+            if json_path in covered or not SQL_SHAPED_STRING_RE.search(text):
+                continue
+            findings.append((file_rel, json_path, ' '.join(text.split())[:80]))
+    return findings
+
+
 def main():
     verbose_k = False
     update_baseline = False
     k_contract_json = None
     self_test_k = False
     self_test_w = False
+    self_test_b = False
     arguments = iter(sys.argv[1:])
     for argument in arguments:
         if argument == '--verbose-k':
@@ -1891,11 +2272,13 @@ def main():
             self_test_k = True
         elif argument == '--self-test-w':
             self_test_w = True
+        elif argument == '--self-test-b':
+            self_test_b = True
         elif argument in {'-h', '--help'}:
             print(
                 "用法: bash scripts/check-dashboard-lint.sh "
                 "[--verbose-k] [--update-baseline] [--k-contract-json PATH] "
-                "[--self-test-k] [--self-test-w]"
+                "[--self-test-k] [--self-test-w] [--self-test-b]"
             )
             return
         else:
@@ -1910,6 +2293,10 @@ def main():
         run_w_self_test()
         return
 
+    if self_test_b:
+        run_b_self_test()
+        return
+
     violations = []
     warnings = []
     exemptions = []
@@ -1920,6 +2307,8 @@ def main():
     n_files = 0
     n_panels = 0
     n_vars = 0
+    n_annotations = 0
+    n_definitions = 0
 
     all_files = []
     for pattern in DASHBOARD_GLOBS:
@@ -1984,8 +2373,19 @@ def main():
                 violations.append(f"{file_rel} :: {label} :: a :: ...{sql_snippet(sql, tokens, start, end)}...")
 
         for literal in literals:
-            if '--' in literal:
-                violations.append(f"{file_rel} :: {label} :: b :: 字面量含 --: {literal[:60]!r}")
+            markers = literal_comment_markers(literal)
+            if not markers:
+                continue
+            condition = {
+                'kind': 'literal_comment_marker',
+                'target_path': context.target_path,
+                'markers': markers,
+                'literal': literal,
+            }
+            record(
+                file_rel, subject, 'b', condition,
+                f"{label} :: b :: 字面量含 SQL 注释标记 {'、'.join(markers)}: {literal[:60]!r}",
+            )
 
         for args, _, _ in find_function_calls(tokens, 'timezone'):
             parts = split_top_level_tokens(args)
@@ -2325,6 +2725,28 @@ def main():
         for panel_index, panel in enumerate(dashboard.get('panels', []) or []):
             check_panel(panel, f'panels[{panel_index}]')
 
+        # 注解查询：annotations.list[].rawQuery 跟 panel 的 rawSql 一样**会被真正执行**
+        # （由 Grafana 发给同一个 postgres 数据源），所以整套 SQL 规则一视同仁地跑，
+        # 不是只跑 b。此前这条路径完全没被扫过（`grep -c rawQuery` = 0），而仓里确实有
+        # 带查询的注解——注解默认 enable=false 不代表安全，用户在 UI 里点开就执行。
+        for annotation_index, annotation in enumerate(
+            ((dashboard.get('annotations') or {}).get('list') or [])
+        ):
+            if not isinstance(annotation, dict):
+                continue
+            raw_query = annotation.get('rawQuery')
+            if not isinstance(raw_query, str) or not raw_query.strip():
+                continue
+            n_annotations += 1
+            annotation_name = annotation.get('name') or f'#{annotation_index}'
+            label = f"annotation {annotation_name!r}"
+            check_sql(
+                file_rel,
+                f'annotation {annotation_name}',
+                label,
+                SqlContext(raw_query, None, f'annotations.list[{annotation_index}].rawQuery'),
+            )
+
         for variable_index, variable in enumerate(dashboard.get('templating', {}).get('list', []) or []):
             n_vars += 1
             name = variable.get('name', '?')
@@ -2345,6 +2767,33 @@ def main():
                         f"{file_rel} :: {label} :: c :: 模板变量 query 含 $__timezone（会解析成字面量 browser）"
                     )
 
+            # templating.list[].definition：Grafana **执行的是 query、不是 definition**，
+            # 所以这里的注释标记当下不会真的改数据。仍然要查，因为它是个已知陷阱：
+            # JSON 里 definition 按键序排在 query 前面，改 SQL 的人很容易搜到第一处就改，
+            # 改到 definition 上——执行的查询纹丝不动，而门要是不扫这里就一声不吭地放行。
+            # 只跑注释标记这一条，不跑整套 SQL 规则：definition 也合法地用来放中文说明
+            # （仓里现有 4 个变量就是这样，与 query 有意不同），拿 SQL 规则去审说明文字会误伤。
+            # 已知边界：说明文字里若出现单个 `'`（英文撇号）会开出一个未闭合字面量，把后面
+            # 的文字都算进字面量内容；真遇到就改写文案或走 WHITELIST，别把这条规则关掉。
+            definition = variable.get('definition')
+            if isinstance(definition, str) and definition.strip():
+                n_definitions += 1
+                for literal in tokenize_sql(definition)[1]:
+                    markers = literal_comment_markers(literal)
+                    if not markers:
+                        continue
+                    condition = {
+                        'kind': 'literal_comment_marker',
+                        'path': f'templating.list[{variable_index}].definition',
+                        'markers': markers,
+                        'literal': literal,
+                    }
+                    record(
+                        file_rel, name, 'b', condition,
+                        f"{label} :: b :: templating.list[{variable_index}].definition "
+                        f"字面量含 SQL 注释标记 {'、'.join(markers)}: {literal[:60]!r}",
+                    )
+
             regex = variable.get('regex', '') or ''
             if '(?<text>' in regex or '(?<value>' in regex:
                 violations.append(f"{file_rel} :: {label} :: h :: regex 用老式命名捕获组: {regex[:60]!r}")
@@ -2357,6 +2806,45 @@ def main():
                     file_rel, name, 's', condition,
                     f"{label} :: s :: 变量字段 {variable_path} 含老变量语法 [[",
                 )
+
+    # ── 覆盖面自检：把「扫到多少」从日志数字升级成机器门 ────────────────────────
+    # 结尾绿字里打印各类扫了多少，只防人眼：没人盯着的时候，哪次重构把某条扫描路径删了，
+    # 计数变成 0，CI 照样打绿——这就是静默退化。这里做两层机器检查：
+    #   1) 对账（主门）：扫描循环数到的 == structural_scan_expectation() 按 JSON 结构数到的。
+    #      不用任何常数，正常增删仪表盘两边一起变、永远相等；扫描路径被删或被绕过则不等。
+    #   2) 兜底扫描：整棵 JSON 里形状像 SQL 的字符串必须都落在扫描面上，防「两边一起变瞎」
+    #      （上游改 JSON 键名之类），见 SQL_SHAPED_STRING_RE 上方那段说明。同样零常数。
+    # 还有第三层不在这里：--self-test-b 用合成仪表盘断言规则 b 真的会响。这两层管「扫描器
+    # 走没走到」，自测管「走到了判没判」——上一轮实证过，保留计数器只删判定本体，这两层
+    # 全绿而真违规被静默放行。三层缺一不可，CI 里三个自测都要跑（见 ghcr-build.yml lint job）。
+    coverage_errors = []
+    scanned_coverage = {
+        'panels': n_panels,
+        'variables': n_vars,
+        'annotationQueries': n_annotations,
+        'definitions': n_definitions,
+    }
+    structural_coverage = structural_scan_expectation(dashboards)
+    for dimension, dimension_label in COVERAGE_DIMENSIONS:
+        scanned_count = scanned_coverage[dimension]
+        structural_count = structural_coverage[dimension]
+        if scanned_count != structural_count:
+            coverage_errors.append(
+                f"{dimension_label}：扫描器走到 {scanned_count} 条，仪表盘 JSON 结构里有 "
+                f"{structural_count} 条，对不上。要么扫描路径被删掉/被绕过了，要么有人有意让"
+                f"扫描器跳过部分条目却没同步改 structural_scan_expectation()——两种都要人确认，"
+                f"确认后必须让两边重新对上，不能把这条检查关掉。"
+            )
+
+    for file_rel, json_path, snippet in unscanned_sql_strings(dashboards):
+        coverage_errors.append(
+            f"{file_rel} :: {json_path} :: 这段字符串形状像 SQL，却不在任何扫描面上，"
+            f"一条规则都没跑过它：{snippet!r}。常见原因是上游换了 JSON 键名（例如 rawQuery "
+            f"改成别的），扫描器和结构计数会一起数成 0、对账照样相等，只有这里能看见。"
+            f"确认它确实是要执行的 SQL 就把扫描面补上（扫描循环 + structural_scan_expectation() "
+            f"+ scanned_sql_paths() 三处同步改）；确认只是说明文字碰巧长得像 SQL 就改文案，"
+            f"不要放宽 SQL_SHAPED_STRING_RE。"
+        )
 
     expired = [
         (index, item) for index, item in enumerate(WHITELIST)
@@ -2452,10 +2940,10 @@ def main():
         violations.append(f"{K_BASELINE_PATH} :: k :: {error}")
         baseline_k = Counter()
 
-    baseline_update_refused = update_baseline and bool(violations or expired)
+    baseline_update_refused = update_baseline and bool(violations or expired or coverage_errors)
     if baseline_update_refused:
         print(
-            "拒绝更新 k 基线：当前树仍有阻断档违规或过期白名单；"
+            "拒绝更新 k 基线：当前树仍有阻断档违规、过期白名单或覆盖面自检失败；"
             "基线文件保持不变"
         )
     elif update_baseline:
@@ -2508,6 +2996,13 @@ def main():
         for key in sorted(expired_k, key=k_key_sort_key):
             print("  " + format_k_key(key, expired_k[key]))
 
+    if coverage_errors:
+        print("dashboard lint 覆盖面自检失败（扫描路径可能已退化，绿字计数不可信）：")
+        print()
+        for coverage_error in coverage_errors:
+            print("  " + coverage_error)
+        print()
+
     if violations:
         print("dashboard lint 发现违规：")
         print()
@@ -2541,16 +3036,22 @@ def main():
                 f"{item['condition']} :: {item['reason']}"
             )
 
-    if violations or expired or added_messages or expired_k:
+    if violations or expired or added_messages or expired_k or coverage_errors:
         print()
         print(
             f"共 {len(violations)} 处违规 / {len(expired)} 条过期白名单 / "
-            f"{len(added_messages)} 条新增 k / {sum(expired_k.values())} 条过期 k 基线"
+            f"{len(added_messages)} 条新增 k / {sum(expired_k.values())} 条过期 k 基线 / "
+            f"{len(coverage_errors)} 处覆盖面自检失败"
         )
         sys.exit(1)
 
     report_suffix = f"；报告档 {len(warnings)} 条 WARNING" if warnings else ""
-    print(f"✓ dashboard lint 全绿：扫了 {n_files} 文件 / {n_panels} 面板 / {n_vars} 变量{report_suffix}")
+    # 覆盖面计数逐项打印。这些数字不只是给人看的：上面的覆盖面自检已经把它们跟按 JSON
+    # 结构独立数出来的条目数对过账，任何一条扫描路径被删掉都会先红在那里，不会静默退化。
+    print(
+        f"✓ dashboard lint 全绿：扫了 {n_files} 文件 / {n_panels} 面板 / {n_vars} 变量 / "
+        f"{n_annotations} 注解查询 / {n_definitions} 变量 definition{report_suffix}"
+    )
 
 
 if __name__ == '__main__':

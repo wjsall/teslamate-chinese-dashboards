@@ -2,10 +2,34 @@
 # 含 linux/amd64 + linux/arm/v7 + linux/arm64，2026-07-25 用 registry API 现查确认；
 # 见 .github/workflows/ghcr-build.yml 的 base-image-canary job 与 renovate.json）。
 # 不再跟随裸 :latest 滚动——同一 commit 重新构建现在能得到确定的构建输入，可审计。
-# Grafana 13.0.1 已用我们 45+3 个面板 + volkovlabs-form-panel 6.3.2 实测兼容。
+# Grafana 13.1.3 已用我们 45+3 个面板 + volkovlabs-form-panel 6.3.2 实测兼容
+# （2026-08 从 13.0.1+security-01 升上来，见下面「为什么升」）。
+#
+# 为什么从 13.0.1 升到 13.1.3：
+#   1. 上游 commit d7322d91f（2026-04-08，"SQL: strip comments with quote-aware state
+#      machine in PostgreSQL and MSSQL" #121772，改 pkg/tsdb/grafana-postgresql-datasource/
+#      macros.go）**在 13.1.3 里、不在 13.0.1 里**（用 gh api compare 判定：13.0.1=diverged、
+#      13.1.3=behind）。13.0.1 的剥注释是裸正则、不认引号，会误伤 SQL 字符串字面量，
+#      三类故障用户拿自己的数据就能触发：
+#        - 收藏点名字里带 `--` → 省钱分析 4 个面板报 42601；
+#        - 表单输错时报错文本牛头不对马嘴；
+#        - **字符串里的块注释被裸剥 → 静默返回错数据**（HTTP 200、不报错，最危险的一类）。
+#   2. 顺带修掉 8 个已公开 CVE。
+#   3. 三轮独立回归（419 / 430 / 422 条查询）零回归；48 个仪表盘 provisioning 全部成功；
+#      volkovlabs-form-panel 6.3.2 在两版上都 signature=valid。
+#
+# 已知的唯一用户可见变化：面板标题栏高度 32px → 40px，86 个矮面板受影响。
+# **退不回去**——上游把这个开关从 feature toggle registry 删了；Owner 已实地看过并接受。
+#
+# ⚠️ 升级**不解除**「SQL 字符串字面量里不写 `--`、不写 /* */」的约定，也不撤
+# scripts/check-dashboard-lint.sh 的规则 b：13.1.3 的状态机仍不完整，实测两类
+# psql 能跑、Grafana 13.1.3 照样炸、且与 13.0.1 表现完全一样（等于根本没修）——
+# `SELECT E'a\'--b'` 两版都报 unterminated quoted string；嵌套块注释两版都 syntax error。
+# 我们自己 linter 的覆盖面比 Grafana 13.1.3 的剥离器更全，规则留着。详见 CLAUDE.md。
+#
 # 升级 digest：base-image-canary 发现上游更新会自动开 issue 指导；也可手动
 # `docker manifest inspect teslamate/grafana:latest` 现查后替换下面这一行。
-FROM teslamate/grafana:latest@sha256:f2afcd9bdc849e65ef53c765be8590a0f0f8416709f501aa179760ea97035cf8
+FROM teslamate/grafana:latest@sha256:fe24cb24d8543cb9742cbcb662aeb00ac10aeeab9a53d4c8af5cf329d20cef0b
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans

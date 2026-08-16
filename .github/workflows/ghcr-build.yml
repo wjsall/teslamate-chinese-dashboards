@@ -43,6 +43,15 @@ jobs:
       - name: Dashboard JSON lint (9 项踩过的坑)
         run: bash scripts/check-dashboard-lint.sh
 
+      # 三个故障注入自测。lint 默认模式只证明「这棵树上没命中」，证明不了「规则还判不判」——
+      # 实测过：把规则 b 的判定本体删掉、计数器留着，默认模式照样打绿、覆盖面对账照样相等。
+      # 这三条用合成输入喂进同一份脚本，断言规则真的会响，缺一条就是那一层能力写好了没接线。
+      - name: Dashboard lint 自测（k 四态 / w 显示名 / b SQL 注释标记）
+        run: |
+          bash scripts/check-dashboard-lint.sh --self-test-k
+          bash scripts/check-dashboard-lint.sh --self-test-w
+          bash scripts/check-dashboard-lint.sh --self-test-b
+
       - name: SQL 安装文件引用一致性
         run: bash scripts/check-sql-trio.sh
 
