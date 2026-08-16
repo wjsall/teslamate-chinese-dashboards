@@ -197,6 +197,12 @@ DASHBOARD_GLOBS = [
     'grafana/dashboards/internal/*.json',
 ]
 SQL_INSTALL_GLOB = 'sql/install-*.sql'
+# 仪表盘的家。扫描面范围自检（scan_scope_errors）只在这棵子树里找「长得像仪表盘的 JSON」。
+DASHBOARD_HOME = 'grafana'
+DOCKERFILE_PATH = 'Dockerfile'
+# 三个自测把 DASHBOARD_GLOBS 指向临时目录，那时范围自检没有意义（仓里 48 个仪表盘会被
+# 整批报成「没扫」）。自测在同一个 try/finally 里把这个开关关掉再还原，见 run_*_self_test。
+SCAN_SCOPE_SELF_CHECK = True
 K_BASELINE_PATH = 'scripts/dashboard-lint-baseline.json'
 K_BASELINE_VERSION = 1
 K_STATES = ('PRESENT', 'ABSENT', 'DYNAMIC', 'UNKNOWN')
@@ -1798,6 +1804,29 @@ def sql_snippet(sql, tokens, start, end):
     return sql[char_start:char_end].replace('\n', ' ')
 
 
+def _k_dashboard(absent):
+    """最小 table 面板，供端到端层喂进真 main()。
+
+    absent=True 时 byName override 指向 SQL 里根本没有的字段——override 静默失效，正是规则 k
+    要逮的东西；absent=False 指向真实存在的字段，用来断言规则 k 不误报。
+    """
+    matcher_value = 'zzz_不存在的字段' if absent else '电压'
+    return {
+        'uid': 'k-self-test',
+        'title': 'k 规则自测仪表盘',
+        'panels': [{
+            'id': 1,
+            'type': 'table',
+            'title': 'k 自测面板',
+            'targets': [{'refId': 'A', 'rawSql': 'SELECT avg(x) AS "电压" FROM charges'}],
+            'fieldConfig': {'overrides': [{
+                'matcher': {'id': 'byName', 'options': matcher_value},
+                'properties': [{'id': 'displayName', 'value': '充电器电压'}],
+            }]},
+        }],
+    }
+
+
 def run_k_self_test():
     """不碰 dashboard 文件的四态与 lint 判定失败路径故障注入。"""
     present = sql_field_contract('SELECT 1 AS known', 'P')
@@ -1864,8 +1893,51 @@ def run_k_self_test():
     if classify_contract_matcher(filter_contract, 'km') != 'DYNAMIC':
         raise AssertionError("k filterFieldsByName 动态交集保留故障注入失败")
 
+    # ── 端到端层：合成仪表盘喂进真 main()，断言判定本体还挂在调用点上 ──────────────
+    # 上面那些只调 classify_contract_matcher()。掐掉 main() 里的
+    # `if state == 'ABSENT': k_occurrences.append(...)` 之后，本自测的单元层照样「全部通过」；
+    # 默认模式虽然会因为 340 条基线全变「过期」而红，但那道兜底依赖基线非空——先掐断再
+    # `--update-baseline` 就会把基线清成 0 条，此后永远绿且全瞎。这一层不依赖基线状态。
+    failures = []
+    with _patched_scan_scope('dashboard-lint-k-self-test.') as dashboard_dir:
+        absent_output, absent_code = _run_lint_on_dashboard(
+            dashboard_dir, 'k-self-test-absent.json', _k_dashboard(absent=True)
+        )
+        k_lines = [line.strip() for line in absent_output.splitlines() if ' :: k :: ' in line]
+        matched = [
+            line for line in k_lines
+            if "ABSENT byName='zzz_不存在的字段'" in line and "['电压']" in line
+        ]
+        if len(matched) != 1:
+            failures.append(
+                f"k 端到端故障注入未被逮到（或重复计数）：期待恰好 1 条 ABSENT 命中，实得 "
+                f"{len(matched)} 条；本次全部 k 命中={k_lines}"
+            )
+        if 'k 基线内 0 条，新增 1 条' not in absent_output:
+            failures.append(
+                f"k 端到端故障注入没进「基线外新增」：空基线下应当记为新增 1 条，"
+                f"输出=\n{absent_output}"
+            )
+        if absent_code == 0:
+            failures.append(
+                f"k 端到端故障注入后退出码仍为 0：基线外的新 ABSENT 没有阻断，输出=\n{absent_output}"
+            )
+
+        present_output, present_code = _run_lint_on_dashboard(
+            dashboard_dir, 'k-self-test-present.json', _k_dashboard(absent=False)
+        )
+        present_k_lines = [line.strip() for line in present_output.splitlines() if ' :: k :: ' in line]
+        if present_k_lines:
+            failures.append(f"k 端到端反向样本被误报：{present_k_lines}")
+        if present_code != 0:
+            failures.append(f"k 端到端反向样本未打绿：退出码 {present_code}，输出=\n{present_output}")
+
+    if failures:
+        raise AssertionError('；'.join(failures))
+
     print("k 四态故障注入：PRESENT/ABSENT/DYNAMIC/UNKNOWN 各 1 例，全部通过")
     print("k 判定失败路径故障注入：裸别名/纯变量模板/includeByName None/filter 动态收窄，全部通过")
+    print("k 端到端：指向不存在字段的 byName override 喂进真 main() 被逮到并阻断，命中字段的零误报")
 
 
 def _w_panel(rename_from, rename_to, sql_alias, fields_pattern, extra_target_sql=None):
@@ -1887,6 +1959,19 @@ def _w_panel(rename_from, rename_to, sql_alias, fields_pattern, extra_target_sql
         'options': {'reduceOptions': {'calcs': ['lastNotNull'], 'fields': fields_pattern, 'values': False}},
         'targets': targets,
     }
+
+
+def _w_dashboard(stale):
+    """把 _w_panel 包成一份最小仪表盘，供端到端层喂进真 main()。
+
+    stale=True 是 47 案原样：override 已把「电压」改名成「充电器电压」，reduceOptions.fields
+    还停在改名前的 /^电压$/。stale=False 是修复写法，用来断言规则 w 不误报。
+    """
+    fields_pattern = '/^电压$/' if stale else '/^(电压|充电器电压)$/'
+    panel = _w_panel('电压', '充电器电压', '电压', fields_pattern)
+    panel['id'] = 1
+    panel['title'] = 'w 自测面板'
+    return {'uid': 'w-self-test', 'title': 'w 规则自测仪表盘', 'panels': [panel]}
 
 
 def run_w_self_test():
@@ -1949,8 +2034,48 @@ def run_w_self_test():
     if verdict != 'REGEX_ERROR':
         raise AssertionError(f"w 非法正则故障注入失败：期待 REGEX_ERROR，实得 {verdict}")
 
+    # ── 端到端层：合成仪表盘喂进真 main()，断言判定本体还挂在调用点上 ──────────────
+    # 上面那些只调 classify_reduce_fields_matcher()。实测过一条洞：把 main() 里的
+    # `if verdict == 'STALE_ALIAS':` 换成 `if False:`，真植入 internal/charge-details.json
+    # 的 47 案被静默放行——退出码 0、打「✓ dashboard lint 全绿：扫了 48 文件 …」，
+    # 而本自测的单元层照样打「全部通过」。规则 w 走 record()，没有规则 k 那种基线棘轮兜底
+    # （掐断 k 的落点会让 340 条基线全变「过期」而红），所以这一层是规则 w 唯一的
+    # 「判定本体还在不在」的证据，不能退回成只调分类函数。
+    failures = []
+    with _patched_scan_scope('dashboard-lint-w-self-test.') as dashboard_dir:
+        stale_output, stale_code = _run_lint_on_dashboard(
+            dashboard_dir, 'w-self-test-stale.json', _w_dashboard(stale=True)
+        )
+        w_lines = [line.strip() for line in stale_output.splitlines() if ' :: w :: ' in line]
+        matched = [
+            line for line in w_lines
+            if "reduceOptions.fields='/^电压$/'" in line and "['充电器电压']" in line
+        ]
+        if len(matched) != 1:
+            failures.append(
+                f"w 端到端故障注入未被逮到（或重复计数）：期待恰好 1 条 STALE_ALIAS 命中，实得 "
+                f"{len(matched)} 条；本次全部 w 命中={w_lines}"
+            )
+        if stale_code == 0:
+            failures.append(
+                f"w 端到端故障注入后退出码仍为 0：真植入的 47 案没有阻断，输出=\n{stale_output}"
+            )
+
+        clean_output, clean_code = _run_lint_on_dashboard(
+            dashboard_dir, 'w-self-test-clean.json', _w_dashboard(stale=False)
+        )
+        clean_w_lines = [line.strip() for line in clean_output.splitlines() if ' :: w :: ' in line]
+        if clean_w_lines:
+            failures.append(f"w 端到端反向样本被误报：{clean_w_lines}")
+        if clean_code != 0:
+            failures.append(f"w 端到端反向样本未打绿：退出码 {clean_code}，输出=\n{clean_output}")
+
+    if failures:
+        raise AssertionError('；'.join(failures))
+
     print("w 故障注入：47 案复现(STALE_ALIAS)/修复写法(MATCH)/动态跳过(SKIP_DYNAMIC)/"
           "UNKNOWN跳过(SKIP_UNKNOWN)/完全无关(NO_MATCH)/非法正则(REGEX_ERROR)，全部通过")
+    print("w 端到端：47 案合成仪表盘喂进真 main() 被逮到并阻断，修复写法零误报")
 
 
 def _b_panel(panel_id, title, literal):
@@ -2012,6 +2137,37 @@ def _b_dashboard(dirty):
     }
 
 
+@contextlib.contextmanager
+def _patched_scan_scope(prefix):
+    """把扫描面临时指向一个空的合成目录，退出时原样还回去。
+
+    真仓库的 WHITELIST 和 k 基线对合成仪表盘全是「过期」，会淹掉断言要看的输出，所以一并
+    换成空的；范围自检也关掉——它比对的是仓里的 Dockerfile 和 grafana/ 目录，对临时目录
+    没有意义。三个自测共用这一个入口，谁也不用自己抄一遍 try/finally。
+    """
+    global DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST, SCAN_SCOPE_SELF_CHECK
+    saved = (DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST, SCAN_SCOPE_SELF_CHECK)
+    with tempfile.TemporaryDirectory(prefix=prefix) as workdir:
+        dashboard_dir = os.path.join(workdir, 'dashboards')
+        os.makedirs(dashboard_dir)
+        baseline_path = os.path.join(workdir, 'baseline.json')
+        with open(baseline_path, 'w', encoding='utf-8') as handle:
+            json.dump(
+                {'version': K_BASELINE_VERSION,
+                 'key': ['file', 'panelId', 'matcher', 'propertiesHash'],
+                 'entries': []},
+                handle,
+            )
+        try:
+            DASHBOARD_GLOBS = [os.path.join(dashboard_dir, '*.json')]
+            K_BASELINE_PATH = baseline_path
+            WHITELIST = []
+            SCAN_SCOPE_SELF_CHECK = False
+            yield dashboard_dir
+        finally:
+            DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST, SCAN_SCOPE_SELF_CHECK = saved
+
+
 def _run_lint_on_dashboard(dashboard_dir, name, dashboard):
     """把一份合成仪表盘写进临时目录，跑一遍真正的 main()，回收输出和退出码。
 
@@ -2046,26 +2202,8 @@ def run_b_self_test():
     definition」、退出码 0，真实的规则 b 违规被静默放行。覆盖面那两层管「扫描器走到没有」，
     管不了「走到了判没判」，这一层专管后者。
     """
-    global DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST
-    saved = (DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST)
     failures = []
-    with tempfile.TemporaryDirectory(prefix='dashboard-lint-b-self-test.') as workdir:
-        dashboard_dir = os.path.join(workdir, 'dashboards')
-        os.makedirs(dashboard_dir)
-        baseline_path = os.path.join(workdir, 'baseline.json')
-        with open(baseline_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {'version': K_BASELINE_VERSION, 'key': ['file', 'panelId', 'matcher', 'propertiesHash'],
-                 'entries': []},
-                handle,
-            )
-        try:
-            # 临时把扫描面指向合成目录：真仓库的 WHITELIST / k 基线对合成仪表盘全是「过期」，
-            # 会淹掉断言要看的输出，所以一并换成空的。三者在 finally 里原样还回去。
-            DASHBOARD_GLOBS = [os.path.join(dashboard_dir, '*.json')]
-            K_BASELINE_PATH = baseline_path
-            WHITELIST = []
-
+    with _patched_scan_scope('dashboard-lint-b-self-test.') as dashboard_dir:
             dirty_output, dirty_code = _run_lint_on_dashboard(
                 dashboard_dir, 'b-self-test-dirty.json', _b_dashboard(dirty=True)
             )
@@ -2109,8 +2247,6 @@ def run_b_self_test():
                 failures.append(
                     f"b 反向样本覆盖面计数不符：期待包含 {expected_green!r}，实得输出=\n{clean_output}"
                 )
-        finally:
-            DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST = saved
 
     if failures:
         raise AssertionError('；'.join(failures))
@@ -2118,6 +2254,94 @@ def run_b_self_test():
     print("b 故障注入：panel rawSql(--)/panel rawSql(块注释)/annotations[].rawQuery(--)/"
           "templating.definition(--) 四条扫描面各 1 例全部被逮到，合规反向样本零误报、"
           "覆盖面计数 1/1/1/1")
+
+
+def dockerfile_dashboard_files():
+    """从 Dockerfile 的 COPY 行读出「镜像里真正装了哪些仪表盘」。
+
+    这是扫描面范围自检的真相源：用户跑的是镜像，镜像装了什么，lint 就必须扫什么。
+    只认 `COPY <某个 .json glob> <目标目录>` 这种形态，读不到就返回 None，由调用方报错——
+    读不到不等于没问题，静默放过才是问题。
+    """
+    if not os.path.exists(DOCKERFILE_PATH):
+        return None
+    copied = []
+    pattern = re.compile(r'^\s*COPY\s+(\S+\.json)\s+(\S+)\s*$')
+    with open(DOCKERFILE_PATH, encoding='utf-8') as handle:
+        for line in handle:
+            match = pattern.match(line)
+            if match:
+                copied.extend(glob.glob(match.group(1)))
+    if not copied:
+        return None
+    return {os.path.normpath(path) for path in copied}
+
+
+def discover_dashboard_like_files():
+    """在仪表盘的家里按「内容」认仪表盘，不看目录名、不看 DASHBOARD_GLOBS。
+
+    口径：顶层是 dict、有 list 型的 panels、且带 schemaVersion 或 uid。实测对本仓零误伤
+    （48 个仪表盘全中，其它 JSON 一个没中）。刻意不复用 DASHBOARD_GLOBS——它就是被查的对象。
+    """
+    found = set()
+    for root, dirs, files in os.walk(DASHBOARD_HOME):
+        dirs[:] = [name for name in dirs if name != '.git']
+        for filename in files:
+            if not filename.endswith('.json'):
+                continue
+            path = os.path.join(root, filename)
+            try:
+                with open(path, encoding='utf-8') as handle:
+                    document = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            if (
+                isinstance(document, dict)
+                and isinstance(document.get('panels'), list)
+                and ('schemaVersion' in document or 'uid' in document)
+            ):
+                found.add(os.path.normpath(path))
+    return found
+
+
+def scan_scope_errors(scanned_files):
+    """扫描面「范围」自检：四个维度的对账盖不住把 DASHBOARD_GLOBS 收窄。
+
+    对账（structural_scan_expectation）的两个数都是从**已加载的文件集**算出来的：把 glob
+    收窄，扫描计数和结构计数一起变小，对账照样相等、CI 照样绿——v1.8.0 大审计只扫 zh-cn、
+    把 internal/ 3 个漏掉整整一个版本，就是这个形状（#31 用户报的中文面板 grep 不到）。
+    这里换两个独立依据来钉住文件集本身，都不含常数：
+      1) 镜像 COPY 了、lint 没扫 —— 用户看得到的仪表盘处于无人检查状态，这是阻断项。
+      2) 仪表盘的家里有、镜像和 lint 都不认 —— 放错地方或忘了接线，同样要人确认。
+    """
+    if not SCAN_SCOPE_SELF_CHECK:
+        return []
+
+    errors = []
+    shipped = dockerfile_dashboard_files()
+    if shipped is None:
+        errors.append(
+            f"读不出 {DOCKERFILE_PATH} 里的仪表盘 COPY 行，扫描面范围无法与镜像实际装的内容对账。"
+            f"要么 Dockerfile 换了写法（请同步改 dockerfile_dashboard_files()），要么 COPY 行没了——"
+            f"两种都要人确认，不能当没这回事。"
+        )
+    else:
+        unscanned = sorted(shipped - scanned_files)
+        if unscanned:
+            errors.append(
+                f"这些仪表盘被 Dockerfile COPY 进了镜像、却不在 lint 扫描面内（DASHBOARD_GLOBS "
+                f"覆盖不到）：{unscanned}。用户能在 Grafana 里看到它们，而一条 lint 规则都没跑过。"
+                f"这正是 v1.8.0 漏审 internal/ 的形状——请把 DASHBOARD_GLOBS 补齐，不要改这里。"
+            )
+
+    orphans = sorted(discover_dashboard_like_files() - scanned_files - (shipped or set()))
+    if orphans:
+        errors.append(
+            f"{DASHBOARD_HOME}/ 下这些文件长得像 Grafana 仪表盘，既没被 Dockerfile COPY 进镜像、"
+            f"也不在 lint 扫描面内：{orphans}。要么接上（Dockerfile + DASHBOARD_GLOBS），"
+            f"要么挪出 {DASHBOARD_HOME}/。"
+        )
+    return errors
 
 
 def structural_scan_expectation(dashboards):
@@ -2814,6 +3038,9 @@ def main():
     #      不用任何常数，正常增删仪表盘两边一起变、永远相等；扫描路径被删或被绕过则不等。
     #   2) 兜底扫描：整棵 JSON 里形状像 SQL 的字符串必须都落在扫描面上，防「两边一起变瞎」
     #      （上游改 JSON 键名之类），见 SQL_SHAPED_STRING_RE 上方那段说明。同样零常数。
+    #   3) 范围自检（scan_scope_errors）：文件集本身要跟「镜像 COPY 了什么」对上。1) 的两个
+    #      数都从已加载的文件集算出来，把 glob 收窄两边一起变小、照样相等——v1.8.0 漏审
+    #      internal/ 就是这个形状，只有这层看得见。
     # 还有第三层不在这里：--self-test-b 用合成仪表盘断言规则 b 真的会响。这两层管「扫描器
     # 走没走到」，自测管「走到了判没判」——上一轮实证过，保留计数器只删判定本体，这两层
     # 全绿而真违规被静默放行。三层缺一不可，CI 里三个自测都要跑（见 ghcr-build.yml lint job）。
@@ -2824,6 +3051,7 @@ def main():
         'annotationQueries': n_annotations,
         'definitions': n_definitions,
     }
+    coverage_errors.extend(scan_scope_errors({os.path.normpath(path) for path in all_files}))
     structural_coverage = structural_scan_expectation(dashboards)
     for dimension, dimension_label in COVERAGE_DIMENSIONS:
         scanned_count = scanned_coverage[dimension]
