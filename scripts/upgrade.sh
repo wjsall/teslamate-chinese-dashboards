@@ -31,6 +31,13 @@ BLUE="\033[0;34m"
 NC="\033[0m"
 FAILED_STEPS=()
 WARN_STEPS=()
+# 旧版留下的 charging_processes_v 对账视图这次没能删掉（三种情形见 sql/install-tou.sql
+# 2f 节）。它不影响本脚本装的任何东西，但会挡住**用户的下一步**：TeslaMate 升到 4.1.1 时
+# 那句 ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2) 会被 PostgreSQL
+# 拒绝，TeslaMate 起不来、容器反复重启、行车和充电全部停止记录。
+# 这个标记存在的唯一理由：以前这句提示只在中间段落 echo 一行，结尾照打绿色「✓ 升级完成！」
+# ——纯装饰性的「TOU 历史费用回算」失败反而进 WARN_STEPS 变黄。轻重倒挂，用户以为一切正常。
+LEGACY_VIEW_PENDING=0
 
 # 三组兼容性 SQL（坐标函数/单位换算函数/分时电价）是否全部装成功——用于判断能不能记录
 # SQL 兼容性 revision（issue #23/#29 事故预防机制）。不算性能索引，与 simple-deploy.sh /
@@ -369,11 +376,23 @@ else
             sed 's/^/      /' /tmp/tou-backfill.log | head -10
             WARN_STEPS+=("TOU 历史费用回算")
         fi
+        # 两类提示是两个独立待办，分别读取：默认电价迁移那句话不能覆盖「旧版对账视图还没
+        # 清掉」这句——后者不处理，TeslaMate 升到 4.1.1 会起不来，比前者严重得多。
         TOU_DEFAULT_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
             -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" \
             2>/dev/null) || TOU_DEFAULT_NOTE=""
         if [ -n "$TOU_DEFAULT_NOTE" ]; then
             echo -e "${YELLOW}    ${TOU_DEFAULT_NOTE}${NC}"
+        fi
+        TOU_VIEW_NOTE=$(docker exec -i "$DB_CONTAINER" psql -U teslamate -d teslamate -At \
+            -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" \
+            2>/dev/null) || TOU_VIEW_NOTE=""
+        if [ -n "$TOU_VIEW_NOTE" ]; then
+            echo -e "${YELLOW}    ${TOU_VIEW_NOTE}${NC}"
+            # 只 echo 不记账 = 结尾还是绿色「✓ 升级完成！」+ 退出码 0，用户以为没事，
+            # 然后 TeslaMate 起不来还找不到线索。必须让结尾横幅变色（见文件末尾汇总）。
+            LEGACY_VIEW_PENDING=1
+            WARN_STEPS+=("旧版对账视图未清理")
         fi
     else
         echo -e "${RED}  ✗ 分时电价安装失败！错误日志：${NC}"
@@ -520,12 +539,35 @@ if [ "${#FAILED_STEPS[@]}" -gt 0 ]; then
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${RED}  ✗ 升级失败：关键 SQL 未全部就绪${NC}"
     echo "    失败项：${FAILED_STEPS[*]}"
+    # 失败横幅里也要单独点名：这一条不是「重跑一次就好」，需要用户先去数据库里动手
+    if [ "$LEGACY_VIEW_PENDING" -eq 1 ]; then
+        echo "    另外：旧版对账视图 charging_processes_v 没能删掉，不处理会让 TeslaMate"
+        echo "    升到 4.1.1 时启动失败、反复重启（处理办法见上面那段提示）。"
+    fi
     echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     UPGRADE_EXIT=2
-elif [ "${#WARN_STEPS[@]}" -gt 0 ]; then
+# LEGACY_VIEW_PENDING 单独也要能把横幅拉黄：只靠 WARN_STEPS 那一项的话，将来有人把
+# 那行 WARN_STEPS+= 删掉（重构、觉得词太长、合并冲突选错边），横幅又会悄悄变回绿色，
+# 而这正是这批改动要根除的形状。两个条件是「或」，任一个成立都不许打绿。
+elif [ "${#WARN_STEPS[@]}" -gt 0 ] || [ "$LEGACY_VIEW_PENDING" -eq 1 ]; then
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  ⚠ 升级部分完成：核心功能可用，但有非关键步骤失败${NC}"
-    echo "    告警项：${WARN_STEPS[*]}"
+    # 「旧版对账视图没删掉」和「性能索引没装上」不是一个量级的事，横幅不能用同一句话打发：
+    # 前者会让用户的下一次 TeslaMate 升级彻底失败，后者只是查询慢一点。
+    if [ "$LEGACY_VIEW_PENDING" -eq 1 ]; then
+        echo -e "${YELLOW}  ⚠ 升级完成了，但有一件事必须你亲自处理${NC}"
+        echo "    数据库里那个旧版建的对账视图 charging_processes_v 这次没能删掉（原因见上面那段提示）。"
+        echo "    不处理会怎样：TeslaMate 升到 4.1.1 时会启动失败、容器反复重启，"
+        echo "    行车和充电将全部停止记录。这次升级的其余部分不受影响。"
+        echo "    怎么做：照上面那段提示处理掉，然后重新跑一次 bash scripts/upgrade.sh；"
+        echo "    这句提示会自己消失，消失了才算处理干净。"
+    else
+        echo -e "${YELLOW}  ⚠ 升级部分完成：核心功能可用，但有非关键步骤失败${NC}"
+    fi
+    # 必须写成 if，不能写 `[ ... ] && echo`：本脚本是 set -e，条件不成立时那种写法
+    # 整条命令返回 1，脚本会在结尾横幅中途猝死。
+    if [ "${#WARN_STEPS[@]}" -gt 0 ]; then
+        echo "    告警项：${WARN_STEPS[*]}"
+    fi
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     UPGRADE_EXIT=0
 else

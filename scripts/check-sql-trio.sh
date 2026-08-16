@@ -174,7 +174,12 @@ for entry in "${ENTRY_POINTS[@]}"; do
     esac
 done
 
-# 默认电价迁移发现多个旧电价时会留下用户待办，所有安装入口都必须把它显示出来。
+# 装完 SQL 之后库里可能留着两类「需要用户动手」的待办，所有安装入口都必须把它们打出来：
+#   legacy_default_note  默认电价迁移发现多个旧电价，猜不出该用哪个
+#   view_rebuild_note    旧版留下的 charging_processes_v 对账视图这次没能删掉；不处理的话
+#                        TeslaMate 升到 4.1.1 会起不来
+# 这两句都只留在数据库里（psql 的 RAISE NOTICE 走 stderr，被安装脚本重定向进日志文件，
+# 用户看不见），脚本不主动查就等于没说。
 echo
 echo "校验安装路径读取 TOU 用户提示..."
 NOTE_PATHS=(simple-deploy.sh migrate-from-official.sh scripts/upgrade.sh)
@@ -192,7 +197,7 @@ for line in open(path, encoding='utf-8'):
 body = ''.join(lines)
 
 missing = []
-for column in ('legacy_default_note',):
+for column in ('legacy_default_note', 'view_rebuild_note'):
     if not re.search(
         rf'SELECT\s+{column}\s+FROM\s+tou_settings'
         rf'\s+WHERE\s+{column}\s+IS\s+NOT\s+NULL',
@@ -203,6 +208,98 @@ for column in ('legacy_default_note',):
 
 if missing:
     print('没有查询：' + '、'.join(missing))
+    raise SystemExit(1)
+PY
+    ); then
+        echo "  ✓ $entry"
+    else
+        echo "  ✗ $entry: $detail"
+        fail=1
+    fi
+done
+
+# 上一条只保证「查出来并打印了」。光打印不够：
+# view_rebuild_note 非空 = 旧版的 charging_processes_v 还在库里，用户下一次升级 TeslaMate
+# 到 4.1.1 就会启动失败、容器反复重启、行车充电全部停止记录。三个脚本以前只在中间段落
+# echo 一行，没有计入各自的告警机制，于是结尾照打绿色「✓ 升级完成！」/「✅ 安装完成！」
+# 并 exit 0——纯装饰性的「TOU 历史费用回算」失败反而进 WARN_STEPS 让横幅变黄。轻重倒挂。
+#
+# 三个脚本的告警机制不一样（upgrade.sh / migrate-from-official.sh 有 WARN_STEPS，
+# simple-deploy.sh 只有一个二值 SQL_OK），所以这里钉的是三者共用的那个标记变量
+# LEGACY_VIEW_PENDING：在读到提示的那个分支里置 1，结尾横幅据它换话术。
+#
+# 为什么这里只能做静态契约：simple-deploy.sh / migrate-from-official.sh 是 curl | bash 的
+# 单文件脚本，整段跑起来要真的改用户的 docker-compose.yml、拉镜像、切 grafana，没法在
+# 一道 lint 门里安全复现。upgrade.sh 那条路径有真跑的行为门兜着——
+# scripts/check-upgrade-warn-banner.sh 会造出「视图删不掉」的库、整段跑一遍 upgrade.sh、
+# 断言结尾不是绿色。这一条静态契约负责把另外两个脚本钉在同一个口径上。
+echo
+echo "校验安装路径把「旧对账视图没删掉」计入告警..."
+for entry in "${NOTE_PATHS[@]}"; do
+    if detail=$(python3 - "$entry" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+# 保留行号语义：注释行整行换成空行，而不是删掉
+lines = [
+    '' if line.lstrip().startswith('#') else line.rstrip('\n')
+    for line in open(path, encoding='utf-8')
+]
+
+query_lines = [
+    i for i, line in enumerate(lines)
+    if re.search(r'SELECT\s+view_rebuild_note\s+FROM\s+tou_settings', line, re.I)
+]
+if not query_lines:
+    print('找不到 view_rebuild_note 的查询')
+    raise SystemExit(1)
+
+marker = 'LEGACY_VIEW_PENDING'
+set_lines = [i for i, line in enumerate(lines) if f'{marker}=1' in line]
+if not set_lines:
+    print(f'没有任何地方把 {marker} 置 1——提示只打印、没计入告警')
+    raise SystemExit(1)
+
+# 置 1 必须紧跟在读取提示的那个分支里（查询之后 15 行内），不能是别处一个不相干的赋值
+WINDOW = 15
+if not any(q < s <= q + WINDOW for q in query_lines for s in set_lines):
+    print(f'{marker}=1 不在 view_rebuild_note 的读取分支里（查询后 {WINDOW} 行内）')
+    raise SystemExit(1)
+
+if not any(f'{marker}=0' in line for line in lines):
+    print(f'{marker} 没有初始化为 0（set -u / 首次运行会炸）')
+    raise SystemExit(1)
+
+# 结尾横幅必须真的读它。只写不读 = 标记形同虚设，横幅照样是绿的。
+read_lines = [
+    i for i, line in enumerate(lines)
+    if marker in line and f'{marker}=' not in line
+]
+last_set = max(set_lines)
+if not any(i > last_set for i in read_lines):
+    print(f'{marker} 置 1 之后再没被读过——结尾横幅不会因此变色')
+    raise SystemExit(1)
+
+# 而且这个「读」必须发生在**主流程**里，不能只躺在一个函数体内。
+# 实测过一次注入：把结尾横幅的判断条件删掉、只留下一个读它的辅助函数（没人调用），
+# 上面那条「置 1 之后被读过」照样打勾——因为函数定义里那一行也算读。横幅还是绿的。
+# 这三个脚本的顶层函数都是 `name() {` 开头、第 0 列一个 `}` 收尾，据此切掉函数体。
+in_function = False
+top_level_reads = []
+for i, line in enumerate(lines):
+    if not in_function and re.match(r'^\s*(function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\(\)\s*\{', line):
+        in_function = True
+        continue
+    if in_function:
+        if line == '}':
+            in_function = False
+        continue
+    if i in read_lines:
+        top_level_reads.append(i)
+
+if not top_level_reads:
+    print(f'{marker} 只在函数体里被读过，主流程（结尾横幅）没读——横幅不会因此变色')
     raise SystemExit(1)
 PY
     ); then

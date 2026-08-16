@@ -157,14 +157,97 @@ CREATE TABLE IF NOT EXISTS tou_settings (
   -- 用户真的重设了默认电价，set_default_charging_rate 会把它清掉，提示不再出现。
   -- psql 的 RAISE NOTICE 走 stderr、被安装脚本丢进日志文件，用户看不见，所以这种
   -- 「需要用户动手」的话不能只靠 NOTICE，必须留在库里让脚本主动查出来讲。
-  legacy_default_note TEXT
+  legacy_default_note TEXT,
+  -- 旧版留下的 charging_processes_v 对账视图删不掉时，要跟用户说的话（见 2f 节）。
+  -- 不能和 legacy_default_note 共用一个槽位：本文件后半段的默认电价迁移会写/清那一列，
+  -- 共用会把尚未处理的视图提示冲掉。
+  view_rebuild_note TEXT
 );
+
+-- 老版本装过这张表的，补上后加的列
+ALTER TABLE tou_settings
+  ADD COLUMN IF NOT EXISTS view_rebuild_note TEXT;
 
 INSERT INTO tou_settings (id, default_rate) VALUES (TRUE, NULL)
 ON CONFLICT (id) DO NOTHING;
 
 COMMENT ON TABLE tou_settings IS
 '分时电价系统的全局设置（单行）。default_rate = 默认电价元/度：NULL 未设置、0 明确免费';
+
+-- ----------------------------------------------------------------------------
+-- 2f. 升级清理：删掉旧版建的 charging_processes_v 对账视图
+--
+-- 这个视图会挡住 TeslaMate 自己的数据库升级。TeslaMate 4.1.1 启动时要执行
+--   ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2)
+-- 而 PostgreSQL 不允许改一个被视图引用着的列（报 cannot alter type of a column used
+-- by a view or rule）。视图留在库里，TeslaMate 就起不来、容器反复重启，行车和充电全部
+-- 停止记录。
+--
+-- 新版本已经不再创建这个视图，但「不再创建」救不了任何一个老用户——他们库里那个视图是
+-- 上一版建的，安装脚本不主动删，它就一直在。所以这一段必须在这里，而且必须对所有装过
+-- 旧版的库生效（重复跑无副作用：视图不在时 DROP ... IF EXISTS 什么都不做）。
+--
+-- 【绝对不加 CASCADE】
+-- 我们对用户承诺过「你基于 charging_processes_v 建的查询或视图会保留」。CASCADE 会把
+-- 用户自己建在这个视图上的对象一起删掉，那是数据丢失，比升级失败严重得多。
+-- 所以删不掉时一律选择「不删」，把该做的事讲给用户听，让他自己决定先删哪个。
+--
+-- 三种删不掉的情形都在这里兜住，它们的共同点是「删不掉，但绝不能中断整份安装」——
+-- 分时电价的其余部分（表、函数、触发器）跟这个视图没关系，不该被它连坐：
+--   dependent_objects_still_exist  有用户自建对象依赖它
+--   wrong_object_type              这个名字被表 / 物化视图 / 序列 / 索引占着
+--   insufficient_privilege         视图归属别的数据库角色，当前用户删不动
+-- 三种情形都往 tou_settings.view_rebuild_note 留一句话，安装/升级脚本装完 SQL 会主动
+-- 查出来打给用户看（RAISE NOTICE 走 stderr，被脚本重定向进日志文件，用户看不见）。
+-- ----------------------------------------------------------------------------
+DO $legacy_view$
+DECLARE
+  v_note TEXT;
+BEGIN
+  BEGIN
+    DROP VIEW IF EXISTS charging_processes_v;
+  EXCEPTION
+    WHEN dependent_objects_still_exist THEN
+      v_note :=
+        '⚠ 数据库里还留着一个旧版建的对账视图 charging_processes_v，这次没能删掉：'
+        || '你自己建的查询或视图正依赖着它，删了会把你的东西一起弄丢，所以我们没有动它。'
+        || '但它会挡住 TeslaMate 自己的数据库升级——TeslaMate 升到 4.1.1 时要修改充电费用列的精度，'
+        || '而这个视图正引用着那一列，升级会失败，TeslaMate 会起不来、容器反复重启。'
+        || '请先删掉依赖它的对象（在数据库里执行 DROP VIEW charging_processes_v; '
+        || '报错信息会指出是哪个对象依赖它），删完再重新运行一次分时电价安装。'
+        || '需要保留原来的查询口径的话，把 SQL 里的 charging_processes_v 换成 charging_processes，'
+        || '费用用 effective_cost(id, cost) 取。';
+    WHEN wrong_object_type THEN
+      v_note :=
+        '⚠ 数据库里有一个叫 charging_processes_v 的对象，但它不是普通视图（可能是表、物化视图、序列或索引），'
+        || '我们不确定是不是你自己建的，所以没有动它。'
+        || '如果它是从 charging_processes 派生出来的（比如物化视图），会挡住 TeslaMate 自己的数据库升级——'
+        || 'TeslaMate 升到 4.1.1 时要修改充电费用列的精度，升级会失败，TeslaMate 会起不来、容器反复重启。'
+        || '请确认这个对象还有没有用，没用就自行删除，删完再重新运行一次分时电价安装。';
+    WHEN insufficient_privilege THEN
+      v_note :=
+        '⚠ 数据库里还留着一个旧版建的对账视图 charging_processes_v，这次没能删掉：'
+        || '它归属另一个数据库角色，当前连接的用户没有权限删它。'
+        || '它会挡住 TeslaMate 自己的数据库升级——TeslaMate 升到 4.1.1 时要修改充电费用列的精度，'
+        || '而这个视图正引用着那一列，升级会失败，TeslaMate 会起不来、容器反复重启。'
+        || '请用这个视图的属主（或数据库超级用户）执行 DROP VIEW charging_processes_v; '
+        || '删完再重新运行一次分时电价安装。';
+  END;
+
+  IF v_note IS NULL THEN
+    -- 删掉了，或者本来就没有。旧提示（可能是上一次安装留下的）已经完成使命，撤掉，
+    -- 免得用户处理完之后每次升级还被吓一次。
+    UPDATE tou_settings
+       SET view_rebuild_note = NULL, updated_at = NOW()
+     WHERE id AND view_rebuild_note IS NOT NULL;
+  ELSE
+    UPDATE tou_settings
+       SET view_rebuild_note = v_note, updated_at = NOW()
+     WHERE id;
+    RAISE NOTICE '%', v_note;
+  END IF;
+END
+$legacy_view$;
 
 -- ----------------------------------------------------------------------------
 -- 2e. _tou_default_cost(cp_id) — 按默认电价现算这一笔的费用
@@ -1359,10 +1442,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ----------------------------------------------------------------------------
--- 8b. 一键卸载：uninstall_tou() — 把所有 tou_* 对象一次拆掉
+-- 8b. 一键卸载：uninstall_tou() — 把所有 tou_* 对象和旧版留下的对账视图一次拆掉
 --     用 pg_proc 自动找函数，避免手工列表跟实现漂移
---     ⚠ CASCADE 会删掉所有依赖 tou_rates / charging_processes_tou_cost 的对象
---       （包括用户自己建的视图）— 卸载前先 \d+ tou_rates 看 referenced by 列表
+--     ⚠ CASCADE 会删掉所有依赖 tou_rates / charging_processes_tou_cost /
+--       charging_processes_v 的对象（包括用户自己建的视图）— 卸载前先
+--       \d+ tou_rates 看 referenced by 列表。
+--       这里用 CASCADE 与 2f 节「删遗留视图时绝不用 CASCADE」并不矛盾：卸载是用户主动
+--       要求「把这套东西全部拆掉」，安装/升级则是用户要求「装好功能」，不该顺手删他的对象。
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION uninstall_tou() RETURNS TEXT AS $$
 DECLARE
@@ -1392,7 +1478,14 @@ BEGIN
     AND cp.cost IS NULL;
   GET DIAGNOSTICS restored = ROW_COUNT;
 
-  -- 3. 旁路表 + 配置表（CASCADE 会一并删依赖的所有视图/约束/外键）
+  -- 3. 旧版建的对账视图。安装时删不掉它的库（有用户对象依赖 / 归属别的角色）在这里
+  --    仍要试一次：卸载是用户主动要求全部拆掉，这时 CASCADE 是他要的语义。
+  --    下一步 DROP TABLE charging_processes_tou_cost CASCADE 其实也会连带删掉它，
+  --    但那是「碰巧被连坐」；写在这里是因为用户可能把视图改成了不引用旁路表的形状，
+  --    那时连坐就落空，视图会留下来继续挡 TeslaMate 升级。
+  DROP VIEW IF EXISTS charging_processes_v CASCADE;
+
+  -- 4. 旁路表 + 配置表（CASCADE 会一并删依赖的所有视图/约束/外键）
   DROP TABLE IF EXISTS charging_processes_tou_cost CASCADE;
   -- 覆盖表也要删：卸载之后费用显示应当完全回到 TeslaMate 自己的数据。
   -- 这正是当初直接写原表做不到的事——那些值留在 charging_processes 里，卸载也带不走。
@@ -1401,7 +1494,7 @@ BEGIN
   DROP TABLE IF EXISTS tou_settings CASCADE;
   DROP TABLE IF EXISTS tou_rates CASCADE;
 
-  -- 4. 全部 tou_* / _tou_* / *_tou_* 函数（除 uninstall_tou 自己）
+  -- 5. 全部 tou_* / _tou_* / *_tou_* 函数（除 uninstall_tou 自己）
   --    名字里没有 tou 的（effective_cost / cost_before_tou / adopt_legacy_default_costs 等）
   --    必须写进下面这份显式名单，否则卸载完还会剩函数，而它们引用的表已经没了。
   FOR r IN

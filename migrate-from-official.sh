@@ -191,6 +191,13 @@ done
 # 失败步骤累计（最后汇总）：FAILED_STEPS 影响退出码，WARN_STEPS 仅告警不影响退出码
 FAILED_STEPS=()
 WARN_STEPS=()
+# 旧版留下的 charging_processes_v 对账视图这次没能删掉（三种情形见 sql/install-tou.sql
+# 2f 节）。它不阻断本脚本装的任何东西，但会阻断**用户的下一步**：TeslaMate 升到 4.1.1 时
+# 那句 ALTER TABLE charging_processes ALTER COLUMN cost TYPE numeric(14,2) 会被 PostgreSQL
+# 拒绝，TeslaMate 起不来、容器反复重启、行车和充电全部停止记录。
+# 单独一个标记而不是只往 WARN_STEPS 里塞一个词：结尾横幅那句「非关键项告警（不影响核心
+# 功能）」放在这一条上是错的，得换一段把后果讲清楚的话。
+LEGACY_VIEW_PENDING=0
 MIGRATION_STAGE="pre-change"
 
 # ── 辅助函数 ────────────────────────────────────────────────────────
@@ -513,6 +520,7 @@ install_sql() {
 # 大库上要几十秒，所以动手之前先说一句，别让用户以为卡住了。
 run_tou_backfill() {
     local default_note
+    local view_note
     if [[ -z "${DB_CONTAINER:-}" ]]; then
         return 0
     fi
@@ -527,12 +535,39 @@ run_tou_backfill() {
         echo "⚠️  重算失败（不影响已装好的功能，可稍后手动跑 SELECT * FROM backfill_all_tou();）"
         WARN_STEPS+=("tou-backfill")
     fi
+    # 两类提示是两个独立待办，分别读取：默认电价迁移那句话不能覆盖「旧版对账视图还没清掉」
+    # 这句——后者不处理，TeslaMate 升到 4.1.1 会起不来，比前者严重得多。
     default_note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
         -c "SELECT legacy_default_note FROM tou_settings WHERE legacy_default_note IS NOT NULL" 2>/dev/null) || default_note=""
     if [[ -n "$default_note" ]]; then
         echo "$default_note"
     fi
+    view_note=$(docker exec -i "$DB_CONTAINER" psql -U "${DB_USER:-teslamate}" -d "${DB_NAME:-teslamate}" -At \
+        -c "SELECT view_rebuild_note FROM tou_settings WHERE view_rebuild_note IS NOT NULL" 2>/dev/null) || view_note=""
+    if [[ -n "$view_note" ]]; then
+        echo "$view_note"
+        # 只 echo 不记账 = 结尾还是「🎉 迁移完成」，用户以为没事，然后 TeslaMate 起不来
+        # 还找不到线索。必须让结尾横幅变色（见文件末尾汇总）。
+        LEGACY_VIEW_PENDING=1
+        # 「告警项：...」这一行是打给用户看的，不是给程序看的：这里必须写人话，而且要跟
+        # scripts/upgrade.sh 对同一件事的说法完全一致（那边写的就是「旧版对账视图未清理」）。
+        # 同一个 P0 待办在两条路径上叫两个名字，用户没法把两次输出对上号。
+        # 本文件其余条目（coord-sql / unit-sql / tou-sql）是 install_sql 的 key，同时被
+        # sql_trio_ok 按字面匹配，属于机器标识，不在这次统一范围内。
+        WARN_STEPS+=("旧版对账视图未清理")
+    fi
     return 0
+}
+
+# 「旧版对账视图没删掉」在两处结尾横幅里都要单独讲一段：它和「性能索引没装上」不是一个
+# 量级的事，不能被「非关键项告警（不影响核心功能）」那句话盖过去。
+print_legacy_view_warning() {
+    [[ "$LEGACY_VIEW_PENDING" -eq 1 ]] || return 0
+    echo "    ⚠ 有一件事必须你亲自处理：数据库里那个旧版建的对账视图 charging_processes_v"
+    echo "      这次没能删掉（原因见上面那段提示）。不处理会怎样：TeslaMate 升到 4.1.1 时"
+    echo "      会启动失败、容器反复重启，行车和充电将全部停止记录。这次迁移的其余部分不受影响。"
+    echo "      怎么做：照上面那段提示处理掉，然后重跑一次本脚本；那句提示会自己消失，"
+    echo "      消失了才算处理干净。"
 }
 
 # 三组兼容性 SQL（coord-sql / unit-sql / tou-sql）是否全部装成功——用于判断能不能记录
@@ -850,10 +885,17 @@ elif grep -m1 -qE "^[[:space:]]+image:[[:space:]]*${OUR_IMAGE_RE}" "$COMPOSE_FIL
     fi
     echo
     if [[ ${#FAILED_STEPS[@]} -eq 0 ]]; then
-        echo "✓ 完成"
-        [[ ${#WARN_STEPS[@]} -eq 0 ]] || echo "  ⚠ 非关键项告警（不影响核心功能）：${WARN_STEPS[*]}"
+        if [[ "$LEGACY_VIEW_PENDING" -eq 1 ]]; then
+            echo "⚠️  装完了，但留了一个尾巴给你"
+        else
+            echo "✓ 完成"
+        fi
+        print_legacy_view_warning
+        # 不再写「不影响核心功能」：「旧版对账视图未清理」这一项恰恰会影响用户的下一步。
+        [[ ${#WARN_STEPS[@]} -eq 0 ]] || echo "  ⚠ 告警项：${WARN_STEPS[*]}"
     else
         echo "⚠️  ${#FAILED_STEPS[@]} 项 SQL 没装成功，看上面输出"
+        print_legacy_view_warning
         exit 2
     fi
     exit 0
@@ -967,17 +1009,24 @@ trap - ERR  # 后面只是 echo，不需要再触发 on_error
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [[ ${#FAILED_STEPS[@]} -eq 0 ]]; then
-    echo "🎉 迁移完成"
+    if [[ "$LEGACY_VIEW_PENDING" -eq 1 ]]; then
+        echo "⚠️  迁移完成，但留了一个尾巴给你"
+    else
+        echo "🎉 迁移完成"
+    fi
+    print_legacy_view_warning
     if [[ ${#WARN_STEPS[@]} -gt 0 ]]; then
-        echo "    ⚠ 非关键项告警（不影响核心功能）：${WARN_STEPS[*]}"
+        # 不再写「不影响核心功能」：「旧版对账视图未清理」这一项恰恰会影响用户的下一步。
+        echo "    ⚠ 告警项：${WARN_STEPS[*]}"
     fi
     echo
     echo "现在打开 http://你的IP:3000 — 45 个中文仪表盘已就绪。"
 else
     echo "⚠️  迁移部分完成（grafana 已切镜像，但有 ${#FAILED_STEPS[@]} 项 SQL 失败）"
     echo "    失败项：${FAILED_STEPS[*]}"
+    print_legacy_view_warning
     if [[ ${#WARN_STEPS[@]} -gt 0 ]]; then
-        echo "    另有非关键项告警：${WARN_STEPS[*]}"
+        echo "    另有告警项：${WARN_STEPS[*]}"
     fi
     echo "    照上面的命令补跑，或起容器后重跑本脚本（会自动跳过 image 替换、只重装 SQL）"
 fi

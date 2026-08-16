@@ -83,6 +83,19 @@ for name in image_jobs:
 lint_block = jobs.get('lint', '')
 for command in (
     'bash scripts/check-upstream-alter-compat.sh',
+    # 上游升级端到端：起 postgres → 老版 TeslaMate 迁移 → 装上一个发行版的 SQL →
+    # 装当前版本 → 新版 TeslaMate 迁移。逐列 ALTER 那道门是模拟，这道是真跑；
+    # 两道都要在，少一道就会重演「只测全新安装、升级路径全盲」。
+    'bash scripts/check-upstream-migration-e2e.sh',
+    # 升级结尾横幅：真跑一遍 upgrade.sh，断言「旧对账视图删不掉」不会以绿色收场。
+    # 那个缺陷不在任何单独一行里，而在「echo 提示的地方」和「结尾判分支的地方」之间的
+    # 连线上，静态 grep 抓不到，必须整段跑。
+    'bash scripts/check-upgrade-warn-banner.sh',
+    # 另外两条安装路径（simple-deploy.sh / migrate-from-official.sh）是 curl | bash
+    # 单文件脚本，整段跑不了；这道门把它们的结尾横幅代码块抽出来接真库跑。
+    # 少了它，那两个脚本的横幅只剩语法门——把 -eq 0 改成 -ge 0 这种"中和"型回归
+    # （变量还在、静态契约照样绿）就会一路溜进发布。
+    'bash scripts/check-install-banner-behavior.sh',
     'bash scripts/check-ci-schedule-gates.sh',
 ):
     if command not in lint_block:
