@@ -224,6 +224,16 @@ DETECTED_GF=$(detect_grafana_container)
 [ -z "$DETECTED_GF" ] \
     || die "detect_grafana_container 找到了「${DETECTED_GF}」，那不是本门起的容器；跑下去会执行 upgrade.sh 第 8 步的 docker restart 把它重启掉。先停掉该容器（或换一台没跑 TeslaMate Grafana 的机器）再跑这道门"
 
+# 同理，TeslaMate 容器也必须一个都没有。upgrade.sh 的 wait_teslamate_migrated 读的是
+# **宿主机**的 docker，而本门只起一个隔离 postgres、从不起 TeslaMate。宿主机上但凡躺着一个
+# TeslaMate 形状的容器（哪怕是几小时前跑完测试留下的、已经 exited 的），它就会被读成
+# 「反复重启/已退出」→ 跳过单位换算函数 → 对照组以「✗ 升级失败」收场，而这跟被测代码毫无关系。
+# 这一条以前只写在下面对照组的注释里，光靠注释救不了人：实测过一次，红出来的表象是
+# 「✗ 升级失败：关键 SQL 未全部就绪」，一路往下查才查到是宿主机上的残留容器。
+DETECTED_TM=$(teslamate_container_name)
+[ -z "$DETECTED_TM" ] \
+    || die "宿主机上有 TeslaMate 形状的容器「${DETECTED_TM}」（状态：$(docker inspect -f '{{.State.Status}}' "$DETECTED_TM" 2>/dev/null || echo 未知)），那不是本门起的容器。upgrade.sh 会读它的状态来判断 TeslaMate 的迁移做完没有，于是这道门的结论会被它决定，而不是被被测代码决定。先 docker rm 掉它（或换一台干净的机器）再跑这道门"
+
 # ---------------------------------------------------------------------------
 # ① 对照组：视图删得掉（没有任何用户对象依赖它）
 # ---------------------------------------------------------------------------

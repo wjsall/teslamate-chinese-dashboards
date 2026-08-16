@@ -73,6 +73,9 @@ jobs:
       - name: 定时只读门 / 镜像禁行契约
         run: bash scripts/check-ci-schedule-gates.sh
 
+      - name: TeslaMate 容器检测：三份拷贝一致 + 运行中的优先于已停止的
+        run: bash scripts/check-container-detect-consistency.sh
+
       - name: 四个脚本内联的 SQL 对象判据必须一致
         run: bash scripts/check-sql-gate-consistency.sh
 

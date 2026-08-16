@@ -249,19 +249,37 @@ teslamate_published_port() {
 #   ③ 按镜像找（用户给容器起了完全不相干的名字时的兜底）
 # 探不到会让下面的存活判据退化成「不判」，所以这里要尽量探得到——实测过：容器叫
 # teslamate-app 时只有 ③ 能找到，而少了它，一个正在崩溃重启的 TeslaMate 会被当成健康。
-teslamate_container_name() {
-    local c=""
-    c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
-    if [ -z "$c" ]; then
-        c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
-            | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-            | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
+# 在一个范围内按「容器名」再按「镜像」找 TeslaMate。$1 = running（只看运行中）/ all（含已停止）。
+# 刻意不用数组传 docker ps 参数：NAS 和 macOS 上还有 Bash 3.2。
+_teslamate_scan() {
+    local scope="$1" c="" rows=""
+    if [ "$scope" = "all" ]; then
+        rows=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true)
+    else
+        rows=$(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true)
     fi
+    c=$(printf '%s\n' "$rows" | cut -f1 \
+        | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
+        | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
     if [ -z "$c" ]; then
-        c=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
+        c=$(printf '%s\n' "$rows" \
             | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
             | cut -f1 | head -1 || true)
     fi
+    echo "$c"
+}
+
+teslamate_container_name() {
+    local c=""
+    c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
+    # 先在运行中的容器里找，找不到才把已停止的算进来。
+    # 只扫 -a 会踩这个坑：docker ps -a 按创建时间倒序，宿主机上只要躺着一个更晚创建、
+    # 已经停掉的 TeslaMate（改过名的旧栈、试过一次的部署、跑过一遍的测试），head -1 就会
+    # 选中那个死的 → 存活判据读出 exited → 判定「它的迁移不可能完成」→ 跳过单位换算函数
+    # 并以「✗ 升级失败」收场，而用户真正在跑的 TeslaMate 一切正常。
+    # 回落仍保留 -a：一个都没运行时，「反复重启/已退出」那条告警本来就要能看见死容器。
+    [ -z "$c" ] && c=$(_teslamate_scan running)
+    [ -z "$c" ] && c=$(_teslamate_scan all)
     echo "$c"
 }
 

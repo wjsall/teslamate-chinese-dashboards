@@ -59,21 +59,8 @@ LEGACY_VIEW_PENDING=0
 #   ③ 按镜像找（用户给容器起了完全不相干的名字时的兜底）
 # 探不到会让下面的存活判据退化成「不判」，所以这里要尽量探得到——实测过：容器叫
 # teslamate-app 时只有 ③ 能找到，而少了它，一个正在崩溃重启的 TeslaMate 会被当成健康。
-teslamate_container_name() {
-    local c=""
-    c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
-    if [ -z "$c" ]; then
-        c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
-            | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-            | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
-    fi
-    if [ -z "$c" ]; then
-        c=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null \
-            | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
-            | cut -f1 | head -1 || true)
-    fi
-    echo "$c"
-}
+# TeslaMate 容器检测（_teslamate_scan / teslamate_container_name）来自
+# lib/detect-containers.sh，本文件顶部已 source。
 
 teslamate_container_status() {
     local c
