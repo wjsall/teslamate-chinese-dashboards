@@ -2959,6 +2959,19 @@ def main():
                     f"{label} :: j :: {visible_path} 未含 CJK 且未整串命中通用白名单: {value!r}",
                 )
 
+            # 规则 k 目前只查 table / stat。**这是一个已知的覆盖缺口，不是设计意图**：
+            # 其余面板类型上还有 300 多条 byName override，其中一批确实指向了不存在的字段，
+            # 想设的单位 / 配色 / 坐标轴范围静默不生效。
+            #
+            # 试过直接把这里放开到全部面板类型，不行 —— 下面那套字段契约引擎是按 table/stat
+            # 的语义写的，用在 timeseries 上会产生**假阳性**：实测它把 drive-details 的
+            # battery_heater、is_climate_on 判成 ABSENT，而浏览器里那两条 override 明明
+            # 生效了（电池加热器是指定的红色、空调开关的轴确实隐藏了）。一次放开会把 133 条
+            # 存量收进基线，里面混着这类假判断，以后真回归只会淹没在噪音里。
+            #
+            # 要扩覆盖面，得先让契约引擎认得 timeseries / xychart 的字段语义
+            # （宽格式列名 vs 长格式 metric 列、byRegexp 覆盖、override 之间的顺序依赖），
+            # 那是独立一件事。在那之前这里维持现状，缺口记在案，不假装它不存在。
             if panel.get('type') in {'table', 'stat'}:
                 contract = panel_field_contract(
                     panel, panel_indexes[file_rel], panel_contract_caches[file_rel],
