@@ -1121,6 +1121,35 @@ volumes:
 
 ---
 
+<a id="tm411-smallint"></a>
+
+### 升级 TeslaMate 到 4.1.x 时报 `smallint out of range`（用过直流快充的库）
+
+**症状**：TeslaMate 换成 4.1.x 后起不来，日志里能看到迁移 `20260808090000`（重算历史电量）失败，报 `smallint out of range`。表现是容器反复重启，而不是一句清楚的报错，容易被当成别的问题。
+
+**是不是你**：先自查一下，用过直流快充（超充等）的库才会中。
+
+```sql
+SELECT count(*) FROM charges
+WHERE charger_actual_current::int * charger_voltage::int > 32767;
+```
+
+结果为 `0` 就不受影响，正常升级即可。
+
+**这是 TeslaMate 自身的问题，不是本项目造成的**，也不是本项目能修的。已上报官方（[teslamate#5620](https://github.com/teslamate-org/teslamate/issues/5620)），官方已确认并给出修复，收在 [#5617](https://github.com/teslamate-org/teslamate/pull/5617)（该 PR 截至本文更新时尚未合并）。官方说明：**下一个 TeslaMate 版本起，即使数据里有这种值也不会再失败**。
+
+**现在就想升 4.1.1 的话**，官方给了一个绕过办法：手动跑一次重算并把该迁移标记为已完成。**跑之前先做完整备份**（见 [数据库备份与恢复](#数据库备份与恢复)），然后连进数据库执行：
+
+```bash
+docker compose exec -T database psql teslamate teslamate
+```
+
+具体 SQL 以官方 issue 里的那段为准（会随官方修订更新），见 [teslamate#5620 的官方回复](https://github.com/teslamate-org/teslamate/issues/5620#issuecomment-5306301438)。执行完正常启动即可。
+
+**更省事的选择**：等 TeslaMate 的下一个版本，那时这一步不需要了。
+
+---
+
 <a id="postgresql-upgrade"></a>
 
 ### PostgreSQL 大版本升级（如 17 → 18）
