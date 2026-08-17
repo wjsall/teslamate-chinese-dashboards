@@ -200,6 +200,8 @@ SQL_INSTALL_GLOB = 'sql/install-*.sql'
 # 仪表盘的家。扫描面范围自检（scan_scope_errors）只在这棵子树里找「长得像仪表盘的 JSON」。
 DASHBOARD_HOME = 'grafana'
 DOCKERFILE_PATH = 'Dockerfile'
+# 规则自测的完备性断言要读本门自己的源码，数出有哪些规则字母。
+LINT_SOURCE_PATH = 'scripts/check-dashboard-lint.sh'
 # 三个自测把 DASHBOARD_GLOBS 指向临时目录，那时范围自检没有意义（仓里 48 个仪表盘会被
 # 整批报成「没扫」）。自测在同一个 try/finally 里把这个开关关掉再还原，见 run_*_self_test。
 SCAN_SCOPE_SELF_CHECK = True
@@ -2246,6 +2248,211 @@ def run_scope_self_test():
           "读不懂的搬运指令报红而不是静默跳过")
 
 
+def _rule_panel(sql, panel_id=1, panel_type='timeseries', title='自测面板', **extra):
+    """规则自测用的最小面板：一条干净 SQL，其余键由调用方按需覆盖。"""
+    panel = {
+        'id': panel_id, 'type': panel_type, 'title': title,
+        'targets': [{'refId': 'A', 'format': 'time_series', 'rawSql': sql}],
+    }
+    panel.update(extra)
+    return panel
+
+
+CLEAN_SQL = "SELECT date AS time, 1 AS value FROM drives"
+
+
+def _rule_dashboard(panels, variables=None, uid='rule-self-test'):
+    dashboard = {'uid': uid, 'title': '规则自测仪表盘', 'schemaVersion': 39, 'panels': panels}
+    if variables is not None:
+        dashboard['templating'] = {'list': variables}
+    return dashboard
+
+
+def _sql_case(dirty_sql, clean_sql=CLEAN_SQL, **panel_extra):
+    """最常见的形状：只有 rawSql 不同。"""
+    return lambda dirty: _rule_dashboard(
+        [_rule_panel(dirty_sql if dirty else clean_sql, **panel_extra)]
+    )
+
+
+def _var(**extra):
+    variable = {'type': 'query', 'name': 'self_test_var', 'label': '自测变量',
+                'query': CLEAN_SQL}
+    variable.update(extra)
+    return variable
+
+
+# 每条规则一对样本：dirty 必须被逮到**且阻断**，clean 必须零命中、退出码 0。
+# 判据不是「样本在不在」，而是「把 main() 里那条判定摘掉，这里必须红」——
+# 只测判定函数、不驱动真入口的自测，实测过是拦不住「摘掉调用点」的。
+RULE_SAMPLES = {
+    'a': _sql_case("SELECT date AS time, AVG(speed) AS value FROM positions GROUP BY 1 ORDER BY 1"),
+    'b': _sql_case("SELECT date AS time, 1 AS value FROM drives WHERE COALESCE(name,'') <> 'x -- y'"),
+    'd': _sql_case("SELECT timezone('$__timezone', start_date) AS time, 1 AS value FROM drives"),
+    'f': _sql_case("SELECT date AS time, (SELECT efficiency FROM settings WHERE id = $car_id) AS value FROM drives"),
+    'g': _sql_case("SELECT date AS time, '${payload.amount}'::INT AS value FROM drives"),
+    'l': _sql_case("SELECT date AS time, convert_nonexistent_thing(1) AS value FROM drives"),
+    'p': _sql_case("SELECT date AS time, mod(1, 2) AS value FROM drives"),
+    'q': _sql_case("SELECT date AS time, 1 AS value FROM charging_processes WHERE geofence_id = 1"),
+    'r': _sql_case("SELECT date AS time, 1 AS value FROM charges WHERE date > NOW() - interval '1 day'"),
+    's': _sql_case("SELECT date AS time, 1 AS value FROM drives WHERE car_id = [[car_id]]"),
+
+    'e': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL, fieldConfig={'defaults': {'unit': 'lengthkm' if dirty else 'none'}, 'overrides': []})]),
+    'i': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL, panel_type='volkovlabs-form-panel',
+        options={'update': {'method': 'POST', 'confirm': not dirty}})]),
+    'j': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL, title='SelfTestPanel' if dirty else '自测面板')]),
+    'm': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL, links=[{'title': '跳转', 'url': '/d/%s/x' % ('no-such-uid' if dirty else 'rule-self-test')}])]),
+    'n': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL, targets=[{'refId': 'A', 'format': 'table' if dirty else 'time_series',
+                             'rawSql': CLEAN_SQL}])]),
+    'o': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL,
+        fieldConfig={'defaults': {'custom': {'drawStyle': 'bars'}}, 'overrides': []},
+        transformations=([{'id': 'regression', 'options': {}}] if dirty else []))]),
+    't': lambda dirty: _rule_dashboard(
+        [_rule_panel(CLEAN_SQL, panel_id=1), _rule_panel(CLEAN_SQL, panel_id=1 if dirty else 2)]),
+    'u': lambda dirty: _rule_dashboard([_rule_panel(
+        CLEAN_SQL,
+        targets=[{'refId': 'A', 'format': 'time_series', 'rawSql': CLEAN_SQL,
+                  'datasource': {'type': 'grafana-postgresql-datasource',
+                                 'uid': 'some-other-ds' if dirty else 'TeslaMate'}}])]),
+    'v': lambda dirty: _rule_dashboard([_rule_panel(
+        "SELECT 1 AS value FROM drives GROUP BY 1" + ('' if dirty else ' ORDER BY 1'),
+        panel_type='stat',
+        options={'reduceOptions': {'calcs': ['lastNotNull'], 'values': False}})]),
+    # 规则 w 有三个判定落点（STALE_ALIAS / NO_MATCH / REGEX_ERROR），一条样本只盖得住一个。
+    # 冷审实测：只补了 STALE_ALIAS 那次之后，另外两个摘掉仍然四门全绿。所以按落点分列。
+    'w': [
+        ('STALE_ALIAS', lambda dirty: _rule_dashboard([_rule_panel(
+            'SELECT avg(x) AS "电压" FROM charges', panel_type='stat',
+            fieldConfig={'defaults': {}, 'overrides': [{
+                'matcher': {'id': 'byName', 'options': '电压'},
+                'properties': [{'id': 'displayName', 'value': '充电器电压'}]}]},
+            options={'reduceOptions': {'calcs': ['lastNotNull'], 'values': False,
+                                       'fields': '/^电压$/' if dirty else '/^充电器电压$/'}})]),
+         '只匹配改名前的原始'),
+        ('NO_MATCH', lambda dirty: _rule_dashboard([_rule_panel(
+            'SELECT avg(x) AS "电压" FROM charges', panel_type='stat',
+            options={'reduceOptions': {'calcs': ['lastNotNull'], 'values': False,
+                                       'fields': '/^压根没有这个名字$/' if dirty else '/^电压$/'}})]),
+         '未匹配任何最终显示名'),
+        ('REGEX_ERROR', lambda dirty: _rule_dashboard([_rule_panel(
+            'SELECT avg(x) AS "电压" FROM charges', panel_type='stat',
+            options={'reduceOptions': {'calcs': ['lastNotNull'], 'values': False,
+                                       'fields': '/^(unterminated$/' if dirty else '/^电压$/'}})]),
+         '不是合法正则'),
+    ],
+
+    'c': lambda dirty: _rule_dashboard(
+        [_rule_panel(CLEAN_SQL)],
+        variables=[_var(query=("SELECT timezone('$__timezone', now())" if dirty else CLEAN_SQL))]),
+    'h': lambda dirty: _rule_dashboard(
+        [_rule_panel(CLEAN_SQL)],
+        variables=[_var(regex=('/(?<value>.*)/' if dirty else '/(.*)/'))]),
+}
+
+# 有判定落点、但这一层不覆盖的规则，必须在这里显式记名并说明理由。
+# 完备性断言拿源码里实际出现的规则字母跟这两张表对账：新增一条规则却不给样本、
+# 也不记在这里，本自测当场红——这就是「缺样本显式挂账」而不是默默漏掉。
+RULE_ACCOUNTED = {
+    '0': 'JSON 解析失败：触发它要写一个坏 JSON 文件，属于加载期而非扫描期，'
+         '由 main() 开头的读文件路径直接 sys.exit，另有 --self-test-scope 覆盖加载面。',
+    'k': '这个落点是 k 基线**读取失败**的错误分支，不是内容判定；'
+         'k 的内容判定由 --self-test-k 的端到端层驱动真 main() 覆盖。',
+}
+
+
+def rule_letters_in_source():
+    """从本文件源码里数出所有判定落点用到的规则字母。
+
+    刻意读源码而不是维护一张手写清单：新增规则时，作者不会想起来回来改清单，
+    但源码里一定会出现那个字母，于是完备性断言会当场把它逼出来。
+    """
+    if not os.path.exists(LINT_SOURCE_PATH):
+        raise AssertionError(
+            f"读不到本门自己的源码 {LINT_SOURCE_PATH}，完备性断言无法成立。"
+            f"这道自测必须能数出源码里有哪些规则，读不到就不能放行。")
+    source = open(LINT_SOURCE_PATH, encoding='utf-8').read()
+    letters = set(re.findall(r':: ([a-z0-9]) ::', source))
+    letters |= set(re.findall(r"record\(\s*\n\s*file_rel,\s*[^,]+,\s*'([a-z0-9])'", source))
+    return letters
+
+
+def _run_rule_case(dashboard_dir, rule, case_name, build, needle, failures):
+    """跑一个判定落点的一对样本：违规必被逮到（阻断档还要真阻断），合规必零命中。"""
+    marker = ' :: %s :: ' % rule
+    tag = rule if case_name == rule else f"{rule}/{case_name}"
+    slug = f"{rule}-{case_name}".replace('/', '-')
+
+    def hits_of(output):
+        lines = [line.strip() for line in output.splitlines() if marker in line]
+        return [line for line in lines if needle in line] if needle else lines
+
+    dirty_output, dirty_code = _run_lint_on_dashboard(
+        dashboard_dir, 'rule-%s-dirty.json' % slug, build(True))
+    hits = hits_of(dirty_output)
+    if not hits:
+        failures.append(
+            f"规则 {tag}：违规样本没被逮到。把 main() 里这条判定摘掉就是这个样子——"
+            f"输出=\n{dirty_output}")
+        return
+    # 报告档规则（REPORT_RULES）是刻意不阻断的，只要求「被看见」；
+    # 阻断档必须退出码非 0，否则等于逮到了也放行。
+    if rule in REPORT_RULES:
+        if not any('[report-mode]' in line for line in hits):
+            failures.append(f"规则 {tag} 属报告档，却没以 [report-mode] 形式出现：{hits}")
+    elif dirty_code == 0:
+        failures.append(f"规则 {tag}：逮到了却没阻断，退出码仍是 0。命中={hits}")
+
+    clean_output, clean_code = _run_lint_on_dashboard(
+        dashboard_dir, 'rule-%s-clean.json' % slug, build(False))
+    clean_hits = hits_of(clean_output)
+    if clean_hits:
+        failures.append(f"规则 {tag}：合规样本被误报：{clean_hits}")
+    elif clean_code != 0:
+        failures.append(
+            f"规则 {tag}：合规样本退出码 {clean_code}（应为 0），"
+            f"说明它踩到了别的规则，样本本身要改干净——输出=\n{clean_output}")
+
+
+def run_rules_self_test():
+    """每个判定落点一对样本喂进真 main()：违规必被逮到，合规必零命中。
+
+    为什么做成表驱动而不是一条条补：实测过——29 个判定落点里 26 个可以整段摘掉，
+    而默认模式和当时的三个自测**全绿**（包括规则 w 自己另外两个落点：NO_MATCH 与
+    REGEX_ERROR）。一条规则补一次自测，就会漏一次。这里改成「源码里出现的规则字母
+    必须要么有样本、要么显式记名」，新增规则不给样本会当场红；同一条规则有多个落点的
+    按落点分列，各自钉住自己的特征串，少盖一个也会红。
+    """
+    failures = []
+    letters = rule_letters_in_source()
+    missing = sorted(letters - set(RULE_SAMPLES) - set(RULE_ACCOUNTED))
+    if missing:
+        failures.append(
+            f"这些规则在源码里有判定落点，却既没有自测样本、也没在 RULE_ACCOUNTED 里记名："
+            f"{missing}。加规则时请补一对样本（违规/合规），实在补不了就记名并写明理由。")
+
+    with _patched_scan_scope('dashboard-lint-rules-self-test.') as dashboard_dir:
+        for rule in sorted(RULE_SAMPLES):
+            entry = RULE_SAMPLES[rule]
+            # 单落点规则给一个 builder；多落点规则给 [(用例名, builder, 特征串), ...]
+            cases = entry if isinstance(entry, list) else [(rule, entry, None)]
+            for case_name, build, needle in cases:
+                _run_rule_case(dashboard_dir, rule, case_name, build, needle, failures)
+
+    if failures:
+        raise AssertionError('；'.join(failures))
+
+    case_total = sum(len(v) if isinstance(v, list) else 1 for v in RULE_SAMPLES.values())
+    print(f"规则故障注入：{len(RULE_SAMPLES)} 条规则 / {case_total} 个判定落点各一对样本"
+          f"（违规/合规）喂进真 main()，违规全部被逮到并阻断、合规零误报；"
+          f"另有 {len(RULE_ACCOUNTED)} 条显式记名（{'、'.join(sorted(RULE_ACCOUNTED))}）")
+
+
 @contextlib.contextmanager
 def _patched_scan_scope(prefix):
     """把扫描面临时指向一个空的合成目录，退出时原样还回去。
@@ -2665,6 +2872,7 @@ def main():
     self_test_w = False
     self_test_b = False
     self_test_scope = False
+    self_test_rules = False
     arguments = iter(sys.argv[1:])
     for argument in arguments:
         if argument == '--verbose-k':
@@ -2685,11 +2893,13 @@ def main():
             self_test_b = True
         elif argument == '--self-test-scope':
             self_test_scope = True
+        elif argument == '--self-test-rules':
+            self_test_rules = True
         elif argument in {'-h', '--help'}:
             print(
                 "用法: bash scripts/check-dashboard-lint.sh "
                 "[--verbose-k] [--update-baseline] [--k-contract-json PATH] "
-                "[--self-test-k] [--self-test-w] [--self-test-b] [--self-test-scope]"
+                "[--self-test-k] [--self-test-w] [--self-test-b] [--self-test-scope] [--self-test-rules]"
             )
             return
         else:
@@ -2710,6 +2920,10 @@ def main():
 
     if self_test_scope:
         run_scope_self_test()
+        return
+
+    if self_test_rules:
+        run_rules_self_test()
         return
 
     violations = []
