@@ -62,26 +62,6 @@ LEGACY_VIEW_PENDING=0
 # TeslaMate 容器检测（_teslamate_scan / teslamate_container_name）来自
 # lib/detect-containers.sh，本文件顶部已 source。
 
-teslamate_container_status() {
-    local c
-    c=$(teslamate_container_name)
-    if [ -z "$c" ]; then
-        echo unknown
-        return
-    fi
-    docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo unknown
-}
-
-# TeslaMate 实际映射到宿主机的端口（拿不到就空）。用它而不是写死 4000：
-# 用户可能用 TM_PORT 装在别的端口上，写死会探到无关服务、让等待瞬间"成功"。
-teslamate_published_port() {
-    local c p=""
-    c=$(teslamate_container_name)
-    [ -z "$c" ] && return 0
-    p=$(docker port "$c" 4000/tcp 2>/dev/null | head -1 | sed 's/.*://')
-    echo "$p"
-}
-
 wait_teslamate_migrated() {
     local db="$1" u="$2" d="$3"
     local cur last="" stable=0 code tm_st tm_port bad=0
@@ -91,11 +71,18 @@ wait_teslamate_migrated() {
             break
         fi
         tm_st=$(teslamate_container_status)
-        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ] || [ "$tm_st" = "ambiguous" ]; then
             bad=$((bad + 1))
             if [ "$bad" -ge 3 ]; then
-                echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
-                echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                if [ "$tm_st" = "ambiguous" ]; then
+                    echo "  ✗ 机器上有多个可能是 TeslaMate 的容器，认不出哪个是你正在用的："
+                    teslamate_container_candidates | sed 's/^/      /'
+                    echo "    为避免猜错，这一步按「确认不了」处理。请停掉/删掉用不上的那些"
+                    echo "    （docker rm <名字>），或在 TeslaMate 所在目录重跑本脚本，让 compose 直接给出答案。"
+                else
+                    echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
+                    echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                fi
                 return 1
             fi
         else
@@ -123,11 +110,18 @@ wait_teslamate_migrated() {
             fi
         fi
         tm_st=$(teslamate_container_status)
-        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ] || [ "$tm_st" = "ambiguous" ]; then
             bad=$((bad + 1))
             if [ "$bad" -ge 3 ]; then
-                echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
-                echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                if [ "$tm_st" = "ambiguous" ]; then
+                    echo "  ✗ 机器上有多个可能是 TeslaMate 的容器，认不出哪个是你正在用的："
+                    teslamate_container_candidates | sed 's/^/      /'
+                    echo "    为避免猜错，这一步按「确认不了」处理。请停掉/删掉用不上的那些"
+                    echo "    （docker rm <名字>），或在 TeslaMate 所在目录重跑本脚本，让 compose 直接给出答案。"
+                else
+                    echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
+                    echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
+                fi
                 return 1
             fi
             stable=0

@@ -220,7 +220,10 @@ DETECTED=$(detect_db_container)
 # 用户正在看的 Grafana——一道 lint 门绝不该有这种副作用。
 # 本门只起 postgres、从不起 grafana，所以这里唯一正确的答案是「什么都没检测到」；
 # 检测到任何东西，那都是别人的容器，当场停，不要跑下去。
-DETECTED_GF=$(detect_grafana_container)
+# 守卫必须用**与被测代码无关**的探针：调被测函数的话，那个函数一旦瞎了守卫就跟着瞎，
+# 而且会把「被测代码看不见东西」说成「宿主机是干净的」——正好是相反的意思。
+DETECTED_GF=$(docker ps -a --format '{{.Names}}	{{.Image}}' 2>/dev/null \
+    | grep -iE 'teslamate.*grafana|(^|[-_])grafana(	|[-_][0-9]+	)' | cut -f1 | head -1 || true)
 [ -z "$DETECTED_GF" ] \
     || die "detect_grafana_container 找到了「${DETECTED_GF}」，那不是本门起的容器；跑下去会执行 upgrade.sh 第 8 步的 docker restart 把它重启掉。先停掉该容器（或换一台没跑 TeslaMate Grafana 的机器）再跑这道门"
 
@@ -230,7 +233,8 @@ DETECTED_GF=$(detect_grafana_container)
 # 「反复重启/已退出」→ 跳过单位换算函数 → 对照组以「✗ 升级失败」收场，而这跟被测代码毫无关系。
 # 这一条以前只写在下面对照组的注释里，光靠注释救不了人：实测过一次，红出来的表象是
 # 「✗ 升级失败：关键 SQL 未全部就绪」，一路往下查才查到是宿主机上的残留容器。
-DETECTED_TM=$(teslamate_container_name)
+DETECTED_TM=$(docker ps -a --format '{{.Names}}	{{.Image}}' 2>/dev/null \
+    | grep -iE '(^|[-_])teslamate([-_][0-9]+)?	|teslamate/teslamate' | cut -f1 | head -1 || true)
 [ -z "$DETECTED_TM" ] \
     || die "宿主机上有 TeslaMate 形状的容器「${DETECTED_TM}」（状态：$(docker inspect -f '{{.State.Status}}' "$DETECTED_TM" 2>/dev/null || echo 未知)），那不是本门起的容器。upgrade.sh 会读它的状态来判断 TeslaMate 的迁移做完没有，于是这道门的结论会被它决定，而不是被被测代码决定。先 docker rm 掉它（或换一台干净的机器）再跑这道门"
 

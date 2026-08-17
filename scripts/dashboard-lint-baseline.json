@@ -568,13 +568,6 @@
       "count": 1
     },
     {
-      "file": "grafana/dashboards/zh-cn/ContinuousTrips.json",
-      "panelId": 2,
-      "matcher": "能耗",
-      "propertiesHash": "sha256:b9821aa7a8aa61c727b124b76677922e89e023c50939487ae1a8cf9d6d6711ef",
-      "count": 1
-    },
-    {
       "file": "grafana/dashboards/zh-cn/CurrentChargeView.json",
       "panelId": 16,
       "matcher": "car_id",

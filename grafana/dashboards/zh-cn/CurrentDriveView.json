@@ -352,6 +352,22 @@
                 "value": "功率"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "elevation_ft"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "海拔 (ft)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
           }
         ]
       },

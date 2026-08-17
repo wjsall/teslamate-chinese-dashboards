@@ -278,13 +278,9 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "可用电量"
+              "options": "usable_battery_level"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "可用电量"
-              },
               {
                 "id": "unit",
                 "value": "percent"
@@ -333,7 +329,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "可用电量"
+              "options": "usable_battery_level"
             },
             "properties": [
               {
@@ -348,7 +344,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "电量"
+              "options": "battery_level"
             },
             "properties": [
               {
@@ -362,8 +358,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "续航(预估)"
+              "id": "byRegexp",
+              "options": "range_estimated_.*"
             },
             "properties": [
               {
@@ -377,8 +373,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "续航(理想)"
+              "id": "byRegexp",
+              "options": "range_ideal_.*"
             },
             "properties": [
               {
@@ -408,7 +404,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "速度"
+              "options": "speed_kmh"
             },
             "properties": [
               {
@@ -422,8 +418,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "续航(额定)"
+              "id": "byRegexp",
+              "options": "range_rated_.*"
             },
             "properties": [
               {
@@ -957,7 +953,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "空调"
+              "options": "is_climate_on"
             },
             "properties": [
               {
@@ -1073,7 +1069,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "空调"
+              "options": "is_climate_on"
             },
             "properties": [
               {
@@ -1083,10 +1079,6 @@
               {
                 "id": "custom.axisPlacement",
                 "value": "hidden"
-              },
-              {
-                "id": "displayName",
-                "value": "空调"
               }
             ]
           },

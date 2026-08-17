@@ -187,18 +187,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "power"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "功率 (kW)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "elevation_m"
             },
             "properties": [
@@ -247,32 +235,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Battery heater (On/Off)"
+              "options": "battery_heater"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "电池加热(开/关)"
-              },
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "semi-dark-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "海拔"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#ccccdc",
                   "mode": "fixed"
                 }
               }
@@ -296,36 +265,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Power (kW)"
+              "options": "power"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "功率(kW)"
-              },
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "semi-dark-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Rated Efficiency (kWh/100km)"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "额定能耗(Wh/km)"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-green",
                   "mode": "fixed"
                 }
               }
@@ -349,25 +295,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Speed (km/h)"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "速度(km/h)"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "speed_kmh"
             },
             "properties": [
@@ -377,22 +304,6 @@
                   "fixedColor": "light-blue",
                   "mode": "fixed"
                 }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "海拔"
-            },
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "min",
-                "value": 0
               }
             ]
           },
@@ -445,6 +356,37 @@
               {
                 "id": "displayName",
                 "value": "电池电量"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "elevation_ft"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "elevation_ft"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "min",
+                "value": 0
               }
             ]
           }

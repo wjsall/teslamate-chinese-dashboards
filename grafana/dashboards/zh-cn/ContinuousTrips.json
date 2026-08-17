@@ -645,7 +645,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "能耗"
+              "options": "consumption_kwh"
             },
             "properties": [
               {

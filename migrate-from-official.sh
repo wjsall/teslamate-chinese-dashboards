@@ -375,47 +375,85 @@ check_pg_version() {
 #   ③ 按镜像找（用户给容器起了完全不相干的名字时的兜底）
 # 探不到会让下面的存活判据退化成「不判」，所以这里要尽量探得到——实测过：容器叫
 # teslamate-app 时只有 ③ 能找到，而少了它，一个正在崩溃重启的 TeslaMate 会被当成健康。
-# 在一个范围内按「容器名」再按「镜像」找 TeslaMate。$1 = running（只看运行中）/ all（含已停止）。
-# 刻意不用数组传 docker ps 参数：NAS 和 macOS 上还有 Bash 3.2。
+# 列出**全部**候选，不是挑一个。$1 = running（只看运行中）/ all（含已停止）。
+# 刻意不用数组：NAS 和 macOS 上还有 Bash 3.2。
 _teslamate_scan() {
-    local scope="$1" c="" rows=""
+    local scope="$1" rows="" by_name=""
     if [ "$scope" = "all" ]; then
         rows=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true)
     else
         rows=$(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true)
     fi
-    c=$(printf '%s\n' "$rows" | cut -f1 \
+    by_name=$(printf '%s\n' "$rows" | cut -f1 \
         | grep -iE '(^|[-_])teslamate([-_][0-9]+)?$' \
-        | grep -viE 'database|postgres|grafana|mosquitto' | head -1 || true)
-    if [ -z "$c" ]; then
-        c=$(printf '%s\n' "$rows" \
-            | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
-            | cut -f1 | head -1 || true)
+        | grep -viE 'database|postgres|grafana|mosquitto' || true)
+    if [ -n "$by_name" ]; then
+        printf '%s\n' "$by_name"
+        return 0
     fi
-    echo "$c"
+    printf '%s\n' "$rows" \
+        | grep -iE '(^|[[:space:]])teslamate/teslamate(:|[[:space:]]|$)' \
+        | cut -f1 || true
 }
 
-teslamate_container_name() {
+# 候选清单。compose 给得出答案就用它——它知道自己的 project，唯一且权威。
+# 否则**把运行中的和已停止的一起列出来**，不做任何偏好。
+#
+# 这里刻意不写「运行中优先」：那样会把一个已经崩掉的真身藏起来。实测过这个形状——
+# 用户的 TeslaMate 已退出，旁边有个更早创建、仍在运行的同名残留（没停干净的旧栈、
+# 上一次部署、迁移过程中还没下线的官方栈），「运行中优先」会确定性地选中那个健康的假货，
+# 判定「迁移已完成」→ 照装 install-unit-functions.sql → 撞上游那条不带 OR REPLACE 的迁移 →
+# duplicate_function → TeslaMate 从此反复重启，而且重跑脚本也修不好。
+# 少列一个候选的代价，比多列一个大得多。
+teslamate_container_candidates() {
     local c=""
     c=$(${DC:-docker compose} ps -q teslamate 2>/dev/null | head -1 || true)
-    # 先在运行中的容器里找，找不到才把已停止的算进来。
-    # 只扫 -a 会踩这个坑：docker ps -a 按创建时间倒序，宿主机上只要躺着一个更晚创建、
-    # 已经停掉的 TeslaMate（改过名的旧栈、试过一次的部署、跑过一遍的测试），head -1 就会
-    # 选中那个死的 → 存活判据读出 exited → 判定「它的迁移不可能完成」→ 跳过单位换算函数
-    # 并以「✗ 升级失败」收场，而用户真正在跑的 TeslaMate 一切正常。
-    # 回落仍保留 -a：一个都没运行时，「反复重启/已退出」那条告警本来就要能看见死容器。
-    [ -z "$c" ] && c=$(_teslamate_scan running)
-    [ -z "$c" ] && c=$(_teslamate_scan all)
-    echo "$c"
+    if [ -n "$c" ]; then
+        printf '%s\n' "$c"
+        return 0
+    fi
+    _teslamate_scan all | grep -v '^[[:space:]]*$' || true
+    return 0
 }
 
-teslamate_container_status() {
-    local c
-    c=$(teslamate_container_name)
-    if [ -z "$c" ]; then
-        echo unknown
-        return
+_teslamate_candidate_count() {
+    teslamate_container_candidates | grep -c '[^[:space:]]' || true
+}
+
+# 唯一候选才返回名字。**多个候选一律返回空——不猜。**
+#
+# 为什么不能猜：这个名字最终决定「TeslaMate 自己的迁移做完没有」，而那一步决定要不要装
+# install-unit-functions.sql。装早了会让上游那条不带 OR REPLACE 的迁移撞 duplicate_function，
+# TeslaMate 从此反复重启、重跑脚本也修不好。两种猜法各有一侧会输：
+#   按创建时间挑 → 用户的 TeslaMate 在跑、旁边躺着个更晚创建的死容器 → 误判成"起不来"，
+#                  跳过单位换算函数并报「✗ 升级失败」（红横幅，用户能重跑，可自愈）；
+#   按"运行中优先"挑 → 用户的 TeslaMate 已经崩了、旁边有个更早创建仍在跑的同名残留 →
+#                  误判成"健康"，照装不误 → 撞上面那个不可自愈的坑。
+# 所以多候选时不选边，交给 teslamate_container_status 报 ambiguous，由调用方按"确认不了"处理。
+teslamate_container_name() {
+    local list count
+    list=$(teslamate_container_candidates)
+    count=$(_teslamate_candidate_count)
+    if [ "${count:-0}" -eq 1 ]; then
+        printf '%s\n' "$list" | grep '[^[:space:]]' | head -1
+        return 0
     fi
+    echo ""
+}
+
+# 状态。0 个候选 → unknown；多个 → ambiguous（调用方必须按"确认不了"对待，不能当健康）。
+teslamate_container_status() {
+    local c count
+    count=$(_teslamate_candidate_count)
+    if [ "${count:-0}" -eq 0 ]; then
+        echo unknown
+        return 0
+    fi
+    if [ "${count:-0}" -gt 1 ]; then
+        echo ambiguous
+        return 0
+    fi
+    c=$(teslamate_container_name)
     docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo unknown
 }
 
@@ -438,9 +476,16 @@ wait_teslamate_migrated() {
             break
         fi
         tm_st=$(teslamate_container_status)
-        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ] || [ "$tm_st" = "ambiguous" ]; then
             bad=$((bad + 1))
             if [ "$bad" -ge 3 ]; then
+                if [ "$tm_st" = "ambiguous" ]; then
+                    echo "  ✗ 机器上有多个可能是 TeslaMate 的容器，认不出哪个是你正在用的："
+                    teslamate_container_candidates | sed 's/^/        /'
+                    echo "    为避免猜错，这一步按「确认不了」处理。请删掉用不上的那些（docker rm 名字），"
+                    echo "    或在 TeslaMate 所在目录重跑本脚本，让 compose 直接给出答案。"
+                    return 1
+                fi
                 echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
                 echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
                 return 1
@@ -470,9 +515,16 @@ wait_teslamate_migrated() {
             fi
         fi
         tm_st=$(teslamate_container_status)
-        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ]; then
+        if [ "$tm_st" = "restarting" ] || [ "$tm_st" = "exited" ] || [ "$tm_st" = "ambiguous" ]; then
             bad=$((bad + 1))
             if [ "$bad" -ge 3 ]; then
+                if [ "$tm_st" = "ambiguous" ]; then
+                    echo "  ✗ 机器上有多个可能是 TeslaMate 的容器，认不出哪个是你正在用的："
+                    teslamate_container_candidates | sed 's/^/        /'
+                    echo "    为避免猜错，这一步按「确认不了」处理。请删掉用不上的那些（docker rm 名字），"
+                    echo "    或在 TeslaMate 所在目录重跑本脚本，让 compose 直接给出答案。"
+                    return 1
+                fi
                 echo "  ✗ TeslaMate 容器状态为 ${tm_st}（反复重启/已退出），它的迁移不可能完成。"
                 echo "    先看 docker logs 排掉 TeslaMate 自身的启动问题，再重跑本脚本。"
                 return 1

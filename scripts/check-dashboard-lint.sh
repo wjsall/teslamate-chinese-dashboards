@@ -2137,6 +2137,115 @@ def _b_dashboard(dirty):
     }
 
 
+def _scope_dashboard(uid, title):
+    """范围自检用的最小合规仪表盘（一条能过全部规则的 SQL）。"""
+    return {
+        'uid': uid, 'title': title, 'schemaVersion': 39,
+        'panels': [{
+            'id': 1, 'type': 'timeseries', 'title': title,
+            'targets': [{'refId': 'A', 'format': 'time_series',
+                         'rawSql': "SELECT date AS time, 1 AS value FROM drives"}],
+        }],
+    }
+
+
+def run_scope_self_test():
+    """扫描面范围自检自己也要被测：装进镜像却没被扫的仪表盘，必须报红。
+
+    为什么单独做一个：scan_scope_errors() 是补「四维对账盖不住把 glob 收窄」那个洞的，
+    而它自己一度处在同一形状里——三个自测都把 SCAN_SCOPE_SELF_CHECK 关掉，于是把整个
+    函数短路成 return [] 之后，默认模式和三个自测全绿。这一层专门盯它。
+
+    四种 COPY 写法各测一遍：裸 COPY、带 --chown=、带 --link、JSON 数组形式。
+    前一版的正则只认「COPY 后紧跟 .json glob」，后三种整行匹配不上被无声跳过，
+    再把文件放到 DASHBOARD_HOME 之外，兜底那层也看不见——实测能做到完全静默放行。
+    """
+    global DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST, DOCKERFILE_PATH, DASHBOARD_HOME
+    saved = (DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST, DOCKERFILE_PATH, DASHBOARD_HOME)
+    failures = []
+    forms = [
+        ('裸 COPY', 'COPY {src} /dashboards_extra/'),
+        ('COPY --chown=', 'COPY --chown=472:472 {src} /dashboards_extra/'),
+        ('COPY --link', 'COPY --link {src} /dashboards_extra/'),
+        ('JSON 数组形式', 'COPY ["{src}", "/dashboards_extra/"]'),
+    ]
+    with tempfile.TemporaryDirectory(prefix='dashboard-lint-scope-self-test.') as workdir:
+        scanned_dir = os.path.join(workdir, 'scanned')
+        extra_dir = os.path.join(workdir, 'extra')
+        os.makedirs(scanned_dir)
+        os.makedirs(extra_dir)
+        baseline_path = os.path.join(workdir, 'baseline.json')
+        with open(baseline_path, 'w', encoding='utf-8') as handle:
+            json.dump({'version': K_BASELINE_VERSION,
+                       'key': ['file', 'panelId', 'matcher', 'propertiesHash'],
+                       'entries': []}, handle)
+        with open(os.path.join(scanned_dir, 'scanned.json'), 'w', encoding='utf-8') as handle:
+            json.dump(_scope_dashboard('scope-scanned', '被扫到的'), handle, ensure_ascii=False)
+        extra_path = os.path.join(extra_dir, 'extra.json')
+        with open(extra_path, 'w', encoding='utf-8') as handle:
+            json.dump(_scope_dashboard('scope-extra', '没被扫到的'), handle, ensure_ascii=False)
+        dockerfile_path = os.path.join(workdir, 'Dockerfile')
+
+        def run(dockerfile_body):
+            with open(dockerfile_path, 'w', encoding='utf-8') as handle:
+                handle.write(dockerfile_body)
+            saved_argv = sys.argv
+            buffer = io.StringIO()
+            sys.argv = ['check-dashboard-lint']
+            try:
+                with contextlib.redirect_stdout(buffer):
+                    main()
+                code = 0
+            except SystemExit as error:
+                code = error.code if isinstance(error.code, int) else 1
+            finally:
+                sys.argv = saved_argv
+            return buffer.getvalue(), code
+
+        try:
+            DASHBOARD_GLOBS = [os.path.join(scanned_dir, '*.json')]
+            K_BASELINE_PATH = baseline_path
+            WHITELIST = []
+            DOCKERFILE_PATH = dockerfile_path
+            DASHBOARD_HOME = workdir
+
+            base_copy = 'COPY %s /dashboards/\n' % os.path.join(scanned_dir, '*.json')
+            for label, template in forms:
+                body = base_copy + template.format(src=os.path.join(extra_dir, '*.json')) + '\n'
+                output, code = run(body)
+                if code == 0:
+                    failures.append(
+                        f"范围自检漏掉「{label}」：这份仪表盘装进了镜像却不在扫描面内，退出码仍是 0。"
+                        f"输出=\n{output}"
+                    )
+                elif 'extra.json' not in output:
+                    failures.append(
+                        f"范围自检对「{label}」报红了，但没点出是哪个文件（extra.json）。输出=\n{output}"
+                    )
+
+            # 反向样本：扫描面外那份连文件都不存在，只 COPY 扫描面内的，必须绿。
+            # （extra.json 留着的话会被「孤儿」那层正确逮到——那是另一条判据，不是这里要测的。）
+            os.remove(extra_path)
+            clean_output, clean_code = run(base_copy)
+            if clean_code != 0:
+                failures.append(f"范围自检反向样本被误报：退出码 {clean_code}，输出=\n{clean_output}")
+
+            # 搬运指令读不懂时必须报红，不能静默跳过
+            broken_output, broken_code = run(base_copy + 'COPY\n')
+            if broken_code == 0:
+                failures.append(f"读不懂的 COPY 行被静默跳过了，退出码仍是 0。输出=\n{broken_output}")
+        finally:
+            (DASHBOARD_GLOBS, K_BASELINE_PATH, WHITELIST,
+             DOCKERFILE_PATH, DASHBOARD_HOME) = saved
+
+    if failures:
+        raise AssertionError('；'.join(failures))
+
+    print("范围自检故障注入：裸 COPY / --chown= / --link / JSON 数组 四种写法各埋一份"
+          "「装进镜像但不在扫描面内」的仪表盘，全部被逮到并点名；合规反向样本零误报；"
+          "读不懂的搬运指令报红而不是静默跳过")
+
+
 @contextlib.contextmanager
 def _patched_scan_scope(prefix):
     """把扫描面临时指向一个空的合成目录，退出时原样还回去。
@@ -2256,25 +2365,92 @@ def run_b_self_test():
           "覆盖面计数 1/1/1/1")
 
 
+def dockerfile_logical_lines():
+    """把 Dockerfile 读成「逻辑行」：续行（行尾反斜杠）拼起来，注释和空行丢掉。"""
+    lines = []
+    buffer = ''
+    with open(DOCKERFILE_PATH, encoding='utf-8') as handle:
+        for raw in handle:
+            stripped = raw.rstrip('\n')
+            if not buffer and not stripped.strip():
+                continue
+            if not buffer and stripped.lstrip().startswith('#'):
+                continue
+            if stripped.rstrip().endswith('\\'):
+                buffer += stripped.rstrip()[:-1] + ' '
+                continue
+            lines.append(buffer + stripped)
+            buffer = ''
+    if buffer.strip():
+        lines.append(buffer)
+    return lines
+
+
 def dockerfile_dashboard_files():
-    """从 Dockerfile 的 COPY 行读出「镜像里真正装了哪些仪表盘」。
+    """从 Dockerfile 读出「镜像里真正装了哪些仪表盘」，外加「读不懂的搬运行」。
 
     这是扫描面范围自检的真相源：用户跑的是镜像，镜像装了什么，lint 就必须扫什么。
-    只认 `COPY <某个 .json glob> <目标目录>` 这种形态，读不到就返回 None，由调用方报错——
-    读不到不等于没问题，静默放过才是问题。
+    返回 (装进镜像的 .json 路径集合, 读不懂的行列表)；Dockerfile 不存在时返回 (None, [])。
+
+    **读不懂的行必须回给调用方报错，不能静默丢掉**——静默丢弃正是这道门被绕过去的方式：
+    上一版的正则要求 COPY 后紧跟 .json glob，于是 `COPY --chown=…`、`COPY --link …`
+    这些 flag 形式整行匹配不上、被无声跳过；再把文件放到 DASHBOARD_HOME 之外，
+    连兜底那层也看不见，门就全绿了。实测过这个组合：带违规的仪表盘装进镜像、
+    一条 lint 规则都没跑过，退出码 0。而 flag 形式不是假想写法——本仓 Dockerfile
+    自己就有 `COPY --chmod=0444 scripts/diagnose.sh …`。
     """
     if not os.path.exists(DOCKERFILE_PATH):
-        return None
-    copied = []
-    pattern = re.compile(r'^\s*COPY\s+(\S+\.json)\s+(\S+)\s*$')
-    with open(DOCKERFILE_PATH, encoding='utf-8') as handle:
-        for line in handle:
-            match = pattern.match(line)
-            if match:
-                copied.extend(glob.glob(match.group(1)))
-    if not copied:
-        return None
-    return {os.path.normpath(path) for path in copied}
+        return None, []
+
+    copied, unparsed = [], []
+    # 用 \b 而不是 \s+：`COPY`（后面什么都没有）也要匹配上，好落进下面的「读不懂」分支。
+    # 要求 \s+ 的话这种行连正则都进不来，又变成静默跳过。
+    verb = re.compile(r'^\s*(COPY|ADD)\b\s*(.*)$', re.IGNORECASE)
+    for line in dockerfile_logical_lines():
+        match = verb.match(line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+
+        # 先剥 flag：--chown=… / --chmod=… / --link / --from=… / --parents 等
+        from_stage = False
+        while rest.startswith('--'):
+            flag, _, rest = rest.partition(' ')
+            if flag.lower().startswith('--from='):
+                from_stage = True
+            rest = rest.strip()
+        if from_stage:
+            continue        # 从别的构建阶段搬，不是从仓库搬，与扫描面无关
+
+        if rest.startswith('['):
+            try:
+                parts = json.loads(rest)
+            except ValueError:
+                unparsed.append(line.strip())
+                continue
+            if not isinstance(parts, list) or len(parts) < 2:
+                unparsed.append(line.strip())
+                continue
+        else:
+            parts = rest.split()
+            if len(parts) < 2:
+                unparsed.append(line.strip())
+                continue
+
+        for source in parts[:-1]:
+            if not source.endswith('.json'):
+                continue
+            hits = glob.glob(source)
+            if not hits:
+                # COPY 的源一个都匹配不上，docker build 本身就会失败；
+                # 在这里报出来比等构建挂掉更早、也更清楚。
+                unparsed.append(f"{line.strip()}（源 {source!r} 在仓库里匹配不到任何文件）")
+                continue
+            copied.extend(hits)
+
+    if not copied and not unparsed:
+        return None, []
+    return {os.path.normpath(path) for path in copied}, unparsed
 
 
 def discover_dashboard_like_files():
@@ -2318,7 +2494,7 @@ def scan_scope_errors(scanned_files):
         return []
 
     errors = []
-    shipped = dockerfile_dashboard_files()
+    shipped, unparsed = dockerfile_dashboard_files()
     if shipped is None:
         errors.append(
             f"读不出 {DOCKERFILE_PATH} 里的仪表盘 COPY 行，扫描面范围无法与镜像实际装的内容对账。"
@@ -2334,12 +2510,20 @@ def scan_scope_errors(scanned_files):
                 f"这正是 v1.8.0 漏审 internal/ 的形状——请把 DASHBOARD_GLOBS 补齐，不要改这里。"
             )
 
+    for line in unparsed:
+        errors.append(
+            f"{DOCKERFILE_PATH} 里这条搬运指令解析不了，因此它装进镜像的东西没被算进扫描面对账："
+            f"{line}。解析不了就当没有，正是这道门被绕过去的方式，所以这里一律报红。"
+            f"请改 dockerfile_dashboard_files() 让它认得这种写法，不要绕开。"
+        )
+
     orphans = sorted(discover_dashboard_like_files() - scanned_files - (shipped or set()))
     if orphans:
         errors.append(
             f"{DASHBOARD_HOME}/ 下这些文件长得像 Grafana 仪表盘，既没被 Dockerfile COPY 进镜像、"
-            f"也不在 lint 扫描面内：{orphans}。要么接上（Dockerfile + DASHBOARD_GLOBS），"
-            f"要么挪出 {DASHBOARD_HOME}/。"
+            f"也不在 lint 扫描面内：{orphans}。请接上（Dockerfile 的 COPY + DASHBOARD_GLOBS 两处都要）。"
+            f"**不要靠把文件挪出 {DASHBOARD_HOME}/ 来消掉这条**——挪出去只是让这层兜底看不见它，"
+            f"文件照样会被 COPY 进镜像、照样没人检查。"
         )
     return errors
 
@@ -2480,6 +2664,7 @@ def main():
     self_test_k = False
     self_test_w = False
     self_test_b = False
+    self_test_scope = False
     arguments = iter(sys.argv[1:])
     for argument in arguments:
         if argument == '--verbose-k':
@@ -2498,11 +2683,13 @@ def main():
             self_test_w = True
         elif argument == '--self-test-b':
             self_test_b = True
+        elif argument == '--self-test-scope':
+            self_test_scope = True
         elif argument in {'-h', '--help'}:
             print(
                 "用法: bash scripts/check-dashboard-lint.sh "
                 "[--verbose-k] [--update-baseline] [--k-contract-json PATH] "
-                "[--self-test-k] [--self-test-w] [--self-test-b]"
+                "[--self-test-k] [--self-test-w] [--self-test-b] [--self-test-scope]"
             )
             return
         else:
@@ -2519,6 +2706,10 @@ def main():
 
     if self_test_b:
         run_b_self_test()
+        return
+
+    if self_test_scope:
+        run_scope_self_test()
         return
 
     violations = []

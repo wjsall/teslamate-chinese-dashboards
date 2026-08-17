@@ -85,11 +85,13 @@ done
 echo "  本项目 SQL 已装"
 
 echo ""
-python3 - "$DB" "${1:-}" <<'PY'
+python3 - "$DB" "$@" <<'PY'
 import json, glob, os, re, subprocess, sys
 
 container = sys.argv[1]
-update_baseline = len(sys.argv) > 2 and sys.argv[2] == '--update-baseline'
+_flags = set(sys.argv[2:])
+update_baseline = '--update-baseline' in _flags
+force_baseline = '--force' in _flags
 results = {}
 
 # 把 Grafana 的变量与宏换成合法常量。目标只是让语句能被解析，
@@ -114,8 +116,19 @@ def render(sql, filler="'1'"):
     # 既进不了基线、也不算失败，静静地一条规则都跑不到。实测：全仓 40 条用了 $__time()，
     # 40 条全在基线之外，占未覆盖总数的绝大部分。
     # 注意先后无所谓：$__timeFilter( / $__timeGroup( 里 "time" 后面不是左括号，匹配不上。
-    s = re.sub(r'\$__timeEpoch\(([^)]*)\)', r'extract(epoch from \1)::bigint AS time', s)
-    s = re.sub(r'\$__time\(([^)]*)\)', r'\1 AS time', s)
+    # 与上游逐字对齐（v13.1.3 pkg/tsdb/grafana-postgresql-datasource/macros.go）：
+    #   case "__time":      return fmt.Sprintf("%s AS \"time\"", args[0])
+    #   case "__timeEpoch": return fmt.Sprintf("extract(epoch from %s) as \"time\"", args[0])
+    # 两点必须照抄，写歪了就是把「其实跑不通的 SQL」冻进基线、门从此保护一个错误的形状：
+    #   ① **不加 ::bigint**。PG14+ 的 extract() 返回 numeric，加了 cast 会把类型变掉：
+    #      `extract(epoch from x)::bigint & 1` 能解析，而上游真实展开的 numeric 版本报
+    #      operator does not exist: numeric & integer。
+    #   ② 上游对参数 `strings.Split(groups[2], ",")` 后**只取 args[0]**，多余参数丢掉。
+    def _first_arg(match):
+        return match.group(1).split(',')[0].strip()
+    s = re.sub(r'\$__timeEpoch\(([^)]*)\)',
+               lambda m: 'extract(epoch from %s) as "time"' % _first_arg(m), s)
+    s = re.sub(r'\$__time\(([^)]*)\)', lambda m: '%s AS "time"' % _first_arg(m), s)
     s = s.replace('$__timeFrom()', "(now() - interval '30 days')").replace('$__timeTo()', 'now()')
     s = s.replace('$__timezone', 'Asia/Shanghai')
     s = re.sub(r"\$__interval\w*", "'1 day'", s)
@@ -240,6 +253,28 @@ passing = {k for k in results if results[k] is None}
 failing = {k: v for k, v in results.items() if v is not None}
 
 if update_baseline:
+    # 棘轮不能被自己清零。原来这里是无条件改写：渲染器一旦坏掉（改一行正则就够），
+    # passing 塌成一小撮，跑一次 --update-baseline 就把基线冻在塌掉的状态，此后永远绿。
+    # 两道闸，抄的是 check-dashboard-lint.sh 里 k 基线那套：
+    #   ① 当前树还有解析失败的，先修完再收基线；
+    #   ② 新基线比旧基线少，八成是渲染器退化而不是真删了面板 —— 要缩必须显式 --force。
+    old_baseline = set()
+    if os.path.exists(BASELINE):
+        old_baseline = {l.strip() for l in open(BASELINE, encoding='utf-8')
+                        if l.strip() and not l.startswith('#')}
+    if failing:
+        print(f'  拒绝更新基线：当前树还有 {len(failing)} 条解析失败，先修完再收基线')
+        for k, v in sorted(failing.items())[:10]:
+            print(f'    {k}\n      {v}')
+        sys.exit(1)
+    if len(passing) < len(old_baseline) and not force_baseline:
+        print(f'  拒绝更新基线：新基线 {len(passing)} 条 < 旧基线 {len(old_baseline)} 条，'
+              f'缩水 {len(old_baseline) - len(passing)} 条。')
+        print('    基线缩水通常意味着渲染器退化（而不是真删了面板），收进去就等于把退化冻成新常态。')
+        print('    确认是有意删除面板，再加 --force 重跑。掉出来的是：')
+        for k in sorted(old_baseline - passing)[:10]:
+            print(f'      {k}')
+        sys.exit(1)
     with open(BASELINE, 'w', encoding='utf-8') as fh:
         fh.write('# 自动生成——跑 `bash scripts/check-dashboard-sql-runs.sh --update-baseline` 重建。\n')
         fh.write('# 列出「能被 PostgreSQL 解析」的面板查询。不在表里的多半是变量渲染器还原不了，\n')

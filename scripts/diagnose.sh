@@ -119,9 +119,20 @@ fi
 echo ""
 
 # Compose 优先探测 service（含已停止容器），失败再兼容 v2 连字符 / v1 下划线容器名。
+#
+# 每一档都先在**运行中**的里面找，找不到才把已停止的算进来。诊断脚本必须能看见已停止的
+# 容器（要定位它、要打它的日志），但不能因此优先选中它：`docker ps -a` 按创建时间倒序，
+# 机器上留着一个更晚创建、已经停掉的同名容器时，会选中那个死的 → 报「teslamate 状态异常:
+# created」、记 container_down、打错容器的日志，还会从错的容器里读 DISABLE_MQTT / MQTT_HOST
+# 连环误诊——而这份输出正是给 issue 报告人当第一手证据用的。
 detect_service_container() {
     local svc="$1" c=""
-    c=$($DC ps -aq "$svc" 2>/dev/null | head -1 || true)
+    c=$($DC ps -q "$svc" 2>/dev/null | head -1 || true)
+    [ -z "$c" ] && c=$($DC ps -aq "$svc" 2>/dev/null | head -1 || true)
+    if [ -z "$c" ]; then
+        c=$(docker ps --format '{{.Names}}' 2>/dev/null \
+            | grep -E "^${PROJECT}[-_]${svc}[-_][0-9]+$|^${svc}$" | head -1 || true)
+    fi
     if [ -z "$c" ]; then
         c=$(docker ps -a --format '{{.Names}}' 2>/dev/null \
             | grep -E "^${PROJECT}[-_]${svc}[-_][0-9]+$|^${svc}$" | head -1 || true)
