@@ -256,17 +256,26 @@ if update_baseline:
     # 棘轮不能被自己清零。原来这里是无条件改写：渲染器一旦坏掉（改一行正则就够），
     # passing 塌成一小撮，跑一次 --update-baseline 就把基线冻在塌掉的状态，此后永远绿。
     # 两道闸，抄的是 check-dashboard-lint.sh 里 k 基线那套：
-    #   ① 当前树还有解析失败的，先修完再收基线；
+    #   ① **基线里的**条目解析失败（= 真回归），先修完再收基线；
     #   ② 新基线比旧基线少，八成是渲染器退化而不是真删了面板 —— 要缩必须显式 --force。
+    #
+    # ① 的判据必须限定在**基线内**，不能写成「有任何失败就拒绝」：渲染器还原不出来的那批
+    # （$__time 之外的宏、多值变量插在标识符位置之类）本来就长期失败、也本来就不进基线，
+    # 门的正常模式一直容忍它们。写成「任何失败都拒绝」的话，--update-baseline 从此永远
+    # 跑不了 —— 实测过：改一个面板标题（标题是基线 key 的一部分）就再也收不进基线了。
     old_baseline = set()
     if os.path.exists(BASELINE):
         old_baseline = {l.strip() for l in open(BASELINE, encoding='utf-8')
                         if l.strip() and not l.startswith('#')}
-    if failing:
-        print(f'  拒绝更新基线：当前树还有 {len(failing)} 条解析失败，先修完再收基线')
-        for k, v in sorted(failing.items())[:10]:
+    regressed = {k: v for k, v in failing.items() if k in old_baseline}
+    if regressed:
+        print(f'  拒绝更新基线：基线里有 {len(regressed)} 条解析失败（真回归），先修完再收基线')
+        for k, v in sorted(regressed.items())[:10]:
             print(f'    {k}\n      {v}')
         sys.exit(1)
+    if failing:
+        print(f'  提示：另有 {len(failing)} 条解析失败，但都不在基线内（渲染器还原不出来的那批），'
+              f'按现状不纳入基线')
     if len(passing) < len(old_baseline) and not force_baseline:
         print(f'  拒绝更新基线：新基线 {len(passing)} 条 < 旧基线 {len(old_baseline)} 条，'
               f'缩水 {len(old_baseline) - len(passing)} 条。')

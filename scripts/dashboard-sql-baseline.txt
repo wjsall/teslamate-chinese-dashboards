@@ -76,7 +76,7 @@ grafana/dashboards/zh-cn/CurrentChargeView.json::11::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::12::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::14::交流输入电流
 grafana/dashboards/zh-cn/CurrentChargeView.json::15::交流输入电压
-grafana/dashboards/zh-cn/CurrentChargeView.json::16::功率
+grafana/dashboards/zh-cn/CurrentChargeView.json::16::平均功率
 grafana/dashboards/zh-cn/CurrentChargeView.json::17::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::1::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::2::当前充电状态
