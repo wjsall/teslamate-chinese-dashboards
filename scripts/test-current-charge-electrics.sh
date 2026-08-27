@@ -1,9 +1,10 @@
 #!/bin/bash
-# 充电相关仪表盘的电压、电流、功率、电池状态与下钻契约行为测试。
+# 充电相关仪表盘的电压、电流、功率、电池状态、不完整充电与下钻契约行为测试。
 #
 # 测试直接从目标 dashboard JSON 读取 rawSql，只替换 Grafana 变量/宏，
 # 再把真实查询交给一次性 PostgreSQL 执行。测试覆盖 stat、gauge 和逐行曲线，
-# 确保交流保留上游 V/A，直流或无效字段显示 No data。
+# 确保交流保留上游 V/A，直流或无效字段显示 No data，并覆盖 smallint 溢出与
+# 进行中充电的起始电量。
 #
 # 用法：bash scripts/test-current-charge-electrics.sh
 # 依赖：docker、python3
@@ -443,15 +444,20 @@ CREATE TABLE charging_processes (
   id INTEGER PRIMARY KEY,
   car_id INTEGER NOT NULL,
   start_date TIMESTAMP NOT NULL,
-  end_date TIMESTAMP
+  end_date TIMESTAMP,
+  charge_energy_added NUMERIC,
+  charge_energy_used NUMERIC,
+  start_battery_level SMALLINT,
+  end_battery_level SMALLINT,
+  duration_min INTEGER
 );
 CREATE TABLE charges (
   id BIGSERIAL PRIMARY KEY,
   charging_process_id INTEGER NOT NULL,
   date TIMESTAMP NOT NULL,
   charger_power NUMERIC,
-  charger_voltage NUMERIC,
-  charger_actual_current NUMERIC,
+  charger_voltage SMALLINT,
+  charger_actual_current SMALLINT,
   charger_phases NUMERIC,
   charger_pilot_current NUMERIC,
   usable_battery_level NUMERIC,
@@ -488,6 +494,7 @@ PHASE_DEFINITION_SQL=$(dashboard_variable_sql grafana/dashboards/internal/charge
 PHASE_QUERY_SQL=$(dashboard_variable_sql grafana/dashboards/internal/charge-details.json determine_phases query) || exit 1
 CURRENT_POWER_CURVE_SQL=$(target_sql grafana/dashboards/zh-cn/CurrentChargeView.json 28 Power) || exit 1
 CURRENT_POWER_STAT_SQL=$(target_sql grafana/dashboards/zh-cn/CurrentChargeView.json 34 Current) || exit 1
+INCOMPLETE_CHARGE_SQL=$(target_sql grafana/dashboards/zh-cn/charges.json 17 A) || exit 1
 
 echo "行为断言：A 交流原始 V/A 保留（222V / 32A / 7kW，phases=1）"
 psql_fixture <<'SQL'
@@ -810,6 +817,28 @@ short_charge_avg_sql=${CHARGE_AVG_SQL_TEMPLATE//__DETECTED_PHASES__/$short_phase
 assert_close "L n≤15 的短交流充电仍显示 0.05 kW" "0.05" \
     "$(psql_query "$short_charge_avg_sql")" "0.0001"
 
+echo "行为断言：L2 battery-side DC 读数不会让相数查询 smallint 溢出"
+psql_fixture <<'SQL'
+TRUNCATE charges;
+INSERT INTO charges
+  (charging_process_id, date, charger_power, charger_voltage, charger_actual_current,
+   charger_phases, usable_battery_level, battery_level)
+SELECT
+  1,
+  TIMESTAMP '2026-08-01 08:00:00' + i * INTERVAL '1 minute',
+  35.65,
+  230,
+  155,
+  NULL,
+  50,
+  50
+FROM generate_series(0, 15) AS i;
+SQL
+assert_close "L2 determine_phases definition 可处理 155A × 230V" "1" \
+    "$(psql_query "$PHASE_DEFINITION_SQL")" "0.0001"
+assert_close "L2 determine_phases query 可处理 155A × 230V" "1" \
+    "$(psql_query "$PHASE_QUERY_SQL")" "0.0001"
+
 echo "行为断言：M CurrentChargeView 三相充电功率不为 0"
 psql_fixture <<'SQL'
 TRUNCATE positions, charges, charging_processes;
@@ -826,6 +855,26 @@ three_phase_curve_power=$(row_field "$three_phase_curve_rows" 1 3)
 three_phase_stat_power=$(psql_query "$CURRENT_POWER_STAT_SQL")
 assert_close "M panel 28 三相功率为 11.04 kW" "11.04" "$three_phase_curve_power" "0.001"
 assert_close "M panel 34 三相功率为 11.04 kW" "11.04" "$three_phase_stat_power" "0.001"
+
+echo "行为断言：N 进行中的充电显示第一条采样的起始电量"
+psql_fixture <<'SQL'
+TRUNCATE positions, charges, charging_processes;
+INSERT INTO charging_processes
+  (id, car_id, start_date, end_date, charge_energy_added, charge_energy_used,
+   start_battery_level, end_battery_level, duration_min)
+VALUES
+  (1, 1, '2026-08-01 08:00:00', NULL, NULL, NULL, NULL, NULL, NULL);
+INSERT INTO charges
+  (charging_process_id, date, charger_power, charger_voltage, charger_actual_current,
+   charger_phases, battery_level)
+VALUES
+  (1, '2026-08-01 08:00:01', 11, 230, 16, 3, 42),
+  (1, '2026-08-01 08:05:00', 11, 230, 16, 3, 44);
+SQL
+incomplete_charge_rows=$(psql_rows "$INCOMPLETE_CHARGE_SQL")
+assert_row_count "N 不完整充电只返回当前一条记录" "$incomplete_charge_rows" "1"
+assert_eq "N 起始电量取第一条 charge 采样" "42" \
+    "$(row_field "$incomplete_charge_rows" 1 6)"
 
 assert_file_contract
 

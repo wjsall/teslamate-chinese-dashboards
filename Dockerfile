@@ -1,7 +1,8 @@
 # 基于 TeslaMate 官方 Grafana 镜像，锁定到具体 digest（多架构 manifest list，
-# 含 linux/amd64 + linux/arm/v7 + linux/arm64，2026-07-25 用 registry API 现查确认；
+# 含 linux/amd64 + linux/arm/v7 + linux/arm64，2026-08-27 用 registry API 现查确认；
 # 见 .github/workflows/ghcr-build.yml 的 base-image-canary job 与 renovate.json）。
 # 不再跟随裸 :latest 滚动——同一 commit 重新构建现在能得到确定的构建输入，可审计。
+# 当前 digest 对应 teslamate/grafana v4.2.0；底层仍是 Grafana 13.1.3。
 # Grafana 13.1.3 已用我们 45+3 个面板 + volkovlabs-form-panel 6.3.2 实测兼容
 # （2026-08 从 13.0.1+security-01 升上来，见下面「为什么升」）。
 #
@@ -29,7 +30,7 @@
 #
 # 升级 digest：base-image-canary 发现上游更新会自动开 issue 指导；也可手动
 # `docker manifest inspect teslamate/grafana:latest` 现查后替换下面这一行。
-FROM teslamate/grafana:latest@sha256:fe24cb24d8543cb9742cbcb662aeb00ac10aeeab9a53d4c8af5cf329d20cef0b
+FROM teslamate/grafana:latest@sha256:4e6fe5ded7d614bf22d0297f9565ff00d8db36d18c73395a06bc040a1ffa05af
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans
