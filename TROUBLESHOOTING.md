@@ -1422,15 +1422,30 @@ docker cp teslamate.dump $(docker compose ps -q database):/tmp/teslamate.dump
 docker compose exec -T database \
   pg_restore -U teslamate -d teslamate /tmp/teslamate.dump
 
-# 7. 恢复 Grafana 数据卷
+# 7. 清理本项目旧版分时电价留下的迁移阻塞对象（必须在启动新版 teslamate 前）
+#    v1.9.5 及更早版本的触发器和对账视图都会钉住 charging_processes.cost；
+#    当前版本已不用该视图，并会在第 9 步之后的 SQL 修复循环里重建安全触发器。
+docker compose exec -T database \
+  psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
+  -c 'DROP TRIGGER IF EXISTS tou_recalc ON public.charging_processes;
+      DROP VIEW IF EXISTS public.charging_processes_v;'
+
+# 如果这一步报错，立即停止，不要启动 teslamate，也不要加 CASCADE：
+# 报错会指出仍依赖该视图的用户对象，先确认怎么保留或改写它们。
+
+# 8. 恢复 Grafana 数据卷
 docker run --rm \
   -v teslamate_teslamate-grafana-data:/data \
   -v $(pwd):/backup alpine \
   tar xzf /backup/grafana-data.tar.gz -C /data
 
-# 8. 启动 teslamate
+# 9. 启动 teslamate；它现在可以完成 4.1.1 / 4.2.0 的费用字段精度迁移
 docker compose start teslamate
 ```
+
+第 7 步只摘除本项目旧版创建的 `tou_recalc` 触发器和当前版本已经弃用的 `charging_processes_v`，不会删除行车或充电记录。命令故意不带 `CASCADE`：如果你曾基于该视图创建自己的视图，PostgreSQL 会拒绝删除并保留全部对象。不要绕过这道保护；把报错里列出的依赖对象和脱敏后的 `docker compose logs teslamate --tail 50` 发到 Issue，再决定如何改写。
+
+TeslaMate 正常启动后，**必须**执行本页唯一的 [四个 SQL 安装文件修复循环](#repair-sql-install)，重建安全的 `tou_recalc` 触发器，并把备份中的旧版坐标、单位和分时电价函数升级到当前仪表盘要求的版本。只恢复 Grafana 镜像不会自动更新这些数据库对象。
 
 > **如果你已经按旧版流程恢复过 + token 解密失败被迫重授权过**：那是这个 bug 的症状。现在用新流程不会再遇到。如果还有 4S 店保养记录或其他业务数据是从备份恢复来的，旧版流程不会丢，仅 token 那一项受影响。
 
