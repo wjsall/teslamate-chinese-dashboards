@@ -258,21 +258,14 @@ grafana/dashboards/zh-cn/driving-patterns.json::5::按月能耗趋势 (Wh/km)
 grafana/dashboards/zh-cn/driving-patterns.json::6::高速长途行程列表（里程≥100km 且 speed_max≥100km/h）
 grafana/dashboards/zh-cn/driving-patterns.json::7::温度区间平均能耗 (Wh/km，低温区间柱子更高)
 grafana/dashboards/zh-cn/driving-score.json::0::综合评分
-grafana/dashboards/zh-cn/driving-score.json::10::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::11::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::12::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::13::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::14::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::15::驾驶数据汇总
-grafana/dashboards/zh-cn/driving-score.json::1::驾驶风格
-grafana/dashboards/zh-cn/driving-score.json::2::效率分
-grafana/dashboards/zh-cn/driving-score.json::3::平稳分
-grafana/dashboards/zh-cn/driving-score.json::4::速度分
-grafana/dashboards/zh-cn/driving-score.json::5::回收分
-grafana/dashboards/zh-cn/driving-score.json::6::综合评分趋势
-grafana/dashboards/zh-cn/driving-score.json::7::综合评分趋势
-grafana/dashboards/zh-cn/driving-score.json::8::综合评分趋势
-grafana/dashboards/zh-cn/driving-score.json::9::行程评分明细
+grafana/dashboards/zh-cn/driving-score.json::1::综合评分趋势
+grafana/dashboards/zh-cn/driving-score.json::2::行程评分明细
+grafana/dashboards/zh-cn/driving-score.json::3::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::4::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::5::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::6::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::7::驾驶数据汇总
+grafana/dashboards/zh-cn/driving-score.json::8::驾驶数据汇总
 grafana/dashboards/zh-cn/efficiency.json::0::能耗（行驶）
 grafana/dashboards/zh-cn/efficiency.json::1::能耗 (总计)
 grafana/dashboards/zh-cn/efficiency.json::2::记录的距离
@@ -402,9 +395,10 @@ grafana/dashboards/zh-cn/vehicle-comparison.json::5::各车快充比例(%)
 grafana/dashboards/zh-cn/vehicle-comparison.json::6::各车行程次数
 grafana/dashboards/zh-cn/vehicle-comparison.json::7::各车单位里程电费(元/$length_unit)
 grafana/dashboards/zh-cn/visited.json::0::行驶轨迹
-grafana/dashboards/zh-cn/visited.json::1::足迹地图
+grafana/dashboards/zh-cn/visited.json::1::行驶轨迹
 grafana/dashboards/zh-cn/visited.json::2::足迹地图
 grafana/dashboards/zh-cn/visited.json::3::足迹地图
+grafana/dashboards/zh-cn/visited.json::4::足迹地图
 grafana/dashboards/zh-cn/weather-efficiency.json::0::🌡 平均温度
 grafana/dashboards/zh-cn/weather-efficiency.json::1::⚡ 平均能耗
 grafana/dashboards/zh-cn/weather-efficiency.json::2::❄ 最冷月平均能耗

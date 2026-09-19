@@ -11,7 +11,7 @@ on:
       - main
   # 手动触发。ref 下拉框可以选任意分支或 tag，所以**发布**这一步额外有一道 ref 守卫：
   # 见下面 publish job 的 `if`（只允许 main 和 v* tag）。在别的分支上手动触发仍然会跑
-  # 完整的 lint + 五条部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性——那是有用的，
+  # 完整的 lint + 五条部署冒烟 + 业务行为测试 + 仪表盘 SQL 可执行性——那是有用的，
   # 只是不会推任何镜像 tag。
   #
   # ⚠ 这道守卫有一个堵不住的口子，写在这里以免有人以为它万无一失：
@@ -84,6 +84,12 @@ jobs:
 
       - name: Dashboard JSON 环境残留脏值
         run: bash scripts/check-dashboards-clean.sh
+
+      - name: 驾驶评分共享查询契约
+        run: bash scripts/check-driving-score-contract.sh
+
+      - name: 足迹路线断点契约
+        run: bash scripts/check-visited-route-contract.sh
 
   # ==========================================================================
   # 构建「候选镜像」——只打一个临时 tag 推到 ghcr，不碰任何正式 tag。
@@ -989,6 +995,28 @@ jobs:
         run: bash scripts/test-period-boundaries.sh
 
   # ==========================================================================
+  # 驾驶评分 / 足迹路线行为测试：前者锁定共享查询与趋势、明细的
+  # 计算一致性；后者锁定真实采样点、不跨行程、不跨长时间断点。
+  # ==========================================================================
+  driving-visited-behavior:
+    name: "驾驶评分与足迹路线行为测试"
+    needs: lint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 驾驶评分共享查询行为断言
+        run: bash scripts/test-driving-score-behavior.sh
+
+      - name: 足迹路线采样与分段行为断言
+        run: bash scripts/test-visited-route-segmentation.sh
+
+  # ==========================================================================
   # 仪表盘 SQL 可执行性：把面板查询真正交给 PostgreSQL 解析。
   # 2026-07 实测：把费用列改成函数调用时有两处落在 CTE 外层作用域，两个主表整个空白，
   # 而 lint、五条部署冒烟、行为测试全绿——没有任何一道门会执行面板查询。
@@ -1010,7 +1038,7 @@ jobs:
   # ==========================================================================
   # 发布：把**被冒烟测过的那一个 digest**提升成正式 tag。
   #
-  # needs 列全五条部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性 = 任一条失败，这个
+  # needs 列全五条部署冒烟 + 各类业务行为测试 + 仪表盘 SQL 可执行性 = 任一条失败，这个
   # job 不会跑，vX.Y.Z / latest / main 都不会出现。
   # 这正是 2026-07-25 之前缺的那道门（当时 build 与冒烟并行，v1.9.0 在四条冒烟挂着的
   # 情况下把镜像推了出去）。
@@ -1026,7 +1054,7 @@ jobs:
   # 没有这个条件的话：选一个分支 → 未经评审的代码会以 `<分支名>` 和 `sha-<sha>` 推到
   # ghcr 和 Docker Hub；选一个旧 tag → `latest` 和 `X.Y.Z` 会被重新推一遍。
   # 所以只有 main 和 v* tag 才允许发布。别的 ref 上手动触发照样跑完整的 lint + 五条
-  # 部署冒烟 + 分时电价行为测试 + 仪表盘 SQL 可执行性（这正是手动触发的用处），
+  # 部署冒烟 + 各类业务行为测试 + 仪表盘 SQL 可执行性（这正是手动触发的用处），
   # 只是不推任何 tag，并由下面的 publish-skipped-notice job 打印说明。
   #
   # ⚠ 这道守卫管不到「在旧 tag 上手动触发」：那时 GitHub 跑的是**那个 tag 里的**
@@ -1061,6 +1089,7 @@ jobs:
       - current-charge-electrics
       - support-contract
       - period-boundaries
+      - driving-visited-behavior
       - dashboard-sql
     if: >-
       github.event_name != 'pull_request' && github.event_name != 'schedule'
