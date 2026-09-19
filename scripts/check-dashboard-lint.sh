@@ -2325,7 +2325,7 @@ RULE_SAMPLES = {
         panel_type='stat',
         options={'reduceOptions': {'calcs': ['lastNotNull'], 'values': False}})]),
     # 规则 w 有三个判定落点（STALE_ALIAS / NO_MATCH / REGEX_ERROR），一条样本只盖得住一个。
-    # 冷审实测：只补了 STALE_ALIAS 那次之后，另外两个摘掉仍然四门全绿。所以按落点分列。
+    # 回归验证表明：只覆盖 STALE_ALIAS 时，另外两个判定缺失也无法被现有检查发现，所以按落点分列。
     'w': [
         ('STALE_ALIAS', lambda dirty: _rule_dashboard([_rule_panel(
             'SELECT avg(x) AS "电压" FROM charges', panel_type='stat',

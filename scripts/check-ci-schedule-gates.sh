@@ -80,6 +80,13 @@ for name in image_jobs:
     elif "github.event_name != 'schedule'" not in condition:
         failures.append(f'{name} 缺少 schedule 禁止构建/发布守卫')
 
+# 新增行为测试后，正式发布和非发布 ref 的“全部验证通过”提示都必须等待它。
+# 否则前者可能绕过回归门，后者可能在行为测试失败时误报全绿。
+for name in ('publish', 'publish-skipped-notice'):
+    block = jobs.get(name, '')
+    if '      - driving-visited-behavior' not in block:
+        failures.append(f'{name} 没有等待 driving-visited-behavior')
+
 lint_block = jobs.get('lint', '')
 for command in (
     # dashboard lint 的三个故障注入自测。它们不是「顺带跑跑」：默认模式只能证明当前这棵树上

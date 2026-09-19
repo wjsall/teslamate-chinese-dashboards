@@ -1181,6 +1181,7 @@ jobs:
       - current-charge-electrics
       - support-contract
       - period-boundaries
+      - driving-visited-behavior
       - dashboard-sql
     if: >-
       github.event_name != 'pull_request' && github.event_name != 'schedule'
