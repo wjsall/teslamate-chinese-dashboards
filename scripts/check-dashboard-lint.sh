@@ -2956,6 +2956,42 @@ def main():
         except Exception as error:
             violations.append(f"{file_rel} :: (整份文件) :: 0 :: JSON 解析失败: {error}")
 
+    editor_url = 'https://apps.apple.com/cn/app/drivo-%E8%BD%A6%E8%AE%B0/id6773553521'
+    expected_editor_link = {
+        'asDropdown': False,
+        'icon': 'external link',
+        'includeVars': False,
+        'keepTime': False,
+        'tags': [],
+        'targetBlank': True,
+        'title': '行车视频编辑',
+        'tooltip': '',
+        'type': 'link',
+        'url': editor_url,
+    }
+    for file_rel, dashboard in dashboards.items():
+        if not file_rel.startswith('grafana/dashboards/zh-cn/'):
+            continue
+        links = dashboard.get('links') or []
+        doc_indexes = [index for index, link in enumerate(links)
+                       if isinstance(link, dict) and link.get('title') == '中文文档']
+        editor_indexes = [index for index, link in enumerate(links)
+                          if isinstance(link, dict) and link.get('title') == '行车视频编辑']
+        if not doc_indexes:
+            continue
+        if len(doc_indexes) != 1 or len(editor_indexes) != 1:
+            violations.append(
+                f"{file_rel} :: dashboard links :: 中文文档 {len(doc_indexes)} 条，"
+                f"行车视频编辑 {len(editor_indexes)} 条；必须各有且仅有一条"
+            )
+            continue
+        doc_index = doc_indexes[0]
+        editor_index = editor_indexes[0]
+        if editor_index != doc_index + 1 or links[editor_index] != expected_editor_link:
+            violations.append(
+                f"{file_rel} :: dashboard links :: 行车视频编辑必须紧邻中文文档，且字段与标准外链完全一致"
+            )
+
     dashboard_uids = {
         dashboard.get('uid')
         for dashboard in dashboards.values()

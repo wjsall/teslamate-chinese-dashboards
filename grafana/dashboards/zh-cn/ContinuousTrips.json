@@ -97,6 +97,18 @@
       "tooltip": "",
       "type": "link",
       "url": "https://github.com/wjsall/teslamate-chinese-dashboards"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "行车视频编辑",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://apps.apple.com/cn/app/drivo-%E8%BD%A6%E8%AE%B0/id6773553521"
     }
   ],
   "liveNow": false,

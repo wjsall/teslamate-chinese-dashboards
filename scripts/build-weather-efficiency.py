@@ -54,7 +54,10 @@ STD_LINKS = [
      "type": "dashboards", "url": ""},
     {"asDropdown": False, "icon": "doc", "includeVars": False, "keepTime": False,
      "tags": [], "targetBlank": True, "title": "中文文档", "tooltip": "",
-     "type": "link", "url": "https://github.com/wjsall/teslamate-chinese-dashboards"}
+     "type": "link", "url": "https://github.com/wjsall/teslamate-chinese-dashboards"},
+    {"asDropdown": False, "icon": "external link", "includeVars": False, "keepTime": False,
+     "tags": [], "targetBlank": True, "title": "行车视频编辑", "tooltip": "",
+     "type": "link", "url": "https://apps.apple.com/cn/app/drivo-%E8%BD%A6%E8%AE%B0/id6773553521"}
 ]
 
 
