@@ -130,6 +130,40 @@
           {
             "config": {
               "arrow": 0,
+              "edgeStyle": {
+                "color": {
+                  "fixed": "dark-blue"
+                },
+                "lineWidth": 2,
+                "opacity": 1,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 2,
+                  "max": 15,
+                  "min": 1
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              },
+              "showLegend": false,
               "style": {
                 "color": {
                   "fixed": "dark-blue"
@@ -143,9 +177,9 @@
                   "mode": "mod"
                 },
                 "size": {
-                  "fixed": 4,
+                  "fixed": 2,
                   "max": 15,
-                  "min": 2
+                  "min": 1
                 },
                 "symbol": {
                   "fixed": "img/icons/marker/circle.svg",
@@ -171,7 +205,7 @@
             },
             "name": "行驶轨迹",
             "tooltip": true,
-            "type": "route"
+            "type": "network"
           }
         ],
         "tooltip": {
@@ -195,8 +229,36 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  date_trunc('minute', timezone('UTC', date), '$__timezone') as time,\n  lat_for_map('${map_url}', avg(latitude), avg(longitude)) as latitude,\n  lng_for_map('${map_url}', avg(latitude), avg(longitude)) as longitude\nFROM\n  positions\nWHERE\n  car_id = $car_id AND $__timeFilter(date) and ideal_battery_range_km is not null\nGROUP BY 1\nORDER BY 1",
-          "refId": "Positions",
+          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n)\nSELECT\n  id,\n  lat_for_map('${map_url}', latitude, longitude) AS latitude,\n  lng_for_map('${map_url}', latitude, longitude) AS longitude\nFROM sampled\nORDER BY date",
+          "refId": "Nodes",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n),\nlinked AS (\n  SELECT\n    id,\n    drive_id,\n    date,\n    LEAD(id) OVER (PARTITION BY drive_id ORDER BY date) AS next_id,\n    LEAD(date) OVER (PARTITION BY drive_id ORDER BY date) AS next_date\n  FROM sampled\n)\nSELECT\n  id || '->' || next_id AS id,\n  id AS source,\n  next_id AS target\nFROM linked\nWHERE next_id IS NOT NULL\n  AND next_date - date <= interval '5 minutes'\nORDER BY date",
+          "refId": "Edges",
           "sql": {
             "columns": [
               {
@@ -217,7 +279,8 @@
         }
       ],
       "title": "行驶轨迹",
-      "type": "geomap"
+      "type": "geomap",
+      "description": "每分钟选取一个真实 GPS 记录点，并且只连接同一行程内、间隔不超过 5 分钟的相邻点。这样可避免平均经纬度落在道路外，以及不同旅程或长时间断档之间出现虚假直线。"
     },
     {
       "datasource": {
