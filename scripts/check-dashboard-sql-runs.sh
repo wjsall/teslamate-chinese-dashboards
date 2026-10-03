@@ -107,7 +107,12 @@ results = {}
 def render(sql, filler="'1'"):
     s = sql
     s = re.sub(r'\$__timeFilter\(([^)]*)\)', r"\1 BETWEEN now() - interval '30 days' AND now()", s)
-    s = re.sub(r'\$__timeGroupAlias\(([^,]+),[^)]*\)', r'date_trunc(\'day\', \1) AS time', s)
+    # 注意：替换串不能写成 r'date_trunc(\'day\', \1)'——原始字符串里的 \' 会把反斜杠原样留下，
+    # 渲染结果成了 date_trunc(\'day\', date)，PostgreSQL 直接报 invalid command \'day。
+    # 这个写法曾让**所有**用了 $__timeGroupAlias 的面板在这道门里静默渲染失败、从没被检查过
+    # （当时全仓 3 条，全在「当前充电状态」）。用函数做替换，彻底绕开转义。
+    s = re.sub(r'\$__timeGroupAlias\(([^,]+),[^)]*\)',
+               lambda m: "date_trunc('day', %s) AS time" % m.group(1).strip(), s)
     s = re.sub(r'\$__timeGroup\(([^,]+),[^)]*\)', r"date_trunc('day', \1)", s)
     s = re.sub(r'\$__unixEpochFilter\(([^)]*)\)', r'TRUE', s)
     # $__time(col) / $__timeEpoch(col)：Grafana 把它们展开成时间序列要的那一列。
@@ -166,6 +171,29 @@ def render(sql, filler="'1'"):
 
 
 FILLERS = ["'1'", '1']
+
+# 渲染自检：渲染器自己的缺陷不能静默变成「这条查询不在基线里」。
+# 每个声称支持的宏，渲染产物里不许有字面反斜杠、不许残留 $__ 宏或 ${ 变量标记；
+# 否则整道门直接红——比悄悄漏检好得多。
+_RENDER_SELF_CHECK = [
+    "SELECT $__timeGroupAlias(date, $__interval, NULL), 1 FROM positions GROUP BY 1",
+    "SELECT $__timeGroupAlias(date,'1d'), 1 FROM positions GROUP BY 1",
+    "SELECT $__timeGroup(date, $__interval), 1 FROM positions GROUP BY 1",
+    "SELECT $__time(date), 1 FROM positions WHERE $__timeFilter(date)",
+    "SELECT $__timeEpoch(date), 1 FROM positions WHERE $__unixEpochFilter(odometer)",
+    "SELECT 1 WHERE date > ${__from:date:seconds} AND date < ${__to:date:seconds}",
+]
+_render_defects = []
+for _sample in _RENDER_SELF_CHECK:
+    for _filler in FILLERS:
+        _out = render(_sample, _filler)
+        if '\\' in _out or re.search(r'\$__|\$\{', _out):
+            _render_defects.append((_sample, _out))
+if _render_defects:
+    print('❌ 渲染器自检失败：下面这些宏渲染出了字面反斜杠或残留标记，这道门会静默漏检用到它们的面板：')
+    for _sample, _out in _render_defects:
+        print(f'   输入 {_sample!r}\n   输出 {_out!r}')
+    sys.exit(1)
 
 
 def parse_once(container, stmt):

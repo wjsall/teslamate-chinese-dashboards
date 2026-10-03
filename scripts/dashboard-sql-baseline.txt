@@ -74,10 +74,13 @@ grafana/dashboards/zh-cn/CurrentChargeView.json::0::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::10::里程表
 grafana/dashboards/zh-cn/CurrentChargeView.json::11::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::12::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::13::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::14::交流输入电流
 grafana/dashboards/zh-cn/CurrentChargeView.json::15::交流输入电压
 grafana/dashboards/zh-cn/CurrentChargeView.json::16::平均功率
 grafana/dashboards/zh-cn/CurrentChargeView.json::17::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::18::当前充电状态
+grafana/dashboards/zh-cn/CurrentChargeView.json::19::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::1::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::2::当前充电状态
 grafana/dashboards/zh-cn/CurrentChargeView.json::3::充电量
@@ -344,10 +347,16 @@ grafana/dashboards/zh-cn/station-ranking.json::4::🏆 充电桩排行榜（按 
 grafana/dashboards/zh-cn/station-ranking.json::5::💎 ¥/度 Top 10 桩（绿=便宜，红=贵）
 grafana/dashboards/zh-cn/station-ranking.json::6::📈 最近 30 天 vs 之前的桩单价对比（红 = 涨价，绿 = 降价）
 grafana/dashboards/zh-cn/station-ranking.json::7::🗺️ 充电桩地图（颜色=¥/度，大小=去过的次数）
-grafana/dashboards/zh-cn/statistics.json::0::每${period}
-grafana/dashboards/zh-cn/statistics.json::1::每${period}
-grafana/dashboards/zh-cn/statistics.json::2::每${period}
-grafana/dashboards/zh-cn/statistics.json::3::每${period}
+grafana/dashboards/zh-cn/statistics.json::0::统计（${period}）
+grafana/dashboards/zh-cn/statistics.json::1::统计（${period}）
+grafana/dashboards/zh-cn/statistics.json::2::统计（${period}）
+grafana/dashboards/zh-cn/statistics.json::3::统计（${period}）
+grafana/dashboards/zh-cn/temperatures.json::0::车内温度（最近值）
+grafana/dashboards/zh-cn/temperatures.json::1::车外温度（最近值）
+grafana/dashboards/zh-cn/temperatures.json::2::车外温度范围
+grafana/dashboards/zh-cn/temperatures.json::3::车内与车外温度
+grafana/dashboards/zh-cn/temperatures.json::4::充电时车外温度
+grafana/dashboards/zh-cn/temperatures.json::5::每日车外温度范围
 grafana/dashboards/zh-cn/tire-pressure.json::0::当前胎压（忽略时间范围）($pressure_unit)
 grafana/dashboards/zh-cn/tire-pressure.json::1::所选时段的胎压
 grafana/dashboards/zh-cn/tire-pressure.json::2::最后一次行驶的胎压 ($pressure_unit)
