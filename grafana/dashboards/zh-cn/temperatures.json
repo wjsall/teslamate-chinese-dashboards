@@ -605,7 +605,7 @@
         "y": 17
       },
       "id": 7,
-      "description": "显示所选时段内每次充电开始时记录的车外温度。",
+      "description": "显示所选时段内每次充电期间的平均车外温度，按充电开始时间标注。",
       "options": {
         "legend": {
           "calcs": [
@@ -658,7 +658,6 @@
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
       },
-      "description": "For each day the thin line runs from the lowest to the highest temperature recorded, while the thicker bar shows the 15th–85th percentile range (the temperatures between which 70% of the day’s readings fell). Days with no readings are left blank.\n\nNote: On days with only partial coverage (for example just a few hours of data), the shown range only reflects the periods that were actually measured and may not represent the full day. The red line shows the data coverage for each day.",
       "fieldConfig": {
         "defaults": {
           "color": {
