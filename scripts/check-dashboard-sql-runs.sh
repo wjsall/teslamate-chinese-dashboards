@@ -173,26 +173,34 @@ def render(sql, filler="'1'"):
 FILLERS = ["'1'", '1']
 
 # 渲染自检：渲染器自己的缺陷不能静默变成「这条查询不在基线里」。
-# 每个声称支持的宏，渲染产物里不许有字面反斜杠、不许残留 $__ 宏或 ${ 变量标记；
-# 否则整道门直接红——比悄悄漏检好得多。
+# 每个声称支持的宏，渲染结果必须与下面写死的期望文本逐字相等。
+# 只查「没有反斜杠、没有残留 $__」不够：删掉某条宏规则后，通用兜底会把残留的变量换成
+# 占位符，结果看上去干净、实际是另一条 SQL。逐字比对才能让「删规则 / 改规则」当场变红。
+# 这几条样本不含认不出的变量，两种兜底下的渲染结果必须相同。
 _RENDER_SELF_CHECK = [
-    "SELECT $__timeGroupAlias(date, $__interval, NULL), 1 FROM positions GROUP BY 1",
-    "SELECT $__timeGroupAlias(date,'1d'), 1 FROM positions GROUP BY 1",
-    "SELECT $__timeGroup(date, $__interval), 1 FROM positions GROUP BY 1",
-    "SELECT $__time(date), 1 FROM positions WHERE $__timeFilter(date)",
-    "SELECT $__timeEpoch(date), 1 FROM positions WHERE $__unixEpochFilter(odometer)",
-    "SELECT 1 WHERE date > ${__from:date:seconds} AND date < ${__to:date:seconds}",
+    ("SELECT $__timeGroupAlias(date, $__interval, NULL), 1 FROM positions GROUP BY 1",
+     "SELECT date_trunc('day', date) AS time, 1 FROM positions GROUP BY 1"),
+    ("SELECT $__timeGroupAlias(date,'1d'), 1 FROM positions GROUP BY 1",
+     "SELECT date_trunc('day', date) AS time, 1 FROM positions GROUP BY 1"),
+    ("SELECT $__timeGroup(date, $__interval), 1 FROM positions GROUP BY 1",
+     "SELECT date_trunc('day', date), 1 FROM positions GROUP BY 1"),
+    ("SELECT $__time(date), 1 FROM positions WHERE $__timeFilter(date)",
+     "SELECT date AS \"time\", 1 FROM positions WHERE date BETWEEN now() - interval '30 days' AND now()"),
+    ("SELECT $__timeEpoch(date), 1 FROM positions WHERE $__unixEpochFilter(odometer)",
+     "SELECT extract(epoch from date) as \"time\", 1 FROM positions WHERE TRUE"),
+    ("SELECT 1 WHERE date > ${__from:date:seconds} AND date < ${__to:date:seconds}",
+     "SELECT 1 WHERE date > 1700000000 AND date < 1800000000"),
 ]
 _render_defects = []
-for _sample in _RENDER_SELF_CHECK:
+for _sample, _expected in _RENDER_SELF_CHECK:
     for _filler in FILLERS:
         _out = render(_sample, _filler)
-        if '\\' in _out or re.search(r'\$__|\$\{', _out):
-            _render_defects.append((_sample, _out))
+        if _out != _expected:
+            _render_defects.append((_sample, _expected, _out))
 if _render_defects:
-    print('❌ 渲染器自检失败：下面这些宏渲染出了字面反斜杠或残留标记，这道门会静默漏检用到它们的面板：')
-    for _sample, _out in _render_defects:
-        print(f'   输入 {_sample!r}\n   输出 {_out!r}')
+    print('❌ 渲染器自检失败：下面这些宏的渲染结果与期望不一致，这道门会静默漏检或误检用到它们的面板：')
+    for _sample, _expected, _out in _render_defects:
+        print(f'   输入 {_sample!r}\n   期望 {_expected!r}\n   实际 {_out!r}')
     sys.exit(1)
 
 
@@ -220,18 +228,27 @@ skipped = 0  # 渲染不出来 / 不适合 PREPARE 的，不纳入校验，也�
 for f in files:
     d = json.load(open(f, encoding='utf-8'))
     items = []
+    var_items = []
     def walk(o, title=''):
         if isinstance(o, dict):
             t = o.get('title') or title
             s = o.get('rawSql')
             if isinstance(s, str) and s.strip():
                 items.append((t, s))
+            # 模板变量的查询（下拉框数据来源）：Grafana 执行的是 query 字段，同样会被改坏。
+            # 只查 rawSql 时，这一类写错了（括号不配平之类）既不报错也不进基线。
+            # 单独收集、排在所有面板查询之后：key 里有序号，混进面板的遍历顺序会让
+            # templating 排在 panels 前面的文件里，所有面板的序号整体后移、基线 key 全部失效。
+            v_query = o.get('query')
+            if o.get('type') == 'query' and isinstance(v_query, str) and v_query.strip() and o.get('name'):
+                var_items.append(('变量 ' + str(o['name']), v_query))
             for v in o.values():
                 walk(v, t)
         elif isinstance(o, list):
             for v in o:
                 walk(v, title)
     walk(d)
+    items.extend(var_items)
 
     for idx, (title, sql) in enumerate(items):
         # key 用**完整路径**而不是文件名：grafana/dashboards 下有 internal/ 和 zh-cn/

@@ -994,6 +994,9 @@ jobs:
       - name: 跑本地周期边界断言
         run: bash scripts/test-period-boundaries.sh
 
+      - name: 跑统计页周期行为测试（真实面板 SQL × 数据库会话时区）
+        run: bash scripts/test-statistics-period-behavior.sh
+
   # ==========================================================================
   # 驾驶评分 / 足迹路线行为测试：前者锁定共享查询与趋势、明细的
   # 计算一致性；后者锁定真实采样点、不跨行程、不跨长时间断点。

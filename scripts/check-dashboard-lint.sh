@@ -10,7 +10,8 @@
 # 退出码：0 = 全绿；1 = 有命中（打印 文件 :: 面板id/变量名 :: 规则字母 :: 摘要片段）
 #
 # 规则清单（字母对应下面 WHITELIST 条目的 rule）：
-#   0 JSON 合法性             — json.load 失败即报错
+#   0 JSON 合法性             — json.load 失败即报错；同一对象里出现重复键也算失败
+#                                （Grafana 只取最后一个，前一个会被悄悄吞掉，改了半天却不生效）
 #   a 裸点平均当均速           — 代码 token 含 AVG(speed)/AVG(p.speed)，包括冗余括号；
 #                                分桶内均值仅在同一 target 确有 GROUP BY speed_bin 时放行。
 #   b SQL 字面量含注释标记     — 字面量内容不得出现 `--` / `/*` / `*/`。Grafana postgres
@@ -2864,6 +2865,20 @@ def unscanned_sql_strings(dashboards):
     return findings
 
 
+def reject_duplicate_keys(pairs):
+    """json.load 的 object_pairs_hook：同一对象里的重复键直接报错。
+
+    标准库默认只留最后一个，前面的静默丢掉；Grafana 的解析器同样。结果是文件里看得见
+    两份 description（或 rawSql）、实际只有后一份生效，改前一份没有任何效果。
+    """
+    seen = set()
+    for key, _ in pairs:
+        if key in seen:
+            raise ValueError(f"同一对象里重复出现键 {key!r}")
+        seen.add(key)
+    return dict(pairs)
+
+
 def main():
     verbose_k = False
     update_baseline = False
@@ -2952,7 +2967,7 @@ def main():
         n_files += 1
         try:
             with open(file_rel, encoding='utf-8') as file_handle:
-                dashboards[file_rel] = json.load(file_handle)
+                dashboards[file_rel] = json.load(file_handle, object_pairs_hook=reject_duplicate_keys)
         except Exception as error:
             violations.append(f"{file_rel} :: (整份文件) :: 0 :: JSON 解析失败: {error}")
 
