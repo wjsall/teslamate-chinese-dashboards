@@ -875,7 +875,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": true,
+                    "targetBlank": false,
                     "title": "",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.path}"
                   }
@@ -1144,7 +1144,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": true,
+                    "targetBlank": false,
                     "title": "",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.id.numeric:raw}/edit"
                   }

@@ -1507,7 +1507,7 @@
           "group": [],
           "metricColumn": "none",
           "rawQuery": true,
-          "rawSql": "SELECT\n  COALESCE(g.name, CONCAT_WS(', ', COALESCE(addresses.name, CONCAT_WS(' ', addresses.road, addresses.house_number)), addresses.city))\n\tFROM drives d\n\tLEFT JOIN addresses ON addresses.id = d.end_address_id\n\tLEFT JOIN geofences g ON g.id = d.end_geofence_id\nWHERE\n\t $__timeFilter(d.end_date) AND d.car_id = $car_id \nORDER BY d.end_date DESC\nLIMIT 1",
+          "rawSql": "SELECT\n  COALESCE(g.name, CONCAT_WS(', ', COALESCE(addresses.name, CONCAT_WS(' ', addresses.road, addresses.house_number)), COALESCE(addresses.city, addresses.neighbourhood)))\n\tFROM drives d\n\tLEFT JOIN addresses ON addresses.id = d.end_address_id\n\tLEFT JOIN geofences g ON g.id = d.end_geofence_id\nWHERE\n\t $__timeFilter(d.end_date) AND d.car_id = $car_id \nORDER BY d.end_date DESC\nLIMIT 1",
           "refId": "Voltage",
           "select": [
             [
