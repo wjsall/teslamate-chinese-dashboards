@@ -893,7 +893,7 @@ jobs:
   #
   # 设计要点：
   #   - 只比对 digest，不修改任何文件、不触发 build/push——不自动升级、不自动发版，
-  #     兼容性验证（45+3 个面板 + volkovlabs-form-panel）必须人工确认后才能改
+  #     兼容性验证（全部仪表盘 + volkovlabs-form-panel）必须人工确认后才能改
   #     Dockerfile、走常规发版流程（lint + 五条部署冒烟 + 行为测试 + 仪表盘 SQL 门）。
   #   - 用同一套 registry HTTP API（免 docker daemon，见本 job 步骤）取 manifest
   #     list digest，且显式要求 accept manifest.list/index media type，确保比较的

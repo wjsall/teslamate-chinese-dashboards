@@ -1,10 +1,21 @@
 # 基于 TeslaMate 官方 Grafana 镜像，锁定到具体 digest（多架构 manifest list，
-# 含 linux/amd64 + linux/arm/v7 + linux/arm64，2026-08-27 用 registry API 现查确认；
+# 含 linux/amd64 + linux/arm64，2026-10-03 用 registry API 现查确认；
 # 见 .github/workflows/ghcr-build.yml 的 base-image-canary job 与 renovate.json）。
 # 不再跟随裸 :latest 滚动——同一 commit 重新构建现在能得到确定的构建输入，可审计。
-# 当前 digest 对应 teslamate/grafana v4.2.0；底层仍是 Grafana 13.1.3。
-# Grafana 13.1.3 已用我们 45+3 个面板 + volkovlabs-form-panel 6.3.2 实测兼容
-# （2026-08 从 13.0.1+security-01 升上来，见下面「为什么升」）。
+# 当前 digest 对应 teslamate/grafana v4.3.0，内置 Grafana 13.2.2
+# （2026-08 从 13.0.1+security-01 升到 13.1.3，2026-10 再升到 13.2.2，见下面两节）。
+#
+# 为什么升到 13.2.2（TeslaMate v4.3.0 官方镜像带的版本）：
+#   13.2 把 PostgreSQL 数据源从核心里拆成随镜像预装的插件 grafana-postgresql-datasource
+#   （13.0.3，签名有效），装在 /usr/share/grafana/data/plugins-bundled——在
+#   /var/lib/grafana 卷之外，所以旧卷不会遮蔽它；上游同时设了
+#   GF_PLUGINS_PREINSTALL_DISABLED=true，不会在启动时联网装插件。本文件把
+#   GF_PATHS_PLUGINS 改到 /opt/grafana-plugins 只影响第三方插件目录，不影响预装插件。
+#   13.1.3 → 13.2.2 对比（同一份数据库、同一批仪表盘、两个版本各发一遍）：
+#   610 条真实查询返回的数据帧逐格一致；剥 SQL 注释的 15 组探针行为一致
+#   （引号感知、不认 E 字符串、不支持嵌套块注释，下面的规则 b 因此仍然保留）；
+#   volkovlabs-form-panel 6.3.2 与预装的 PostgreSQL 插件 signature 均为 valid。
+#   最终镜像 provisioning 出 49 个仪表盘，无重名、无英文标题。
 #
 # 为什么从 13.0.1 升到 13.1.3：
 #   1. 上游 commit d7322d91f（2026-04-08，"SQL: strip comments with quote-aware state
@@ -20,7 +31,7 @@
 #      volkovlabs-form-panel 6.3.2 在两版上都 signature=valid。
 #
 # 已知的唯一用户可见变化：面板标题栏高度 32px → 40px，86 个矮面板受影响。
-# **退不回去**——上游把这个开关从 feature toggle registry 删了；Owner 已实地看过并接受。
+# **退不回去**——上游把这个开关从 feature toggle registry 删了；维护者已实地看过并接受。
 #
 # ⚠️ 升级**不解除**「SQL 字符串字面量里不写 `--`、不写 /* */」的约定，也不撤
 # scripts/check-dashboard-lint.sh 的规则 b：13.1.3 的状态机仍不完整，实测两类
@@ -30,7 +41,7 @@
 #
 # 升级 digest：base-image-canary 发现上游更新会自动开 issue 指导；也可手动
 # `docker manifest inspect teslamate/grafana:latest` 现查后替换下面这一行。
-FROM teslamate/grafana:latest@sha256:4e6fe5ded7d614bf22d0297f9565ff00d8db36d18c73395a06bc040a1ffa05af
+FROM teslamate/grafana:latest@sha256:7f5a119ad06c212c4122e12c957a6848b5718d9618826b5ce70a1ec12d84fed5
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans
