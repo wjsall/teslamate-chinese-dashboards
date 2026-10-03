@@ -164,8 +164,8 @@ CREATE TABLE charges (
   charge_energy_added NUMERIC NOT NULL,
   battery_level INT
 );
--- 「✏️ 单笔充电单价」面板的下拉框会 LEFT JOIN 它取城市名，直接跑面板 SQL 时需要
-CREATE TABLE addresses (id SERIAL PRIMARY KEY, city TEXT);
+-- 「✏️ 单笔充电单价」面板的下拉框会 LEFT JOIN 它取城市名（城市为空时回退街区名），直接跑面板 SQL 时需要
+CREATE TABLE addresses (id SERIAL PRIMARY KEY, city TEXT, neighbourhood TEXT);
 INSERT INTO geofences (id, name) VALUES (1, '家');
 SQL
 docker exec -i "$CONTAINER" psql -U teslamate -d teslamate -v ON_ERROR_STOP=1 \
