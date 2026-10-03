@@ -237,6 +237,16 @@ for dash_tz in DASH_TZ:
                 outs[session_tz] = out
         if len(set(outs.values())) > 1:
             problems.append(f'target {ref} 的总计结果随数据库会话时区变化')
+        # 强制求值探针：PostgreSQL 默认会把 CTE 里没人引用的列剪掉，total 下 date_trunc 的
+        # 周期参数若不合法，平时靠剪列才没出错。MATERIALIZED 让所有列都真算一遍。
+        forced = re.sub(r'(?i)\b(raw_final|raw|data|final)\b(\s*\([^)]*\))?\s+AS\s*\(',
+                        lambda m: m.group(0)[:-1] + 'MATERIALIZED (', render(TARGETS[ref], 'total', dash_tz))
+        if forced == render(TARGETS[ref], 'total', dash_tz):
+            problems.append(f'target {ref} 没找到可强制求值的 CTE，探针失效（测试脚本需要跟进）')
+        else:
+            _, forced_err = run(forced, 'UTC')
+            if forced_err:
+                problems.append(f'target {ref} 总计在强制求值（MATERIALIZED）下报错：{forced_err}')
         for session_tz, out in outs.items():
             if display_labels(out) != {'总计'}:
                 problems.append(f'target {ref} 会话时区 {session_tz} 的周期标签应只有「总计」，实际 {sorted(display_labels(out))}')
@@ -244,6 +254,7 @@ for dash_tz in DASH_TZ:
     report.append((label, problems))
 
 for label, problems in report:
+    problems = [' '.join(p.split()) for p in problems]
     print('OK\t' + label if not problems else 'FAIL\t' + label + '\t' + ' ;; '.join(problems[:3]) + (f' ;; …另有 {len(problems) - 3} 条' if len(problems) > 3 else ''))
 PY
 )

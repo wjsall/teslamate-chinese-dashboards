@@ -190,6 +190,8 @@ _RENDER_SELF_CHECK = [
      "SELECT extract(epoch from date) as \"time\", 1 FROM positions WHERE TRUE"),
     ("SELECT 1 WHERE date > ${__from:date:seconds} AND date < ${__to:date:seconds}",
      "SELECT 1 WHERE date > 1700000000 AND date < 1800000000"),
+    ("SELECT date_trunc('$period', timezone('UTC', date), '$__timezone') FROM positions",
+     "SELECT date_trunc('month', timezone('UTC', date), 'Asia/Shanghai') FROM positions"),
 ]
 _render_defects = []
 for _sample, _expected in _RENDER_SELF_CHECK:
@@ -358,7 +360,7 @@ vanished = sorted(k for k in baseline if k not in passing and k not in failing)
 for k in regressed:
     print(f'  ❌ 查询解析失败：{k}')
     print(f'       {failing[k]}')
-    print('       这个面板在 Grafana 里会直接报错、不出数据。')
+    print('       这条查询在 Grafana 里会直接报错：面板不出数据，或变量下拉框为空。')
 
 if vanished:
     # 面板改名 / 挪位置都会让 key 变样。找出「同一文件里同标题」或「同一文件里同序号」的
