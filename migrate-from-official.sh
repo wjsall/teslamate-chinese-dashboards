@@ -1090,7 +1090,7 @@ if [[ ${#FAILED_STEPS[@]} -eq 0 ]]; then
         echo "    ⚠ 告警项：${WARN_STEPS[*]}"
     fi
     echo
-    echo "现在打开 http://你的IP:3000 — 45 个中文仪表盘已就绪。"
+    echo "现在打开 http://你的IP:3000 — 46 个中文仪表盘已就绪。"
 else
     echo "⚠️  迁移部分完成（grafana 已切镜像，但有 ${#FAILED_STEPS[@]} 项 SQL 失败）"
     echo "    失败项：${FAILED_STEPS[*]}"
