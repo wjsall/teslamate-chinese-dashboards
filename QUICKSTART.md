@@ -10,7 +10,7 @@
 TeslaMate 是一个**开源**的特斯拉数据记录工具。它会自动收集你的车辆数据（每次行程、充电、电池状态等），保存在你自己的服务器上。数据完全属于你，不经过任何第三方。
 
 ### 本项目是什么？
-TeslaMate 官方的 Grafana 图表是英文的。本项目提供了 **45 个简体中文汉化版图表**（含 13 个原创分析仪表盘），把所有界面翻译成中文，开箱即用。
+TeslaMate 官方的 Grafana 图表是英文的。本项目提供了 **46 个简体中文汉化版图表**（含 13 个原创分析仪表盘），把所有界面翻译成中文，开箱即用。
 
 ### 🌟 中文版独有亮点
 
@@ -417,7 +417,7 @@ docker compose restart grafana
 
 ### 界面说明
 
-登录后你会看到左侧导航栏，点击 **仪表盘（Dashboards）** 查看所有 45 个中文图表。这里保留 `Dashboards` 是为了对应 Grafana 界面中的菜单文字。
+登录后你会看到左侧导航栏，点击 **仪表盘（Dashboards）** 查看所有 46 个中文图表。这里保留 `Dashboards` 是为了对应 Grafana 界面中的菜单文字。
 
 **推荐第一次看这几个：**
 1. **概览** — 车辆当前整体状态
@@ -439,7 +439,7 @@ docker compose ps
 - [ ] **TeslaMate 网页能开** —— 浏览器打开 `http://服务器IP:4000`，看到登录页
 - [ ] **Grafana 网页能开** —— 浏览器打开 `http://服务器IP:3000`，看到登录页
 - [ ] **TeslaMate 已绑定车辆** —— 登录 TeslaMate 后能看到你的车，状态是 `online` / `asleep` / `driving` 等（不是 `unauthenticated`）
-- [ ] **Grafana 有 45 个仪表盘** —— 登录 Grafana 后左侧 `Dashboards` 菜单，能看到「TeslaMate」文件夹下 45 个图
+- [ ] **Grafana 有 46 个仪表盘** —— 登录 Grafana 后左侧 `Dashboards` 菜单，能看到「TeslaMate」文件夹下 46 个图
 - [ ] **数据开始同步** —— 跑 `docker compose logs -f teslamate` 能看到类似 `Fetching vehicle data` 的日志（按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 退出查看）
 
 > 任何一项不通过 → 看 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)，或直接到本节末尾的「卸载/重置」部分清空重装。
@@ -495,7 +495,7 @@ sudo systemctl enable docker
 - **「🌡️ 天气-能耗关联」** — 量化温度对续航的影响（国内冬天痛点）
 - **「🏆 充电桩性价比榜」** — 你常去的充电桩按 ¥/度 排序
 
-### 完整 45 个仪表盘说明
+### 完整 46 个仪表盘说明
 
 详见 [DASHBOARD_MAP.md](DASHBOARD_MAP.md) 和 [SCENE_GUIDE.md](SCENE_GUIDE.md)（场景速查：「这个数据看哪个仪表盘」）。
 
@@ -926,7 +926,7 @@ docker rmi eclipse-mosquitto:2
 | 文档 | 内容 |
 |------|------|
 | [SCENE_GUIDE.md](SCENE_GUIDE.md) | 什么场景看什么仪表盘 |
-| [DASHBOARD_MAP.md](DASHBOARD_MAP.md) | 45 个仪表盘导航地图 |
+| [DASHBOARD_MAP.md](DASHBOARD_MAP.md) | 46 个仪表盘导航地图 |
 | [METRICS_GUIDE.md](METRICS_GUIDE.md) | 各项数据指标解释 |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 遇到问题怎么解决 |
 
