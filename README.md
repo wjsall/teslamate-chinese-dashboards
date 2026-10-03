@@ -84,7 +84,9 @@ bash scripts/upgrade.sh
 docker compose pull && docker compose up -d
 ```
 
-这条命令只更新镜像。新版本涉及 SQL 时，再执行唯一的 [四个 SQL 安装文件修复循环](TROUBLESHOOTING.md#repair-sql-install)；它会自动探测 database 容器，任一文件失败即停止，完成后重启 Grafana。Watchtower 也只换镜像，因此同样要补这一步。纯仪表盘版本（例如 v1.7.10）只需更新镜像。远程 SQL 的版本锁定与信任边界见 [SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
+这条命令只更新镜像。新版本涉及 SQL 时，再执行唯一的 [四个 SQL 安装文件修复循环](TROUBLESHOOTING.md#repair-sql-install)；它会自动探测 database 容器，任一文件失败即停止，完成后重启 Grafana。Watchtower 也只换镜像，因此同样要补这一步。纯仪表盘版本（例如 v1.7.10）只需更新镜像。
+
+> **如果你的 Compose 把仪表盘目录挂载进了容器**（例如 `./…/dashboards/zh-cn:/dashboards`），只更新镜像**不会**更新仪表盘：容器读的是挂载目录里的旧文件，新页面不会出现，也不会有任何报错。这种情况下，升级后还要把挂载目录里的 JSON 同步成新版（`git clone` 的目录用 `git pull`），目录对应关系是 `zh-cn/` → `/dashboards`、`internal/` → `/dashboards_internal`，然后重启 Grafana。远程 SQL 的版本锁定与信任边界见 [SQL 远程拉取的信任模型](TROUBLESHOOTING.md#sql-trust-model)。
 
 <a id="upgrade-method-d"></a>
 
