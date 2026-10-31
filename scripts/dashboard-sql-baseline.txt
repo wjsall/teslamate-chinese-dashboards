@@ -510,15 +510,13 @@ grafana/dashboards/zh-cn/statistics.json::5::变量 length_unit
 grafana/dashboards/zh-cn/statistics.json::6::变量 temp_unit
 grafana/dashboards/zh-cn/statistics.json::7::变量 preferred_range
 grafana/dashboards/zh-cn/statistics.json::8::变量 base_url
-grafana/dashboards/zh-cn/temperatures.json::0::车内温度（最近值）
-grafana/dashboards/zh-cn/temperatures.json::1::车外温度（最近值）
-grafana/dashboards/zh-cn/temperatures.json::2::车外温度范围
-grafana/dashboards/zh-cn/temperatures.json::3::车内与车外温度
-grafana/dashboards/zh-cn/temperatures.json::4::充电时车外温度
-grafana/dashboards/zh-cn/temperatures.json::5::每日车外温度范围
-grafana/dashboards/zh-cn/temperatures.json::6::变量 car_id
-grafana/dashboards/zh-cn/temperatures.json::7::变量 temp_unit
-grafana/dashboards/zh-cn/temperatures.json::8::变量 base_url
+grafana/dashboards/zh-cn/temperatures.json::0::车外温度（所选时段）
+grafana/dashboards/zh-cn/temperatures.json::1::车内与车外温度
+grafana/dashboards/zh-cn/temperatures.json::2::充电时车外温度
+grafana/dashboards/zh-cn/temperatures.json::3::每日车外温度范围
+grafana/dashboards/zh-cn/temperatures.json::4::变量 car_id
+grafana/dashboards/zh-cn/temperatures.json::5::变量 temp_unit
+grafana/dashboards/zh-cn/temperatures.json::6::变量 base_url
 grafana/dashboards/zh-cn/timeline.json::1::变量 car_id
 grafana/dashboards/zh-cn/timeline.json::2::变量 base_url
 grafana/dashboards/zh-cn/timeline.json::3::变量 length_unit
@@ -591,14 +589,17 @@ grafana/dashboards/zh-cn/vehicle-comparison.json::5::各车快充比例(%)
 grafana/dashboards/zh-cn/vehicle-comparison.json::6::各车行程次数
 grafana/dashboards/zh-cn/vehicle-comparison.json::7::各车单位里程电费(元/$length_unit)
 grafana/dashboards/zh-cn/vehicle-comparison.json::8::变量 length_unit
-grafana/dashboards/zh-cn/visited.json::0::行驶轨迹
-grafana/dashboards/zh-cn/visited.json::1::行驶轨迹
+grafana/dashboards/zh-cn/visited.json::0::足迹地图
+grafana/dashboards/zh-cn/visited.json::10::变量 length_unit
+grafana/dashboards/zh-cn/visited.json::1::足迹地图
 grafana/dashboards/zh-cn/visited.json::2::足迹地图
 grafana/dashboards/zh-cn/visited.json::3::足迹地图
-grafana/dashboards/zh-cn/visited.json::4::足迹地图
-grafana/dashboards/zh-cn/visited.json::5::变量 car_id
-grafana/dashboards/zh-cn/visited.json::6::变量 base_url
-grafana/dashboards/zh-cn/visited.json::7::变量 length_unit
+grafana/dashboards/zh-cn/visited.json::4::行驶轨迹
+grafana/dashboards/zh-cn/visited.json::5::行驶轨迹
+grafana/dashboards/zh-cn/visited.json::6::行驶轨迹
+grafana/dashboards/zh-cn/visited.json::7::所选地点的到访日
+grafana/dashboards/zh-cn/visited.json::8::变量 car_id
+grafana/dashboards/zh-cn/visited.json::9::变量 base_url
 grafana/dashboards/zh-cn/weather-efficiency.json::0::🌡 平均温度
 grafana/dashboards/zh-cn/weather-efficiency.json::1::⚡ 平均能耗
 grafana/dashboards/zh-cn/weather-efficiency.json::2::❄ 最冷月平均能耗

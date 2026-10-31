@@ -135,6 +135,8 @@ def render(sql, filler="'1'"):
                lambda m: 'extract(epoch from %s) as "time"' % _first_arg(m), s)
     s = re.sub(r'\$__time\(([^)]*)\)', lambda m: '%s AS "time"' % _first_arg(m), s)
     s = s.replace('$__timeFrom()', "(now() - interval '30 days')").replace('$__timeTo()', 'now()')
+    # $__unixEpochFrom() / $__unixEpochTo()：时间范围两端的 Unix 秒，Grafana 展开成整数。
+    s = s.replace('$__unixEpochFrom()', '1700000000').replace('$__unixEpochTo()', '1800000000')
     s = s.replace('$__timezone', 'Asia/Shanghai')
     s = re.sub(r"\$__interval\w*", "'1 day'", s)
     # ${__from:date:seconds} / ${__to:date:seconds} = 时间范围两端的 Unix 秒，是数字。
@@ -190,6 +192,8 @@ _RENDER_SELF_CHECK = [
      "SELECT extract(epoch from date) as \"time\", 1 FROM positions WHERE TRUE"),
     ("SELECT 1 WHERE date > ${__from:date:seconds} AND date < ${__to:date:seconds}",
      "SELECT 1 WHERE date > 1700000000 AND date < 1800000000"),
+    ("SELECT least($__unixEpochTo(), 1) - $__unixEpochFrom()",
+     "SELECT least(1800000000, 1) - 1700000000"),
     ("SELECT date_trunc('$period', timezone('UTC', date), '$__timezone') FROM positions",
      "SELECT date_trunc('month', timezone('UTC', date), 'Asia/Shanghai') FROM positions"),
 ]
