@@ -1,9 +1,13 @@
 # 基于 TeslaMate 官方 Grafana 镜像，锁定到具体 digest（多架构 manifest list，
-# 含 linux/amd64 + linux/arm64，2026-10-03 用 registry API 现查确认；
+# 含 linux/amd64 + linux/arm64，2026-10-31 用 registry API 现查确认；
 # 见 .github/workflows/ghcr-build.yml 的 base-image-canary job 与 renovate.json）。
 # 不再跟随裸 :latest 滚动——同一 commit 重新构建现在能得到确定的构建输入，可审计。
-# 当前 digest 对应 teslamate/grafana v4.3.0，内置 Grafana 13.2.2
-# （2026-08 从 13.0.1+security-01 升到 13.1.3，2026-10 再升到 13.2.2，见下面两节）。
+# 当前 digest 对应 teslamate/grafana v4.4.0，内置 Grafana 13.2.4
+# （2026-08 从 13.0.1+security-01 升到 13.1.3，2026-10 再升到 13.2.2、13.2.4，见下面几节）。
+#
+# 为什么升到 13.2.4（TeslaMate v4.4.0 官方镜像带的版本）：
+#   13.2.2 → 13.2.4 是安全修复版。两版之间涉及 PostgreSQL 的提交只有文档，
+#   查询与剥 SQL 注释的代码没有变化，下面的规则 b 照旧保留。
 #
 # 为什么升到 13.2.2（TeslaMate v4.3.0 官方镜像带的版本）：
 #   13.2 把 PostgreSQL 数据源从核心里拆成随镜像预装的插件 grafana-postgresql-datasource
@@ -41,7 +45,7 @@
 #
 # 升级 digest：base-image-canary 发现上游更新会自动开 issue 指导；也可手动
 # `docker manifest inspect teslamate/grafana:latest` 现查后替换下面这一行。
-FROM teslamate/grafana:latest@sha256:7f5a119ad06c212c4122e12c957a6848b5718d9618826b5ce70a1ec12d84fed5
+FROM teslamate/grafana:latest@sha256:2dd1fae85cd891e1d851350d13b547abf000efd602c8d0e5734eda6d43e22e01
 
 # 强制中文语言设置（关键！）
 ENV GF_USERS_DEFAULT_LANGUAGE=zh-Hans

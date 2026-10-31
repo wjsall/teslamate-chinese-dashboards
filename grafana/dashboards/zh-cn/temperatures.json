@@ -112,151 +112,36 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
-                "value": null
+                "color": "blue",
+                "value": 0
               }
             ]
           },
           "unit": "degree"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "车外覆盖率 [%]"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 4,
+        "w": 12,
         "x": 0,
         "y": 1
       },
-      "id": 1,
-      "description": "显示最近一小时记录到的车内温度。",
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "13.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT convert_celsius(inside_temp, '$temp_unit') AS \"车内 [°$temp_unit]\"\nFROM positions\nWHERE car_id = $car_id AND inside_temp IS NOT NULL AND ideal_battery_range_km IS NOT NULL AND date >= (TIMEZONE('UTC', NOW()) - INTERVAL '60m')\nORDER BY date DESC\nLIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "车内温度（最近值）",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "degree"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 1
-      },
-      "id": 2,
-      "description": "显示最近一小时记录到的车外温度。",
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "13.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT convert_celsius(outside_temp, '$temp_unit') AS \"车外 [°$temp_unit]\"\nFROM positions\nWHERE car_id = $car_id AND outside_temp IS NOT NULL AND ideal_battery_range_km IS NOT NULL AND date >= (TIMEZONE('UTC', NOW()) - INTERVAL '60m')\nORDER BY date DESC\nLIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "车外温度（最近值）",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "degree"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 1
-      },
       "id": 3,
-      "description": "显示所选时段内车外温度的最低值与最高值。",
+      "description": "平均值按 15 分钟分段计算。覆盖率是所选时段内有温度记录的时间占比；平均值只代表车辆在记录数据的那些时段。",
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -269,7 +154,10 @@
           "fields": "/车外/",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value_and_name",
+        "percentChangeColorMode": "standard",
+        "showPercentChange": false,
+        "wideLayout": true
       },
       "pluginVersion": "13.2.1",
       "targets": [
@@ -281,11 +169,11 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  convert_celsius(min(outside_temp), '$temp_unit') AS \"车外最低 [°$temp_unit]\",\n  convert_celsius(max(outside_temp), '$temp_unit') AS \"车外最高 [°$temp_unit]\",\n  convert_celsius(min(inside_temp), '$temp_unit') AS \"车内最低 [°$temp_unit]\",\n  convert_celsius(max(inside_temp), '$temp_unit') AS \"车内最高 [°$temp_unit]\"\nFROM positions\nWHERE car_id = $car_id AND $__timeFilter(date)",
+          "rawSql": "WITH binned AS (\n  SELECT\n    to_timestamp(floor(extract(epoch FROM date) / 900) * 900) AS bin,\n    min(outside_temp) AS min_outside,\n    avg(outside_temp) AS avg_outside,\n    max(outside_temp) AS max_outside,\n    min(inside_temp) AS min_inside,\n    avg(inside_temp) AS avg_inside,\n    max(inside_temp) AS max_inside\n  FROM positions\n  WHERE car_id = $car_id\n    AND ideal_battery_range_km IS NOT NULL\n    AND (outside_temp IS NOT NULL OR inside_temp IS NOT NULL)\n    AND $__timeFilter(date)\n  GROUP BY 1\n)\nSELECT\n  convert_celsius(min(min_outside), '$temp_unit') AS \"车外最低 [°$temp_unit]\",\n  convert_celsius(avg(avg_outside), '$temp_unit') AS \"车外平均 [°$temp_unit]\",\n  convert_celsius(max(max_outside), '$temp_unit') AS \"车外最高 [°$temp_unit]\",\n  count(avg_outside) * 900 * 100.0 / (least($__unixEpochTo(), extract(epoch FROM now())) - $__unixEpochFrom()) AS \"车外覆盖率 [%]\",\n  convert_celsius(min(min_inside), '$temp_unit') AS \"车内最低 [°$temp_unit]\",\n  convert_celsius(avg(avg_inside), '$temp_unit') AS \"车内平均 [°$temp_unit]\",\n  convert_celsius(max(max_inside), '$temp_unit') AS \"车内最高 [°$temp_unit]\",\n  count(avg_inside) * 900 * 100.0 / (least($__unixEpochTo(), extract(epoch FROM now())) - $__unixEpochFrom()) AS \"车内覆盖率 [%]\"\nFROM binned",
           "refId": "A"
         }
       ],
-      "title": "车外温度范围",
+      "title": "车外温度（所选时段）",
       "type": "stat"
     },
     {
@@ -293,7 +181,7 @@
         "type": "datasource",
         "uid": "-- Dashboard --"
       },
-      "description": "显示所选时段内车内温度的最低值与最高值。",
+      "description": "平均值按 15 分钟分段计算。覆盖率是所选时段内有温度记录的时间占比；平均值只代表车辆在记录数据的那些时段。",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,18 +194,31 @@
             "steps": [
               {
                 "color": "orange",
-                "value": null
+                "value": 0
               }
             ]
           },
           "unit": "degree"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "车内覆盖率 [%]"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
+        "h": 4,
+        "w": 12,
+        "x": 12,
         "y": 1
       },
       "id": 4,
@@ -333,7 +234,10 @@
           "fields": "/车内/",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value_and_name",
+        "percentChangeColorMode": "standard",
+        "showPercentChange": false,
+        "wideLayout": true
       },
       "pluginVersion": "13.2.1",
       "targets": [
@@ -346,7 +250,7 @@
           "refId": "A"
         }
       ],
-      "title": "车内温度范围",
+      "title": "车内温度（所选时段）",
       "type": "stat"
     },
     {
@@ -355,7 +259,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 5
       },
       "id": 101,
       "description": "查看车内、车外和充电期间的温度变化。",
@@ -498,7 +402,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 6
       },
       "id": 5,
       "description": "显示所选时段内车内、车外与驾驶位设定温度的变化。",
@@ -602,7 +506,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "id": 7,
       "description": "显示所选时段内每次充电期间的平均车外温度，按充电开始时间标注。",
@@ -645,7 +549,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 25
       },
       "id": 102,
       "description": "按天汇总车外温度范围与数据覆盖率。",
@@ -723,7 +627,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 26
       },
       "id": 8,
       "description": "每一天的细线连接当天记录到的最低和最高温度，较粗的柱体显示第15至第85百分位范围，覆盖当天70%的读数。没有记录的日期会留空。\n\n注意：数据不完整的日期（例如只记录了几个小时）只反映实际测到的时段，可能无法代表全天；红线表示当天的数据覆盖率。",

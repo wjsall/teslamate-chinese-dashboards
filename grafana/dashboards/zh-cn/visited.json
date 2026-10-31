@@ -62,232 +62,6 @@
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-red",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "car_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "车辆ID"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 21,
-        "w": 24,
-        "x": 0,
-        "y": 1
-      },
-      "id": 2,
-      "maxDataPoints": 10000000,
-      "options": {
-        "basemap": {
-          "config": {
-            "attribution": "${map_url:text} contributors",
-            "url": "${map_url}",
-            "minZoom": 3,
-            "maxZoom": 18
-          },
-          "name": "Layer 0",
-          "type": "xyz"
-        },
-        "controls": {
-          "mouseWheelZoom": true,
-          "showAttribution": true,
-          "showDebug": false,
-          "showMeasure": false,
-          "showScale": true,
-          "showZoom": true
-        },
-        "layers": [
-          {
-            "config": {
-              "arrow": 0,
-              "edgeStyle": {
-                "color": {
-                  "fixed": "dark-blue"
-                },
-                "lineWidth": 2,
-                "opacity": 1,
-                "rotation": {
-                  "fixed": 0,
-                  "max": 360,
-                  "min": -360,
-                  "mode": "mod"
-                },
-                "size": {
-                  "fixed": 2,
-                  "max": 15,
-                  "min": 1
-                },
-                "symbol": {
-                  "fixed": "img/icons/marker/circle.svg",
-                  "mode": "fixed"
-                },
-                "symbolAlign": {
-                  "horizontal": "center",
-                  "vertical": "center"
-                },
-                "textConfig": {
-                  "fontSize": 12,
-                  "offsetX": 0,
-                  "offsetY": 0,
-                  "textAlign": "center",
-                  "textBaseline": "middle"
-                }
-              },
-              "showLegend": false,
-              "style": {
-                "color": {
-                  "fixed": "dark-blue"
-                },
-                "lineWidth": 2,
-                "opacity": 1,
-                "rotation": {
-                  "fixed": 0,
-                  "max": 360,
-                  "min": -360,
-                  "mode": "mod"
-                },
-                "size": {
-                  "fixed": 2,
-                  "max": 15,
-                  "min": 1
-                },
-                "symbol": {
-                  "fixed": "img/icons/marker/circle.svg",
-                  "mode": "fixed"
-                },
-                "symbolAlign": {
-                  "horizontal": "center",
-                  "vertical": "center"
-                },
-                "textConfig": {
-                  "fontSize": 12,
-                  "offsetX": 0,
-                  "offsetY": 0,
-                  "textAlign": "center",
-                  "textBaseline": "middle"
-                }
-              }
-            },
-            "location": {
-              "latitude": "latitude",
-              "longitude": "longitude",
-              "mode": "auto"
-            },
-            "name": "行驶轨迹",
-            "tooltip": true,
-            "type": "network"
-          }
-        ],
-        "tooltip": {
-          "mode": "none"
-        },
-        "view": {
-          "allLayers": true,
-          "id": "fit",
-          "lat": 0,
-          "lon": 0,
-          "zoom": 15
-        }
-      },
-      "pluginVersion": "12.1.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n)\nSELECT\n  id,\n  lat_for_map('${map_url}', latitude, longitude) AS latitude,\n  lng_for_map('${map_url}', latitude, longitude) AS longitude\nFROM sampled\nORDER BY date",
-          "refId": "Nodes",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "TeslaMate"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n),\nlinked AS (\n  SELECT\n    id,\n    drive_id,\n    date,\n    LEAD(id) OVER (PARTITION BY drive_id ORDER BY date) AS next_id,\n    LEAD(date) OVER (PARTITION BY drive_id ORDER BY date) AS next_date\n  FROM sampled\n)\nSELECT\n  id || '->' || next_id AS id,\n  id AS source,\n  next_id AS target\nFROM linked\nWHERE next_id IS NOT NULL\n  AND next_date - date <= interval '5 minutes'\nORDER BY date",
-          "refId": "Edges",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "行驶轨迹",
-      "type": "geomap",
-      "description": "每分钟选取一个真实 GPS 记录点，并且只连接同一行程内、间隔不超过 5 分钟的相邻点。这样可避免平均经纬度落在道路外，以及不同旅程或长时间断档之间出现虚假直线。"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "TeslaMate"
-      },
       "description": "选定时间范围内的总行驶里程",
       "fieldConfig": {
         "defaults": {
@@ -322,9 +96,9 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 5,
+        "w": 3,
         "x": 0,
-        "y": 22
+        "y": 1
       },
       "id": 5,
       "options": {
@@ -360,6 +134,121 @@
           "rawQuery": true,
           "rawSql": "SELECT ROUND(convert_km((max(end_km) - min(start_km))::numeric, '$length_unit'),0)|| ' $length_unit' as \"行驶里程\"\nFROM drives WHERE car_id = $car_id AND $__timeFilter(start_date)",
           "refId": "distance traveled",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "description": "充电总费用",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "元"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "car_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "车辆ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "费用"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 1
+      },
+      "id": 7,
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "select sum(effective_cost(id, cost)) as \"充电总费用\" FROM charging_processes where $__timeFilter(start_date) AND car_id = $car_id;",
+          "refId": "A",
           "sql": {
             "columns": [
               {
@@ -469,9 +358,9 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 14,
-        "x": 5,
-        "y": 22
+        "w": 8,
+        "x": 6,
+        "y": 1
       },
       "id": 6,
       "maxDataPoints": 100,
@@ -535,48 +424,46 @@
         "type": "grafana-postgresql-datasource",
         "uid": "TeslaMate"
       },
-      "description": "充电总费用",
+      "description": "所选时间范围内，该车行程起终点或充电所在的国家数与城市/区县数。国内地址的城市名来自地图服务，常常是区县一级，比如深圳的宝安区、福田区会分开列出。",
       "fieldConfig": {
         "defaults": {
-          "decimals": 2,
+          "color": {
+            "fixedColor": "#ad46ff",
+            "mode": "fixed"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-blue",
                 "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
-          },
-          "unit": "元"
+          }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "car_id"
+              "options": "Countries"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "车辆ID"
+                "value": "国家数"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "cost"
+              "options": "Cities"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "费用"
+                "value": "城市/区县数"
               }
             ]
           }
@@ -585,33 +472,28 @@
       "gridPos": {
         "h": 3,
         "w": 5,
-        "x": 19,
-        "y": 22
+        "x": 14,
+        "y": 1
       },
-      "id": 7,
-      "maxDataPoints": 100,
+      "id": 8,
       "options": {
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
-        "orientation": "horizontal",
+        "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true,
-        "text": {
-          "valueSize": 32,
-          "titleSize": 14
-        }
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.1.1",
+      "pluginVersion": "13.2.2",
       "targets": [
         {
           "datasource": {
@@ -621,7 +503,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "select sum(effective_cost(id, cost)) as \"充电总费用\" FROM charging_processes where $__timeFilter(start_date) AND car_id = $car_id;",
+          "rawSql": "WITH visits AS (\n  SELECT v.address_id, v.ts\n  FROM drives d\n  CROSS JOIN LATERAL (VALUES (d.start_address_id, d.start_date),\n                             (d.end_address_id,   d.end_date)) AS v(address_id, ts)\n  WHERE d.car_id = $car_id AND $__timeFilter(d.start_date) AND d.end_date IS NOT NULL\n  UNION ALL\n  SELECT cp.address_id, cp.start_date\n  FROM charging_processes cp\n  WHERE cp.car_id = $car_id AND $__timeFilter(cp.start_date)\n), places AS (\n  SELECT a.country AS country_name,\n         COALESCE(a.city, a.neighbourhood) AS \"City\",\n         COALESCE(NULLIF(a.state_district, ''), NULLIF(a.state, ''), '') AS region_name,\n         COALESCE(NULLIF(lower(a.raw #>> '{address,country_code}'), ''), 'name:' || lower(a.country)) AS country_code,\n         a.latitude,\n         a.longitude,\n         v.ts AS visit,\n         (timezone('UTC', v.ts) AT TIME ZONE '$__timezone')::date AS local_day\n  FROM visits v\n  JOIN addresses a ON a.id = v.address_id\n  WHERE a.country IS NOT NULL AND COALESCE(a.city, a.neighbourhood) IS NOT NULL\n), normalized_places AS (\n  SELECT country_code,\n         min(country_name) OVER (PARTITION BY country_code) AS \"Country\",\n         \"City\",\n         region_name AS \"Region\",\n         latitude,\n         longitude,\n         visit,\n         local_day\n  FROM places\n), stats AS (\n  SELECT count(DISTINCT country_code) AS \"Countries\",\n         count(DISTINCT (country_code, \"City\", \"Region\")) AS \"Cities\",\n         min(visit) AS \"From\",\n         max(visit) AS \"To\",\n         count(DISTINCT local_day) AS \"Days\"\n  FROM normalized_places\n)\nSELECT normalized_places.*,\n       jsonb_build_array(country_code, \"City\", \"Region\")::text AS city_key,\n       stats.\"Countries\",\n       stats.\"Cities\",\n       stats.\"From\",\n       stats.\"To\",\n       stats.\"Days\"\nFROM normalized_places\nCROSS JOIN stats",
           "refId": "A",
           "sql": {
             "columns": [
@@ -642,8 +524,1091 @@
           }
         }
       ],
-      "title": "",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Countries",
+                "Cities"
+              ]
+            }
+          }
+        }
+      ],
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#ad46ff",
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "From",
+              "scope": "series"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最早"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "To",
+              "scope": "series"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最近"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "到访天数"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "13.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 8,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Days",
+                "From",
+                "To"
+              ]
+            }
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (min)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "首次到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (max)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最近到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "City"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "城市/区县"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "查看在 ${__data.fields.City} 的每一天",
+                    "url": "/d/${__dashboard.uid}/visited?${__url_time_range}&var-car_id=All&var-selected_car_id=${car_id}&var-country_code=${__data.fields.country_code:percentencode}&var-city=${__data.fields.City:percentencode}&var-region=${__data.fields.Region:percentencode}&${map_url:queryparam}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "local_day (distinctCount)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "天数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Region"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "地区"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Country"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "国家"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "天数"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 25,
+        "w": 14,
+        "x": 0,
+        "y": 4
+      },
+      "id": 2,
+      "maxDataPoints": 10000000,
+      "options": {
+        "basemap": {
+          "config": {
+            "attribution": "${map_url:text} contributors",
+            "url": "${map_url}",
+            "minZoom": 3,
+            "maxZoom": 18
+          },
+          "name": "Layer 0",
+          "type": "xyz"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": true,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "arrow": 0,
+              "edgeStyle": {
+                "color": {
+                  "fixed": "dark-blue"
+                },
+                "lineWidth": 2,
+                "opacity": 1,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 2,
+                  "max": 15,
+                  "min": 1
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              },
+              "showLegend": false,
+              "style": {
+                "color": {
+                  "fixed": "dark-blue"
+                },
+                "lineWidth": 2,
+                "opacity": 1,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 2,
+                  "max": 15,
+                  "min": 1
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "mode": "auto"
+            },
+            "name": "行驶轨迹",
+            "tooltip": true,
+            "type": "network",
+            "filterData": {
+              "id": "byRefId",
+              "options": "/^(Nodes|Edges)$/"
+            }
+          },
+          {
+            "config": {
+              "showLegend": false,
+              "style": {
+                "color": {
+                  "fixed": "orange"
+                },
+                "opacity": 0.9,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 7,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                }
+              }
+            },
+            "filterData": {
+              "id": "byRefId",
+              "options": "Cities"
+            },
+            "location": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "mode": "coords"
+            },
+            "name": "到访城市",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "fit",
+          "lat": 0,
+          "lon": 0,
+          "zoom": 15
+        }
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n)\nSELECT\n  id,\n  lat_for_map('${map_url}', latitude, longitude) AS latitude,\n  lng_for_map('${map_url}', latitude, longitude) AS longitude\nFROM sampled\nORDER BY date",
+          "refId": "Nodes",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH sample_ids AS MATERIALIZED (\n  SELECT MIN(p.id) AS id\n  FROM positions p\n  WHERE p.car_id = $car_id\n    AND $__timeFilter(p.date)\n    AND p.drive_id IS NOT NULL\n    AND p.latitude IS NOT NULL\n    AND p.longitude IS NOT NULL\n  GROUP BY p.drive_id, date_trunc('minute', p.date)\n),\nsampled AS (\n  SELECT\n    p.id::text AS id,\n    p.drive_id,\n    p.date,\n    p.latitude,\n    p.longitude\n  FROM sample_ids s\n  CROSS JOIN LATERAL (\n    SELECT p.id, p.drive_id, p.date, p.latitude, p.longitude\n    FROM positions p\n    WHERE p.id = s.id\n    OFFSET 0\n  ) p\n),\nlinked AS (\n  SELECT\n    id,\n    drive_id,\n    date,\n    LEAD(id) OVER (PARTITION BY drive_id ORDER BY date) AS next_id,\n    LEAD(date) OVER (PARTITION BY drive_id ORDER BY date) AS next_date\n  FROM sampled\n)\nSELECT\n  id || '->' || next_id AS id,\n  id AS source,\n  next_id AS target\nFROM linked\nWHERE next_id IS NOT NULL\n  AND next_date - date <= interval '5 minutes'\nORDER BY date",
+          "refId": "Edges",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH visits AS (\n  SELECT v.address_id, v.ts\n  FROM drives d\n  CROSS JOIN LATERAL (VALUES (d.start_address_id, d.start_date),\n                             (d.end_address_id,   d.end_date)) AS v(address_id, ts)\n  WHERE d.car_id = $car_id AND $__timeFilter(d.start_date) AND d.end_date IS NOT NULL\n  UNION ALL\n  SELECT cp.address_id, cp.start_date\n  FROM charging_processes cp\n  WHERE cp.car_id = $car_id AND $__timeFilter(cp.start_date)\n), places AS (\n  SELECT a.country AS country_name,\n         COALESCE(a.city, a.neighbourhood) AS \"City\",\n         COALESCE(NULLIF(a.state_district, ''), NULLIF(a.state, ''), '') AS \"Region\",\n         COALESCE(NULLIF(lower(a.raw #>> '{address,country_code}'), ''), 'name:' || lower(a.country)) AS country_code,\n         a.latitude,\n         a.longitude,\n         v.ts AS visit,\n         (timezone('UTC', v.ts) AT TIME ZONE '$__timezone')::date AS local_day\n  FROM visits v\n  JOIN addresses a ON a.id = v.address_id\n  WHERE a.country IS NOT NULL AND COALESCE(a.city, a.neighbourhood) IS NOT NULL\n), normalized_places AS (\n  SELECT country_code,\n         min(country_name) OVER (PARTITION BY country_code) AS \"Country\",\n         \"City\",\n         \"Region\",\n         latitude,\n         longitude,\n         visit,\n         local_day\n  FROM places\n)\nSELECT country_code,\n       \"Country\",\n       \"City\",\n       \"Region\",\n       min(visit) AS \"First visit\",\n       max(visit) AS \"Last visit\",\n       count(DISTINCT local_day) AS \"Days\",\n       lat_for_map('${map_url}', avg(latitude)::float, avg(longitude)::float) AS latitude,\n       lng_for_map('${map_url}', avg(latitude)::float, avg(longitude)::float) AS longitude\nFROM normalized_places\nGROUP BY country_code, \"Country\", \"City\", \"Region\"",
+          "refId": "Cities"
+        }
+      ],
+      "title": "行驶轨迹",
+      "type": "geomap",
+      "description": "蓝线：所选时间范围内的行驶轨迹。橙点：行程起终点或充电所在的城市或区县，悬停查看日期，点名称查看在该城市的每一天。"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "footer": {
+              "reducers": [
+                "countAll"
+              ]
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (min)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "首次到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (max)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最近到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "city_key (distinctCount)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "城市/区县数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "local_day (distinctCount)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "天数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "country_code"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Country (lastNotNull)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "国家"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 14,
+        "y": 4
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "13.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 8,
+          "refId": "A",
+          "withTransforms": false
+        }
+      ],
+      "title": "国家",
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "country_code": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "Country": {
+                "aggregations": [
+                  "lastNotNull"
+                ],
+                "operation": "aggregate"
+              },
+              "city_key": {
+                "aggregations": [
+                  "distinctCount"
+                ],
+                "operation": "aggregate"
+              },
+              "local_day": {
+                "aggregations": [
+                  "distinctCount"
+                ],
+                "operation": "aggregate"
+              },
+              "visit": {
+                "aggregations": [
+                  "min",
+                  "max"
+                ],
+                "operation": "aggregate"
+              }
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "description": "点击名称，列出在那里的每一天。国内地址的城市名来自地图服务，常常是区县一级，比如深圳的宝安区、福田区会分开列出。",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "footer": {
+              "reducers": [
+                "countAll"
+              ]
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (min)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "首次到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "visit (max)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最近到访"
+              },
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "City"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "城市/区县"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "查看在 ${__data.fields.City} 的每一天",
+                    "url": "/d/${__dashboard.uid}/visited?${__url_time_range}&var-car_id=All&var-selected_car_id=${car_id}&var-country_code=${__data.fields.country_code:percentencode}&var-city=${__data.fields.City:percentencode}&var-region=${__data.fields.Region:percentencode}&${map_url:queryparam}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "local_day (distinctCount)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "天数"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "country_code"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Country (lastNotNull)"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "国家"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Region"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "地区"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 13
+      },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "13.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 8,
+          "refId": "A",
+          "withTransforms": false
+        }
+      ],
+      "title": "城市 / 区县",
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "country_code": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "Country": {
+                "aggregations": [
+                  "lastNotNull"
+                ],
+                "operation": "aggregate"
+              },
+              "City": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "Region": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "local_day": {
+                "aggregations": [
+                  "distinctCount"
+                ],
+                "operation": "aggregate"
+              },
+              "visit": {
+                "aggregations": [
+                  "min",
+                  "max"
+                ],
+                "operation": "aggregate"
+              }
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "TeslaMate"
+      },
+      "description": "在「城市 / 区县」表或地图上点选地点后，这里列出该车在那里的每一天。点击日期打开当天的行程。",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "footer": {
+              "reducers": [
+                "countAll"
+              ]
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Date"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "日期"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "打开当天的行程",
+                    "url": "/d/Y8upc6ZRk/drives?from=${__data.fields.day_from}&to=${__data.fields.day_to}&var-car_id=${selected_car_id}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "First seen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最早"
+              },
+              {
+                "id": "unit",
+                "value": "time:HH:mm"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last seen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "最晚"
+              },
+              {
+                "id": "unit",
+                "value": "time:HH:mm"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Drives"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "行程"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Charges"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "充电"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day_from"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day_to"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom.viz",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Places"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "地点"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 21
+      },
+      "id": 13,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "13.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "TeslaMate"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH addr AS (\n  SELECT id, name, road, house_number, display_name\n  FROM addresses\n  WHERE COALESCE(NULLIF(lower(raw #>> '{address,country_code}'), ''), 'name:' || lower(country)) = ${country_code:sqlstring}\n    AND COALESCE(city, neighbourhood) = ${city:sqlstring}\n    AND COALESCE(NULLIF(state_district, ''), NULLIF(state, ''), '') = ${region:sqlstring}\n), visits AS (\n  SELECT 'drive' AS kind, d.id AS ref_id, d.start_date AS ts, d.start_address_id AS address_id\n  FROM drives d\n  WHERE d.car_id = $car_id AND d.car_id = NULLIF(${selected_car_id:sqlstring}, '')::smallint AND d.start_address_id IN (SELECT id FROM addr)\n    AND $__timeFilter(d.start_date) AND d.end_date IS NOT NULL\n  UNION ALL\n  SELECT 'drive', d.id, d.end_date, d.end_address_id\n  FROM drives d\n  WHERE d.car_id = $car_id AND d.car_id = NULLIF(${selected_car_id:sqlstring}, '')::smallint AND d.end_address_id IN (SELECT id FROM addr)\n    AND $__timeFilter(d.start_date) AND d.end_date IS NOT NULL\n  UNION ALL\n  SELECT 'charge', cp.id, cp.start_date, cp.address_id\n  FROM charging_processes cp\n  WHERE cp.car_id = $car_id AND cp.car_id = NULLIF(${selected_car_id:sqlstring}, '')::smallint AND cp.address_id IN (SELECT id FROM addr)\n    AND $__timeFilter(cp.start_date)\n)\nSELECT to_char((timezone('UTC', min(v.ts)) AT TIME ZONE '$__timezone'), 'YYYY-MM-DD')               AS \"Date\",\n       min(v.ts)                                                 AS \"First seen\",\n       max(v.ts)                                                 AS \"Last seen\",\n       count(DISTINCT v.ref_id) FILTER (WHERE v.kind = 'drive')  AS \"Drives\",\n       count(DISTINCT v.ref_id) FILTER (WHERE v.kind = 'charge') AS \"Charges\",\n       string_agg(DISTINCT COALESCE(a.name, nullif(concat_ws(' ', a.road, a.house_number), ''),\n                                    split_part(a.display_name, ',', 1)), ' · ') AS \"Places\",\n       (extract(epoch FROM date_trunc('day', timezone('UTC', min(v.ts)), '$__timezone')) * 1000)::bigint                       AS day_from,\n       (extract(epoch FROM (((timezone('UTC', min(v.ts)) AT TIME ZONE '$__timezone')::date + 1)::timestamp AT TIME ZONE '$__timezone')) * 1000)::bigint - 1 AS day_to\nFROM visits v\nJOIN addr a ON a.id = v.address_id\nGROUP BY (timezone('UTC', v.ts) AT TIME ZONE '$__timezone')::date\nORDER BY min(v.ts) DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "所选地点的到访日",
+      "type": "table"
     }
   ],
   "preload": false,
@@ -754,6 +1719,74 @@
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 2,
+        "name": "selected_car_id",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 2,
+        "name": "region",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 2,
+        "name": "country_code",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 2,
+        "name": "city",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "type": "textbox"
       }
     ]
   },

@@ -202,7 +202,7 @@ bash migrate-from-official.sh
 - ✅ **深度汉化** - 46 个仪表盘，含 13 个全新原创分析图表
 - 🌏 **地图源一键切换（独有）** - 9 个含地图仪表盘顶部加 OSM / 高德 / 高德卫星 / 谷歌 / 谷歌卫星 / Carto 下拉框，秒切，自动 GCJ-02 坐标纠偏（v1.4.2+）
   - 国内用户告别手动改 SQL，海外华人用户也能用谷歌中文路网
-- ✅ **完整适配 TeslaMate 4.3** - 同步官方仪表盘更新，已按 **TeslaMate v4.3.0** 数据库结构验证（本项目镜像内置 Grafana 13.2.2）
+- ✅ **完整适配 TeslaMate 4.4** - 同步官方仪表盘更新至 **TeslaMate v4.4.0**（本项目镜像内置 Grafana 13.2.4）
 
 <a id="localization-stats"></a>
 

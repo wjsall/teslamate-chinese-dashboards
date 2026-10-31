@@ -16,12 +16,23 @@ if panel is None or panel.get('title') != '行驶轨迹' or panel.get('type') !=
     raise SystemExit('足迹地图 panel 2 身份漂移')
 
 layers = panel.get('options', {}).get('layers', [])
-if len(layers) != 1 or layers[0].get('type') != 'network':
-    raise SystemExit('足迹地图必须使用 Network 层显式绘制分段边')
+if [layer.get('type') for layer in layers] != ['network', 'markers']:
+    raise SystemExit('足迹地图必须是 Network 层（分段轨迹）+ Markers 层（到访城市）')
+if layers[0].get('filterData') != {'id': 'byRefId', 'options': '/^(Nodes|Edges)$/'}:
+    raise SystemExit('Network 层必须只读取 Nodes/Edges，不能混入城市点')
+if layers[1].get('filterData') != {'id': 'byRefId', 'options': 'Cities'}:
+    raise SystemExit('Markers 层必须只读取 Cities')
 
 targets = {target.get('refId'): target for target in panel.get('targets', [])}
-if set(targets) != {'Nodes', 'Edges'}:
-    raise SystemExit(f'足迹地图必须只有 Nodes/Edges 两个 target，实际 {sorted(targets)}')
+if set(targets) != {'Nodes', 'Edges', 'Cities'}:
+    raise SystemExit(f'足迹地图必须只有 Nodes/Edges/Cities 三个 target，实际 {sorted(targets)}')
+cities = targets['Cities'].get('rawSql', '')
+for token in (
+    "lat_for_map('${map_url}', avg(latitude)::float, avg(longitude)::float) AS latitude",
+    "lng_for_map('${map_url}', avg(latitude)::float, avg(longitude)::float) AS longitude",
+):
+    if token not in cities:
+        raise SystemExit(f'城市点坐标未按底图修正: {token}')
 
 nodes = targets['Nodes'].get('rawSql', '')
 edges = targets['Edges'].get('rawSql', '')
