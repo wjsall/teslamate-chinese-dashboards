@@ -470,7 +470,8 @@
       "links": [
         {
           "title": "设置费用",
-          "url": "${base_url:raw}/charge-cost/${charging_process_id}"
+          "url": "${base_url:raw}/charge-cost/${charging_process_id}",
+          "targetBlank": true
         }
       ],
       "maxDataPoints": 100,

@@ -1501,7 +1501,8 @@
         },
         "showUnfilled": false,
         "sizing": "auto",
-        "valueMode": "color"
+        "valueMode": "color",
+        "textMode": "auto"
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -1889,7 +1890,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑收藏点",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.start_path}"
                   }
@@ -1915,7 +1916,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑收藏点",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.end_path}"
                   }
@@ -2249,7 +2250,8 @@
             "desc": true,
             "displayName": "日期时间"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -2464,7 +2466,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "设置费用",
                     "url": "${base_url:raw}/charge-cost/${__data.fields.id.numeric:raw}"
                   }
@@ -2514,7 +2516,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑收藏点",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.path}"
                   }
@@ -2776,7 +2778,8 @@
             "desc": true,
             "displayName": "日期"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

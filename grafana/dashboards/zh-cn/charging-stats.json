@@ -2387,7 +2387,8 @@
           "show": false
         },
         "showHeader": true,
-        "sortBy": []
+        "sortBy": [],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -2640,7 +2641,8 @@
           "show": false
         },
         "showHeader": true,
-        "sortBy": []
+        "sortBy": [],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -2789,7 +2791,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -2921,7 +2924,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

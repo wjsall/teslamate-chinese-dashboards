@@ -579,7 +579,8 @@
             "desc": true,
             "displayName": "日期"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

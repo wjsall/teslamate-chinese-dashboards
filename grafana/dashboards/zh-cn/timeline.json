@@ -314,7 +314,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑收藏点",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.start_path:raw}"
                   }
@@ -344,7 +344,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑收藏点",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.end_path:raw}"
                   }
@@ -699,7 +699,8 @@
             "desc": true,
             "displayName": "开始"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

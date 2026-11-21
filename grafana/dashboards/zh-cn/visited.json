@@ -1156,7 +1156,8 @@
       "id": 11,
       "options": {
         "cellHeight": "sm",
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "13.2.2",
       "targets": [
@@ -1356,7 +1357,8 @@
       "id": 12,
       "options": {
         "cellHeight": "sm",
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "13.2.2",
       "targets": [
@@ -1591,7 +1593,8 @@
       "id": 13,
       "options": {
         "cellHeight": "sm",
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "13.2.2",
       "targets": [

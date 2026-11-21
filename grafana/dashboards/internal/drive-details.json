@@ -34,7 +34,8 @@
       "title": "GPX导出",
       "tooltip": "",
       "type": "link",
-      "url": "${base_url:raw}/drive/$drive_id/gpx"
+      "url": "${base_url:raw}/drive/$drive_id/gpx",
+      "targetBlank": true
     },
     {
       "asDropdown": true,

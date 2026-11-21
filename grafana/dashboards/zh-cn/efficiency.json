@@ -886,7 +886,8 @@
             "desc": true,
             "displayName": "温度"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -1185,7 +1186,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -1350,7 +1352,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

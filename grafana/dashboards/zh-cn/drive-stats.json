@@ -1677,7 +1677,8 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "color"
+        "valueMode": "color",
+        "textMode": "auto"
       },
       "pluginVersion": "11.6.1",
       "targets": [

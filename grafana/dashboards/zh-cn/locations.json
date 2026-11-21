@@ -501,7 +501,8 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "color"
+        "valueMode": "color",
+        "textMode": "auto"
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -607,7 +608,8 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "color"
+        "valueMode": "color",
+        "textMode": "auto"
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -763,7 +765,8 @@
             "desc": true,
             "displayName": "日期时间"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -875,7 +878,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.path}"
                   }
@@ -1024,7 +1027,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -1144,7 +1148,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.id.numeric:raw}/edit"
                   }
@@ -1201,7 +1205,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

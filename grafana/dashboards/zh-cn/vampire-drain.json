@@ -592,7 +592,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

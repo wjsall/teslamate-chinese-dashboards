@@ -791,7 +791,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑地理围栏",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.start_path}"
                   }
@@ -817,7 +817,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "targetBlank": false,
+                    "targetBlank": true,
                     "title": "创建或编辑地理围栏",
                     "url": "${base_url:raw}/geo-fences/${__data.fields.end_path}"
                   }
@@ -1517,7 +1517,8 @@
           "show": false
         },
         "showHeader": true,
-        "sortBy": []
+        "sortBy": [],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
@@ -1710,7 +1711,8 @@
           ],
           "show": false
         },
-        "showHeader": true
+        "showHeader": true,
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [

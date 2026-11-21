@@ -860,7 +860,8 @@
             "desc": true,
             "displayName": "开始于"
           }
-        ]
+        ],
+        "zebraStriping": false
       },
       "pluginVersion": "11.6.1",
       "targets": [
